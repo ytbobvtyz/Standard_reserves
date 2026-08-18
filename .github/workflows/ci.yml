@@ -1,0 +1,95 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  lint-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install linters
+        run: pip install ruff black
+      - name: Ruff
+        run: ruff check .
+        working-directory: backend
+      - name: Black
+        run: black --check .
+        working-directory: backend
+
+  lint-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+        working-directory: frontend
+      - name: ESLint
+        run: npm run lint
+        working-directory: frontend
+
+  test-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build backend image
+        run: docker build -t backend-test .
+        working-directory: backend
+      - name: Run backend tests
+        run: docker run --rm backend-test pytest
+
+  test-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+        working-directory: frontend
+      - name: Run frontend tests
+        run: npm run test
+        working-directory: frontend
+
+  build:
+    needs: [lint-backend, lint-frontend, test-backend, test-frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build backend image
+        run: docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/backend:latest .
+        working-directory: backend
+      - name: Build frontend image
+        run: docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:latest .
+        working-directory: frontend
+
+  deploy-dev:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare environment
+        run: test -f .env || cp .env.example .env
+      - name: Deploy to dev
+        run: docker compose -f docker-compose.dev.yml up -d --build
+      - name: Health check
+        run: curl --retry 10 --retry-delay 5 --fail http://localhost:8000/health

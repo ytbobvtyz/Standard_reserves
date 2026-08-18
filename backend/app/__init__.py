@@ -1,0 +1,1 @@
+"""Standart Reserve backend application."""

@@ -1,0 +1,1260 @@
+# API_SPECIFICATION.md
+## Standart Reserve — Спецификация API
+
+---
+
+## 1. ОБЩИЕ ПРИНЦИПЫ
+
+### 1.1. Базовый URL
+https://api.standart-reserve.ru/api/v1
+
+text
+
+### 1.2. Аутентификация
+
+**JWT (JSON Web Token)**
+- Header: `Authorization: Bearer <token>`
+- Токен выдается при входе (`/auth/login`)
+- Срок жизни токена: 24 часа
+- Refresh токен: 7 дней (хранится в `sessions`)
+
+### 1.3. Форматы
+
+| Формат | Описание |
+|--------|----------|
+| **Запрос** | `application/json` |
+| **Ответ** | `application/json` |
+| **Дата** | `YYYY-MM-DD` |
+| **Дата-время** | `YYYY-MM-DDTHH:MM:SSZ` (ISO 8601 UTC) |
+| **Количество** | `DECIMAL(12,2)` → строка или число (в JSON) |
+
+### 1.4. Коды ответов
+
+| Код | Описание |
+|-----|----------|
+| `200` | Успешно |
+| `201` | Создано |
+| `400` | Неверный запрос |
+| `401` | Не авторизован |
+| `403` | Доступ запрещен (недостаточно прав) |
+| `404` | Не найдено |
+| `409` | Конфликт (дублирование) |
+| `422` | Ошибка валидации |
+| `500` | Внутренняя ошибка сервера |
+
+### 1.5. Общая структура ответа
+
+```json
+{
+    "status": "success",
+    "data": { ... },
+    "meta": {
+        "page": 1,
+        "limit": 50,
+        "total": 100
+    }
+}
+1.6. Ошибки
+json
+{
+    "status": "error",
+    "error": {
+        "code": "VALIDATION_ERROR",
+        "message": "Поле 'quantity' должно быть больше 0",
+        "details": [
+            {
+                "field": "quantity_requested",
+                "message": "Значение должно быть > 0"
+            }
+        ]
+    }
+}
+2. АУТЕНТИФИКАЦИЯ И ПОЛЬЗОВАТЕЛИ
+2.1. Вход в систему
+text
+POST /auth/login
+Request:
+
+json
+{
+    "username": "ivanov",
+    "password": "secure_password"
+}
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": {
+        "access_token": "eyJhbGciOiJIUzI1NiIs...",
+        "refresh_token": "eyJhbGciOiJIUzI1NiIs...",
+        "expires_in": 86400,
+        "user": {
+            "id": "11111111-1111-1111-1111-111111111111",
+            "username": "ivanov",
+            "full_name": "Иванов Иван",
+            "role": "commercial",
+            "department": "Отдел продаж"
+        }
+    }
+}
+Errors:
+
+401 — Неверный логин или пароль
+
+403 — Учетная запись заблокирована
+
+2.2. Выход
+text
+POST /auth/logout
+Headers:
+
+text
+Authorization: Bearer <token>
+Response (200):
+
+json
+{
+    "status": "success",
+    "message": "Вы вышли из системы"
+}
+2.3. Обновление токена
+text
+POST /auth/refresh
+Request:
+
+json
+{
+    "refresh_token": "eyJhbGciOiJIUzI1NiIs..."
+}
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": {
+        "access_token": "eyJhbGciOiJIUzI1NiIs...",
+        "expires_in": 86400
+    }
+}
+2.4. Получение профиля
+text
+GET /auth/profile
+Headers:
+
+text
+Authorization: Bearer <token>
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": {
+        "id": "11111111-1111-1111-1111-111111111111",
+        "username": "ivanov",
+        "email": "ivanov@company.ru",
+        "full_name": "Иванов Иван",
+        "role": "commercial",
+        "department": "Отдел продаж",
+        "last_login_at": "2026-08-18T09:00:00Z"
+    }
+}
+2.5. Смена пароля
+text
+POST /auth/change-password
+Headers:
+
+text
+Authorization: Bearer <token>
+Request:
+
+json
+{
+    "old_password": "old_password",
+    "new_password": "new_secure_password"
+}
+Response (200):
+
+json
+{
+    "status": "success",
+    "message": "Пароль изменен"
+}
+3. ЗАПРОСЫ (REQUESTS)
+3.1. Создать запрос
+text
+POST /requests
+Headers:
+
+text
+Authorization: Bearer <token>
+Request (нормативный запас):
+
+json
+{
+    "request_type": "normative",
+    "client_name": "ООО 'Ромашка'",
+    "expiry_date": "2026-12-31",
+    "items": [
+        {
+            "product_code": 10001,
+            "warehouse_code": 2001,
+            "quantity_requested": 1000,
+            "unit": "шт"
+        },
+        {
+            "product_code": 10002,
+            "warehouse_code": 2002,
+            "quantity_requested": 500,
+            "unit": "шт"
+        }
+    ],
+    "comment": "Срочная потребность"
+}
+Request (разовое перемещение):
+
+json
+{
+    "request_type": "one_time",
+    "client_name": "ООО 'Ромашка'",
+    "items": [
+        {
+            "product_code": 10001,
+            "warehouse_code": 2001,
+            "quantity_requested": 200,
+            "unit": "шт"
+        }
+    ],
+    "comment": "Разовое перемещение для запуска"
+}
+Response (201):
+
+json
+{
+    "status": "success",
+    "data": {
+        "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "request_type": "normative",
+        "status": "draft",
+        "client_name": "ООО 'Ромашка'",
+        "initiator_id": "11111111-1111-1111-1111-111111111111",
+        "expiry_date": "2026-12-31",
+        "items": [
+            {
+                "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+                "product_code": 10001,
+                "warehouse_code": 2001,
+                "quantity_requested": 1000,
+                "quantity_approved": null,
+                "unit": "шт"
+            }
+        ],
+        "created_at": "2026-08-18T09:00:00Z"
+    }
+}
+Errors:
+
+400 — Невалидные данные
+
+403 — Недостаточно прав (только commercial для нормативных; commercial/logistics для разовых)
+
+3.2. Получить список запросов (с фильтрацией)
+text
+GET /requests
+Headers:
+
+text
+Authorization: Bearer <token>
+Query параметры:
+
+Параметр	Тип	Описание	Пример
+type	string	Тип запроса	normative / one_time
+status	string	Статус	draft / pp_approved / ...
+client_name	string	Клиент (частичное совпадение)	Ромашка
+initiator_id	uuid	Инициатор	11111111-...
+warehouse_code	integer	Склад (фильтр по позициям)	2001
+product_code	integer	Артикул (фильтр по позициям)	10001
+from_date	date	Создан с	2026-08-01
+to_date	date	Создан по	2026-08-18
+page	integer	Страница	1
+limit	integer	Записей на страницу	50
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": [
+        {
+            "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "request_type": "normative",
+            "status": "draft",
+            "client_name": "ООО 'Ромашка'",
+            "initiator": {
+                "id": "11111111-1111-1111-1111-111111111111",
+                "full_name": "Иванов Иван"
+            },
+            "items_count": 2,
+            "total_quantity": 1500,
+            "expiry_date": "2026-12-31",
+            "created_at": "2026-08-18T09:00:00Z"
+        }
+    ],
+    "meta": {
+        "page": 1,
+        "limit": 50,
+        "total": 15
+    }
+}
+3.3. Получить запрос по ID
+text
+GET /requests/{request_id}
+Headers:
+
+text
+Authorization: Bearer <token>
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": {
+        "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "request_type": "normative",
+        "status": "pp_approved",
+        "client_name": "ООО 'Ромашка'",
+        "initiator": {
+            "id": "11111111-1111-1111-1111-111111111111",
+            "full_name": "Иванов Иван"
+        },
+        "initiator_comment": "Срочная потребность",
+        "comment_pp": "Объем подтвержден, 20% резерв",
+        "comment_economy": null,
+        "expiry_date": "2026-12-31",
+        "items": [
+            {
+                "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+                "product": {
+                    "code": 10001,
+                    "name": "Подшипник 6204ZZ",
+                    "category": "A",
+                    "weight_kg": 0.25
+                },
+                "warehouse": {
+                    "code": 2001,
+                    "name": "Склад Ростов"
+                },
+                "quantity_requested": 1000,
+                "quantity_approved": 800,
+                "unit": "шт",
+                "comment": null
+            }
+        ],
+        "approvals": {
+            "pp": {
+                "approved_at": "2026-08-18T09:30:00Z",
+                "approved_by": {
+                    "id": "22222222-2222-2222-2222-222222222222",
+                    "full_name": "Петров Петр"
+                },
+                "action": "edit"
+            },
+            "economy": {
+                "approved_at": null,
+                "approved_by": null,
+                "action": null
+            }
+        },
+        "created_at": "2026-08-18T09:00:00Z",
+        "updated_at": "2026-08-18T09:30:00Z"
+    }
+}
+3.4. Обновить черновик
+text
+PUT /requests/{request_id}
+Headers:
+
+text
+Authorization: Bearer <token>
+Request (только для статуса draft):
+
+json
+{
+    "client_name": "ООО 'Тюльпан'",
+    "expiry_date": "2026-12-31",
+    "items": [
+        {
+            "product_code": 10001,
+            "warehouse_code": 2001,
+            "quantity_requested": 1500,
+            "unit": "шт"
+        }
+    ],
+    "comment": "Уточненный объем"
+}
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": {
+        "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "status": "draft",
+        "updated_at": "2026-08-18T10:00:00Z"
+    }
+}
+3.5. Удалить черновик
+text
+DELETE /requests/{request_id}
+Headers:
+
+text
+Authorization: Bearer <token>
+Условия: Только для статуса draft и только инициатор
+
+Response (200):
+
+json
+{
+    "status": "success",
+    "message": "Запрос удален"
+}
+3.6. Отправить на согласование
+text
+POST /requests/{request_id}/submit
+Headers:
+
+text
+Authorization: Bearer <token>
+Условия: Только для статуса draft, только инициатор
+
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": {
+        "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "status": "pp_approved",
+        "updated_at": "2026-08-18T10:00:00Z"
+    }
+}
+4. СОГЛАСОВАНИЕ (ПП)
+4.1. Получить список запросов на согласование (ПП)
+text
+GET /approvals/pp/pending
+Headers:
+
+text
+Authorization: Bearer <token>
+Query параметры:
+
+Параметр	Тип	Описание
+type	string	normative / one_time
+page	integer	Страница
+limit	integer	Записей на страницу
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": [
+        {
+            "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "request_type": "normative",
+            "client_name": "ООО 'Ромашка'",
+            "initiator": {
+                "id": "11111111-1111-1111-1111-111111111111",
+                "full_name": "Иванов Иван"
+            },
+            "items": [
+                {
+                    "product_code": 10001,
+                    "product_name": "Подшипник 6204ZZ",
+                    "warehouse_code": 2001,
+                    "warehouse_name": "Склад Ростов",
+                    "quantity_requested": 1000,
+                    "unit": "шт"
+                }
+            ],
+            "created_at": "2026-08-18T09:00:00Z"
+        }
+    ],
+    "meta": {
+        "page": 1,
+        "limit": 50,
+        "total": 5
+    }
+}
+4.2. Согласовать запрос (ПП)
+text
+POST /approvals/pp/{request_id}/action
+Headers:
+
+text
+Authorization: Bearer <token>
+Действия:
+
+1. Подтвердить:
+
+json
+{
+    "action": "approve",
+    "comment": "Объем подтвержден"
+}
+2. Редактировать объем:
+
+json
+{
+    "action": "edit",
+    "items": [
+        {
+            "product_code": 10001,
+            "warehouse_code": 2001,
+            "quantity_approved": 800
+        }
+    ],
+    "comment": "Снижаем объем на 20% из-за ограничений по заводу"
+}
+3. Отказать:
+
+json
+{
+    "action": "reject",
+    "comment": "Нет необходимого сырья для производства"
+}
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": {
+        "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "status": "economy_check",
+        "pp_approved_at": "2026-08-18T09:30:00Z",
+        "pp_approved_by": {
+            "id": "22222222-2222-2222-2222-222222222222",
+            "full_name": "Петров Петр"
+        },
+        "pp_action": "edit",
+        "comment_pp": "Снижаем объем на 20% из-за ограничений по заводу"
+    }
+}
+5. СОГЛАСОВАНИЕ (ЭКОНОМИСТ)
+5.1. Получить список запросов на согласование (Экономист)
+text
+GET /approvals/economy/pending
+Headers:
+
+text
+Authorization: Bearer <token>
+Response (200): Аналогично /approvals/pp/pending
+
+5.2. Согласовать запрос (Экономист)
+text
+POST /approvals/economy/{request_id}/action
+Headers:
+
+text
+Authorization: Bearer <token>
+Действия:
+
+1. Подтвердить (нормативный):
+
+json
+{
+    "action": "approve",
+    "comment": "Экономика приемлема"
+}
+1. Подтвердить (разовый):
+
+json
+{
+    "action": "approve",
+    "comment": "Доставка экономически обоснована"
+}
+2. Редактировать/отправить на доработку:
+
+json
+{
+    "action": "edit",
+    "items": [
+        {
+            "product_code": 10001,
+            "warehouse_code": 2001,
+            "quantity_approved": 600
+        }
+    ],
+    "comment": "Снижаем до 600 шт. Хранение дороже срочной доставки"
+}
+3. Отказать:
+
+json
+{
+    "action": "reject",
+    "comment": "Хранение экономически нецелесообразно"
+}
+Response (нормативный, утвержден):
+
+json
+{
+    "status": "success",
+    "data": {
+        "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "status": "active",
+        "economy_approved_at": "2026-08-18T10:00:00Z",
+        "economy_approved_by": {
+            "id": "33333333-3333-3333-3333-333333333333",
+            "full_name": "Сидоров Сидор"
+        },
+        "economy_action": "approve",
+        "comment_economy": "Экономика приемлема"
+    }
+}
+Response (разовый, утвержден):
+
+json
+{
+    "status": "success",
+    "data": {
+        "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "status": "approved",
+        "economy_approved_at": "2026-08-18T10:00:00Z",
+        "economy_approved_by": {
+            "id": "33333333-3333-3333-3333-333333333333",
+            "full_name": "Сидоров Сидор"
+        }
+    }
+}
+6. ЛОГИСТИКА
+6.1. Дашборд логиста — нормативы
+text
+GET /logistics/normative/dashboard
+Headers:
+
+text
+Authorization: Bearer <token>
+Query параметры:
+
+Параметр	Тип	Описание
+warehouse_code	integer	Фильтр по складу
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": [
+        {
+            "warehouse_code": 2001,
+            "warehouse_name": "Склад Ростов",
+            "deficit_items": [
+                {
+                    "product_code": 10001,
+                    "product_name": "Подшипник 6204ZZ",
+                    "category": "A",
+                    "normative_quantity": 1000,
+                    "fact_quantity": 600,
+                    "unit": "шт",
+                    "deficit": 400,
+                    "client_name": "ООО 'Ромашка'",
+                    "expiry_date": "2026-12-31",
+                    "status": "warning"
+                }
+            ],
+            "total_deficit": 400,
+            "deficit_count": 1
+        }
+    ],
+    "summary": {
+        "total_deficit": 400,
+        "deficit_warehouses": 1,
+        "deficit_products": 1
+    }
+}
+6.2. Сформировать заказы на пополнение
+text
+POST /logistics/normative/{warehouse_code}/generate-orders
+Headers:
+
+text
+Authorization: Bearer <token>
+Request:
+
+json
+{
+    "product_codes": [10001, 10002]  // Опционально, если не указаны — все с дефицитом
+}
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": {
+        "orders": [
+            {
+                "plant_code": 1001,
+                "plant_name": "Завод Московский",
+                "warehouse_code": 2001,
+                "warehouse_name": "Склад Ростов",
+                "items": [
+                    {
+                        "product_code": 10001,
+                        "product_name": "Подшипник 6204ZZ",
+                        "deficit": 400,
+                        "unit": "шт"
+                    }
+                ],
+                "estimated_delivery_days": 5
+            }
+        ],
+        "total_orders": 1,
+        "total_products": 1,
+        "total_quantity": 400
+    }
+}
+6.3. Выгрузить заказы в Excel
+text
+GET /logistics/normative/export
+Headers:
+
+text
+Authorization: Bearer <token>
+Query параметры:
+
+Параметр	Тип	Описание
+warehouse_code	integer	Склад
+product_codes	array	Артикулы (через запятую)
+Response: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+
+6.4. Разовые перемещения — список
+text
+GET /logistics/one-time/list
+Headers:
+
+text
+Authorization: Bearer <token>
+Query параметры:
+
+Параметр	Тип	Описание
+status	string	approved / executed
+client_name	string	Клиент (частичное совпадение)
+page	integer	Страница
+limit	integer	Записей на страницу
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": [
+        {
+            "id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+            "client_name": "ООО 'Ромашка'",
+            "status": "approved",
+            "items": [
+                {
+                    "product_code": 10001,
+                    "product_name": "Подшипник 6204ZZ",
+                    "warehouse_code": 2001,
+                    "warehouse_name": "Склад Ростов",
+                    "quantity": 200,
+                    "unit": "шт"
+                }
+            ],
+            "created_at": "2026-08-18T09:00:00Z"
+        }
+    ],
+    "meta": {
+        "page": 1,
+        "limit": 50,
+        "total": 3
+    }
+}
+6.5. Отметить разовое перемещение как исполненное
+text
+POST /logistics/one-time/{request_id}/execute
+Headers:
+
+text
+Authorization: Bearer <token>
+Request:
+
+json
+{
+    "order_number": "РН-2026-08-18-001",
+    "comment": "Отгрузка произведена 18.08.2026"
+}
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": {
+        "id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+        "status": "executed",
+        "executed_at": "2026-08-18T11:00:00Z",
+        "order_number": "РН-2026-08-18-001",
+        "executed_comment": "Отгрузка произведена 18.08.2026"
+    }
+}
+7. НОРМАТИВЫ
+7.1. Получить текущие нормативы
+text
+GET /normatives
+Headers:
+
+text
+Authorization: Bearer <token>
+Query параметры:
+
+Параметр	Тип	Описание
+warehouse_code	integer	Склад
+product_code	integer	Артикул
+client_name	string	Клиент (частичное совпадение)
+category	string	A/B/C
+page	integer	Страница
+limit	integer	Записей на страницу
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": [
+        {
+            "id": "dddddddd-dddd-dddd-dddd-dddddddddddd",
+            "product_code": 10001,
+            "product_name": "Подшипник 6204ZZ",
+            "category": "A",
+            "warehouse_code": 2001,
+            "warehouse_name": "Склад Ростов",
+            "quantity": 1000,
+            "unit": "шт",
+            "client_name": "ООО 'Ромашка'",
+            "expiry_date": "2026-12-31",
+            "created_at": "2026-08-18T10:00:00Z"
+        }
+    ],
+    "meta": {
+        "page": 1,
+        "limit": 50,
+        "total": 10
+    }
+}
+7.2. Получить нормативы на дату
+text
+GET /normatives/on-date
+Headers:
+
+text
+Authorization: Bearer <token>
+Query параметры:
+
+Параметр	Тип	Обязательный	Описание
+date	date	✅	Дата среза
+warehouse_code	integer	❌	Склад
+product_code	integer	❌	Артикул
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": [
+        {
+            "product_code": 10001,
+            "product_name": "Подшипник 6204ZZ",
+            "warehouse_code": 2001,
+            "warehouse_name": "Склад Ростов",
+            "total_quantity": 1000,
+            "unit": "шт",
+            "details": [
+                {
+                    "client_name": "ООО 'Ромашка'",
+                    "quantity": 1000,
+                    "expiry_date": "2026-12-31"
+                }
+            ]
+        }
+    ]
+}
+7.3. Расчет норматива (формула)
+text
+GET /normatives/calculate
+Headers:
+
+text
+Authorization: Bearer <token>
+Query параметры:
+
+Параметр	Тип	Обязательный	Описание
+product_code	integer	✅	Артикул
+warehouse_code	integer	✅	Склад
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": {
+        "product_code": 10001,
+        "product_name": "Подшипник 6204ZZ",
+        "category": "A",
+        "warehouse_code": 2001,
+        "warehouse_name": "Склад Ростов",
+        "monthly_consumption": 1000,
+        "distance_factor": 1,
+        "category_factor": 1,
+        "calculated_normative": 1000,
+        "unit": "шт"
+    }
+}
+7.4. Получить цепочку родственных артикулов
+text
+GET /products/{product_code}/related
+Headers:
+
+text
+Authorization: Bearer <token>
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": {
+        "product_code": 10001,
+        "product_name": "Подшипник 6204ZZ",
+        "related_products": [
+            {
+                "code": 10101,
+                "name": "Подшипник 6204ZZ (новая этикетка)",
+                "relation": "child",
+                "is_active": true
+            },
+            {
+                "code": 99001,
+                "name": "Подшипник 6204ZZ (старая этикетка)",
+                "relation": "parent",
+                "is_active": false
+            }
+        ]
+    }
+}
+8. СПРАВОЧНИКИ
+8.1. Получить список продуктов
+text
+GET /references/products
+Headers:
+
+text
+Authorization: Bearer <token>
+Query параметры:
+
+Параметр	Тип	Описание
+search	string	Поиск по коду или названию
+category	string	A/B/C
+is_active	boolean	Только активные
+page	integer	Страница
+limit	integer	Записей на страницу
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": [
+        {
+            "code": 10001,
+            "name": "Подшипник 6204ZZ",
+            "category": "A",
+            "plant_id": 1001,
+            "plant_name": "Завод Московский",
+            "weight_kg": 0.250,
+            "monthly_consumption": 1000,
+            "is_active": true
+        }
+    ],
+    "meta": {
+        "page": 1,
+        "limit": 50,
+        "total": 500
+    }
+}
+8.2. Получить список объектов (склады/заводы)
+text
+GET /references/objects
+Headers:
+
+text
+Authorization: Bearer <token>
+Query параметры:
+
+Параметр	Тип	Описание
+type	string	plant / warehouse
+city	string	Город
+is_active	boolean	Только активные
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": [
+        {
+            "code": 1001,
+            "name": "Завод Московский",
+            "city": "Москва",
+            "type": "plant",
+            "is_active": true
+        },
+        {
+            "code": 2001,
+            "name": "Склад Ростов",
+            "city": "Ростов-на-Дону",
+            "type": "warehouse",
+            "is_active": true
+        }
+    ]
+}
+8.3. Получить список пользователей
+text
+GET /references/users
+Headers:
+
+text
+Authorization: Bearer <token>
+Права: Только для администраторов (в MVP — для всех с ролью выше guest)
+
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": [
+        {
+            "id": "11111111-1111-1111-1111-111111111111",
+            "username": "ivanov",
+            "email": "ivanov@company.ru",
+            "full_name": "Иванов Иван",
+            "role": "commercial",
+            "department": "Отдел продаж",
+            "is_active": true
+        }
+    ]
+}
+9. УПРАВЛЕНИЕ ОСТАТКАМИ
+9.1. Загрузить остатки (CSV)
+text
+POST /inventory/upload
+Headers:
+
+text
+Authorization: Bearer <token>
+Права: Только логисты (и экономисты в будущем)
+
+Content-Type: multipart/form-data
+
+Form-data:
+
+Поле	Тип	Описание
+file	file	CSV-файл с остатками
+Формат CSV:
+
+csv
+warehouse_code,product_code,quantity,unit
+2001,10001,600,шт
+2002,10002,200,шт
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": {
+        "uploaded": 2,
+        "errors": 0,
+        "message": "Остатки успешно загружены"
+    }
+}
+9.2. Получить остаток по складу
+text
+GET /inventory/balances
+Headers:
+
+text
+Authorization: Bearer <token>
+Query параметры:
+
+Параметр	Тип	Обязательный	Описание
+warehouse_code	integer	✅	Склад
+product_code	integer	❌	Артикул
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": {
+        "warehouse_code": 2001,
+        "warehouse_name": "Склад Ростов",
+        "items": [
+            {
+                "product_code": 10001,
+                "product_name": "Подшипник 6204ZZ",
+                "quantity": 600,
+                "unit": "шт",
+                "last_sync_at": "2026-08-18T08:00:00Z"
+            }
+        ]
+    }
+}
+10. ИНТЕГРАЦИЯ С ТАРИФАМИ (ЗАДЕЛ)
+10.1. Получить тариф доставки
+text
+GET /tariffs/delivery
+Headers:
+
+text
+Authorization: Bearer <token>
+Права: Экономисты, логисты
+
+Query параметры:
+
+Параметр	Тип	Обязательный	Описание
+plant_code	integer	✅	Завод
+warehouse_code	integer	✅	Склад
+product_code	integer	✅	Артикул
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": {
+        "plant_code": 1001,
+        "plant_name": "Завод Московский",
+        "warehouse_code": 2001,
+        "warehouse_name": "Склад Ростов",
+        "product_code": 10001,
+        "product_name": "Подшипник 6204ZZ",
+        "delivery_cost": 12.50,           // за единицу
+        "delivery_cost_currency": "RUB",
+        "storage_cost": 0.98,              // за единицу в месяц
+        "storage_cost_currency": "RUB"
+    }
+}
+11. ИСТОРИЯ И АУДИТ
+11.1. Получить историю изменений запроса
+text
+GET /requests/{request_id}/history
+Headers:
+
+text
+Authorization: Bearer <token>
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": [
+        {
+            "item_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            "field_name": "quantity_approved",
+            "old_value": 1000,
+            "new_value": 800,
+            "changed_by": {
+                "id": "22222222-2222-2222-2222-222222222222",
+                "full_name": "Петров Петр"
+            },
+            "changed_at": "2026-08-18T09:30:00Z",
+            "comment": "Снижаем объем на 20%"
+        }
+    ]
+}
+12. ЗАДЕЛ ПОД АГЕНТА ЛОГИСТА
+12.1. Получить события (для агента)
+text
+GET /agent/events
+Headers:
+
+text
+Authorization: Bearer <token>
+Query параметры:
+
+Параметр	Тип	Описание
+processed	boolean	Фильтр по статусу обработки
+event_type	string	Тип события
+limit	integer	Записей на страницу
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": [
+        {
+            "id": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+            "event_type": "deficit_detected",
+            "request_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "payload": {
+                "warehouse_code": 2001,
+                "product_code": 10001,
+                "deficit": 400,
+                "normative_quantity": 1000,
+                "fact_quantity": 600
+            },
+            "processed": false,
+            "created_at": "2026-08-18T11:00:00Z"
+        }
+    ]
+}
+12.2. Отметить событие как обработанное
+text
+POST /agent/events/{event_id}/process
+Headers:
+
+text
+Authorization: Bearer <token>
+Response (200):
+
+json
+{
+    "status": "success",
+    "message": "Событие обработано"
+}
+13. СВОДКА ЭНДПОИНТОВ
+13.1. Группировка по функционалу
+Группа	Эндпоинты	Количество
+Аутентификация	/auth/*	5
+Запросы	/requests/*	6
+Согласование (ПП)	/approvals/pp/*	2
+Согласование (экономист)	/approvals/economy/*	2
+Логистика	/logistics/*	5
+Нормативы	/normatives/*	4
+Справочники	/references/*	3
+Остатки	/inventory/*	2
+Тарифы (задел)	/tariffs/*	1
+Агент (задел)	/agent/*	2
+ИТОГО		32
+13.2. Ролевой доступ
+Роль	Доступные эндпоинты
+guest	Только чтение справочников и нормативов
+commercial	Создание запросов (нормативные + разовые), просмотр своих запросов
+pp	Согласование (ПП), просмотр всех запросов
+economist	Согласование (экономист), просмотр всех запросов, расчет тарифов
+logistics	Дашборд, формирование заказов, исполнение разовых, выгрузка Excel, загрузка остатков
+14. ПРИМЕР ПОЛНОГО FLOW
+14.1. Нормативный запас — полный цикл
+text
+1. Коммерция: POST /requests → создает черновик (draft)
+2. Коммерция: POST /requests/{id}/submit → отправляет на ПП
+3. ПП: GET /approvals/pp/pending → видит запрос
+4. ПП: POST /approvals/pp/{id}/action (approve) → утверждает
+5. Экономист: GET /approvals/economy/pending → видит запрос
+6. Экономист: POST /approvals/economy/{id}/action (approve) → утверждает
+7. Автоматически: создается запись в normatives (триггер)
+8. Логист: GET /logistics/normative/dashboard → видит дефицит
+9. Логист: POST /logistics/normative/{warehouse_code}/generate-orders → формирует заказы
+10. Логист: GET /logistics/normative/export → выгружает Excel
+14.2. Разовое перемещение — полный цикл
+text
+1. Коммерция/Логист: POST /requests → создает разовый запрос (draft)
+2. Коммерция/Логист: POST /requests/{id}/submit → отправляет на ПП
+3. ПП: GET /approvals/pp/pending → видит запрос
+4. ПП: POST /approvals/pp/{id}/action (approve) → утверждает
+5. Экономист: GET /approvals/economy/pending → видит запрос
+6. Экономист: POST /approvals/economy/{id}/action (approve) → утверждает → статус approved
+7. Логист: GET /logistics/one-time/list → видит запрос
+8. Логист: POST /logistics/one-time/{id}/execute → отмечает исполненным
+Версия: 1.0
+Дата: 18.08.2026
+Статус: На согласовании

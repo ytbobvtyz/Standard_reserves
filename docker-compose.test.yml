@@ -1,0 +1,32 @@
+services:
+  postgres-test:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: standart_reserve_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d standart_reserve_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - standart-reserve-test
+
+  backend-test:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres-test:5432/standart_reserve_test
+      SECRET_KEY: test-secret-key
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+    command: pytest -v
+    networks:
+      - standart-reserve-test
+
+networks:
+  standart-reserve-test:
+    driver: bridge
