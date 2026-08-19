@@ -4,19 +4,20 @@ COMPOSE := $(shell docker compose version >/dev/null 2>&1 && echo "docker compos
 COMPOSE_DEV := $(COMPOSE) -f docker-compose.dev.yml
 COMPOSE_TEST := $(COMPOSE) -f docker-compose.test.yml
 
-.PHONY: help env up dev down logs test lint seed clean build
+.PHONY: help env up dev down logs test lint seed migrate clean build
 
 help:
 	@echo "Available commands:"
-	@echo "  make dev     Start development stack (hot-reload)"
-	@echo "  make up      Start production stack"
-	@echo "  make down    Stop all containers"
-	@echo "  make logs    Follow development logs"
-	@echo "  make test    Run backend and frontend tests"
-	@echo "  make lint    Run backend and frontend linters"
-	@echo "  make seed    Seed test data (Stage 1+)"
-	@echo "  make clean   Stop containers and remove volumes"
-	@echo "  make build   Build production images"
+	@echo "  make dev      Start development stack (hot-reload)"
+	@echo "  make up       Start production stack"
+	@echo "  make down     Stop all containers"
+	@echo "  make logs     Follow development logs"
+	@echo "  make test     Run backend and frontend tests"
+	@echo "  make lint     Run backend and frontend linters"
+	@echo "  make migrate  Apply Alembic migrations"
+	@echo "  make seed     Seed test data"
+	@echo "  make clean    Stop containers and remove volumes"
+	@echo "  make build    Build production images"
 
 env:
 	@test -f .env || cp .env.example .env
@@ -42,6 +43,9 @@ lint:
 	$(COMPOSE_DEV) run --rm backend ruff check .
 	$(COMPOSE_DEV) run --rm backend black --check .
 	$(COMPOSE_DEV) run --rm frontend npm run lint
+
+migrate:
+	$(COMPOSE_DEV) run --rm backend alembic upgrade head
 
 seed:
 	$(COMPOSE_DEV) run --rm backend python scripts/seed_data.py

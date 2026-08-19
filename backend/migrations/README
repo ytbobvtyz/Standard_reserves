@@ -1,0 +1,5 @@
+Alembic migrations for Standart Reserve.
+
+1. 0001_create_tables — all tables and constraints
+2. 0002_create_indexes — indexes from DATA_MODEL.md
+3. 0003_functions_views_triggers — SQL functions, views, and triggers
