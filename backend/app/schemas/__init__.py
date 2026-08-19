@@ -1,5 +1,10 @@
 """Pydantic schemas."""
 
+from app.schemas.approval import (
+    ApprovalActionRequest,
+    ApprovalActionResult,
+    ApprovalPendingRequest,
+)
 from app.schemas.auth import (
     AccessTokenData,
     LoginRequest,
@@ -25,6 +30,9 @@ from app.schemas.user import ChangePasswordRequest, UserBrief, UserProfile
 
 __all__ = [
     "AccessTokenData",
+    "ApprovalActionRequest",
+    "ApprovalActionResult",
+    "ApprovalPendingRequest",
     "ChangePasswordRequest",
     "LoginRequest",
     "MessageResponse",

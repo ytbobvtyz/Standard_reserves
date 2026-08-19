@@ -15,10 +15,12 @@ from app.main import app
 from app.models import (
     Base,
     Event,
+    Normative,
     Object,
     Product,
     Request,
     RequestItem,
+    RequestItemHistory,
     Session,
     User,
 )
@@ -88,6 +90,28 @@ async def _create_user(
     return auth_user
 
 
+async def _purge_requests(session, request_ids: list[uuid.UUID]) -> None:
+    if not request_ids:
+        return
+    item_ids = (
+        await session.scalars(
+            select(RequestItem.id).where(RequestItem.request_id.in_(request_ids))
+        )
+    ).all()
+    if item_ids:
+        await session.execute(
+            delete(RequestItemHistory).where(
+                RequestItemHistory.request_item_id.in_(item_ids)
+            )
+        )
+    await session.execute(delete(Normative).where(Normative.request_id.in_(request_ids)))
+    await session.execute(delete(Event).where(Event.request_id.in_(request_ids)))
+    await session.execute(
+        delete(RequestItem).where(RequestItem.request_id.in_(request_ids))
+    )
+    await session.execute(delete(Request).where(Request.id.in_(request_ids)))
+
+
 async def _delete_user(user_id: uuid.UUID) -> None:
     async with AsyncSessionLocal() as session:
         request_ids = (
@@ -99,14 +123,10 @@ async def _delete_user(user_id: uuid.UUID) -> None:
                 )
             )
         ).all()
-        if request_ids:
-            await session.execute(
-                delete(Event).where(Event.request_id.in_(request_ids))
-            )
-            await session.execute(
-                delete(RequestItem).where(RequestItem.request_id.in_(request_ids))
-            )
-            await session.execute(delete(Request).where(Request.id.in_(request_ids)))
+        await session.execute(
+            delete(RequestItemHistory).where(RequestItemHistory.changed_by == user_id)
+        )
+        await _purge_requests(session, list(request_ids))
         await session.execute(delete(Session).where(Session.user_id == user_id))
         await session.execute(delete(User).where(User.id == user_id))
         await session.commit()
@@ -129,6 +149,13 @@ async def inactive_user(db_ready: None) -> AsyncGenerator[AuthUser, None]:
 @pytest.fixture
 async def pp_user(db_ready: None) -> AsyncGenerator[AuthUser, None]:
     user = await _create_user(role="pp")
+    yield user
+    await _delete_user(user.id)
+
+
+@pytest.fixture
+async def economist_user(db_ready: None) -> AsyncGenerator[AuthUser, None]:
+    user = await _create_user(role="economist")
     yield user
     await _delete_user(user.id)
 
@@ -246,9 +273,5 @@ def auth_header(token: str) -> dict[str, str]:
 
 async def delete_request(request_id: uuid.UUID) -> None:
     async with AsyncSessionLocal() as session:
-        await session.execute(delete(Event).where(Event.request_id == request_id))
-        await session.execute(
-            delete(RequestItem).where(RequestItem.request_id == request_id)
-        )
-        await session.execute(delete(Request).where(Request.id == request_id))
+        await _purge_requests(session, [request_id])
         await session.commit()

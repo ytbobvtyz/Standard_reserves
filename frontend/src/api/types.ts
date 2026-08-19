@@ -156,6 +156,56 @@ export interface RequestStatusData {
   updated_at: string
 }
 
+export type ApprovalAction = 'approve' | 'edit' | 'reject'
+
+export interface ApprovalPendingItem {
+  product_code: number
+  product_name: string
+  warehouse_code: number
+  warehouse_name: string
+  quantity_requested: number
+  quantity_approved: number | null
+  unit: Unit
+}
+
+export interface ApprovalPendingRequest {
+  id: string
+  request_type: RequestType
+  client_name: string
+  initiator: User
+  items: ApprovalPendingItem[]
+  created_at: string
+}
+
+export interface ApprovalActionPayload {
+  action: ApprovalAction
+  items?: Array<{
+    product_code: number
+    warehouse_code: number
+    quantity_approved: number
+  }>
+  comment?: string
+}
+
+export interface ApprovalActionResult {
+  id: string
+  status: RequestStatus
+  pp_approved_at?: string | null
+  pp_approved_by?: { id: string; full_name: string } | null
+  pp_action?: ApprovalAction | null
+  comment_pp?: string | null
+  economy_approved_at?: string | null
+  economy_approved_by?: { id: string; full_name: string } | null
+  economy_action?: ApprovalAction | null
+  comment_economy?: string | null
+}
+
+export interface ApprovalListParams {
+  type?: RequestType
+  page?: number
+  limit?: number
+}
+
 export interface RequestListParams {
   type?: RequestType
   status?: RequestStatus

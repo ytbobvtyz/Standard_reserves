@@ -30,8 +30,12 @@ export function AppRouter() {
               <Route path="/requests/create" element={<CreateRequestPage />} />
             </Route>
             <Route path="/requests/:id" element={<RequestDetailPage />} />
-            <Route path="/approvals/pp" element={<ApprovalsPage />} />
-            <Route path="/approvals/economy" element={<ApprovalsPage />} />
+            <Route element={<ProtectedRoute roles={['pp']} />}>
+              <Route path="/approvals/pp" element={<ApprovalsPage />} />
+            </Route>
+            <Route element={<ProtectedRoute roles={['economist']} />}>
+              <Route path="/approvals/economy" element={<ApprovalsPage />} />
+            </Route>
             <Route path="/logistics/dashboard" element={<LogisticsDashboardPage />} />
             <Route path="/logistics/one-time" element={<OneTimeRequestsPage />} />
             <Route path="/normatives" element={<NormativesPage />} />
