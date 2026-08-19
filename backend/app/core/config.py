@@ -20,7 +20,7 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5173",
         "http://127.0.0.1",
     ]
-    access_token_expire_minutes: int = 1440
+    access_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 7
 
     @property

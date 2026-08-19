@@ -94,8 +94,8 @@ export function AppLayout() {
             <Typography.Text>{user?.full_name ?? 'Гость'}</Typography.Text>
             <Button
               icon={<LogoutOutlined />}
-              onClick={() => {
-                logout()
+              onClick={async () => {
+                await logout()
                 navigate('/login')
               }}
             >

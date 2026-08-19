@@ -20,6 +20,8 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres-test:5432/standart_reserve_test
       SECRET_KEY: test-secret-key
+      ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+      REFRESH_TOKEN_EXPIRE_DAYS: "7"
     depends_on:
       postgres-test:
         condition: service_healthy

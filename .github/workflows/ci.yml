@@ -47,11 +47,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build backend image
-        run: docker build -t backend-test .
-        working-directory: backend
       - name: Run backend tests
-        run: docker run --rm backend-test pytest
+        run: docker compose -f docker-compose.test.yml run --rm --build backend-test
+      - name: Stop test stack
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
 
   test-frontend:
     runs-on: ubuntu-latest

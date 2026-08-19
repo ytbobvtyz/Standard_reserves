@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import settings
+from app.core.security import hash_password
 from app.models import Object, Product, User
 
 PLANTS = [
@@ -204,8 +205,7 @@ USERS = [
     },
 ]
 
-# Placeholder until Stage 2 (bcrypt). Login will be wired then.
-SEED_PASSWORD_HASH = "!seed-placeholder-hash"
+SEED_PASSWORD = "password"
 
 
 async def _upsert_object(session: AsyncSession, payload: dict) -> None:
@@ -224,9 +224,19 @@ async def _upsert_product(session: AsyncSession, payload: dict) -> None:
 
 
 async def _upsert_user(session: AsyncSession, payload: dict) -> None:
+    password_hash = hash_password(SEED_PASSWORD)
     existing = await session.get(User, payload["id"])
     if existing is None:
-        session.add(User(**payload, password_hash=SEED_PASSWORD_HASH, is_active=True))
+        session.add(User(**payload, password_hash=password_hash, is_active=True))
+        return
+    existing.password_hash = password_hash
+    existing.username = payload["username"]
+    existing.email = payload["email"]
+    existing.full_name = payload["full_name"]
+    existing.role = payload["role"]
+    existing.department = payload["department"]
+    existing.is_active = True
+    existing.deleted_at = None
 
 
 async def seed() -> None:

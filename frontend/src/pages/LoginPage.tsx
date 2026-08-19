@@ -1,20 +1,32 @@
-import { Form, Input, Button, Card, Typography, message } from 'antd'
+import { Form, Input, Button, Card, Typography, Checkbox, message } from 'antd'
 import { useNavigate, Navigate } from 'react-router-dom'
+import { getApiErrorMessage } from '../api/client'
 import { useAuthStore } from '../stores/auth'
+
+interface LoginFormValues {
+  username: string
+  password: string
+  remember?: boolean
+}
 
 export function LoginPage() {
   const navigate = useNavigate()
   const login = useAuthStore((state) => state.login)
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
+  const isLoading = useAuthStore((state) => state.isLoading)
 
   if (isAuthenticated) {
     return <Navigate to="/dashboard" replace />
   }
 
-  const onFinish = async (values: { username: string; password: string }) => {
-    await login(values.username, values.password)
-    message.success('Вход выполнен')
-    navigate('/dashboard')
+  const onFinish = async (values: LoginFormValues) => {
+    try {
+      await login(values.username, values.password)
+      message.success('Вход выполнен')
+      navigate('/dashboard')
+    } catch (error) {
+      message.error(getApiErrorMessage(error, 'Неверный логин или пароль'))
+    }
   }
 
   return (
@@ -31,23 +43,26 @@ export function LoginPage() {
         <Typography.Title level={3} style={{ textAlign: 'center' }}>
           Standart Reserve
         </Typography.Title>
-        <Form layout="vertical" onFinish={onFinish}>
+        <Form layout="vertical" onFinish={onFinish} initialValues={{ remember: true }}>
           <Form.Item
             label="Логин"
             name="username"
             rules={[{ required: true, message: 'Введите логин' }]}
           >
-            <Input />
+            <Input autoComplete="username" />
           </Form.Item>
           <Form.Item
             label="Пароль"
             name="password"
             rules={[{ required: true, message: 'Введите пароль' }]}
           >
-            <Input.Password />
+            <Input.Password autoComplete="current-password" />
+          </Form.Item>
+          <Form.Item name="remember" valuePropName="checked">
+            <Checkbox>Запомнить меня</Checkbox>
           </Form.Item>
           <Form.Item>
-            <Button type="primary" htmlType="submit" block>
+            <Button type="primary" htmlType="submit" block loading={isLoading}>
               Войти
             </Button>
           </Form.Item>
