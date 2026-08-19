@@ -145,10 +145,49 @@ describe('ApprovalsPage', () => {
       expect(ppAction).toHaveBeenCalledWith(pendingRequest.id, {
         action: 'approve',
         comment: undefined,
+        items: [
+          {
+            product_code: 10001,
+            warehouse_code: 2001,
+            quantity_approved: 1000,
+          },
+        ],
       })
     })
     await waitFor(() => {
       expect(getPPPending).toHaveBeenCalledTimes(2)
     })
+  })
+
+  it('shows previously approved quantity in the modal', async () => {
+    getPPPending.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: [
+          {
+            ...pendingRequest,
+            items: [
+              {
+                ...pendingRequest.items[0],
+                quantity_approved: 800,
+              },
+            ],
+          },
+        ],
+        meta: { page: 1, limit: 50, total: 1 },
+      },
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/approvals/pp']}>
+        <ApprovalsPage />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("ООО 'Ромашка'")).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть' }))
+    expect(screen.getByDisplayValue('800')).toBeTruthy()
   })
 })

@@ -92,7 +92,14 @@ async def test_pp_approve_normative(
         "/api/v1/approvals/pp/pending",
         headers=auth_header(pp_token),
     )
+    assert leftover.status_code == 200
     assert request_id not in {item["id"] for item in leftover.json()["data"]}
+
+    detail = await client.get(
+        f"/api/v1/requests/{request_id}",
+        headers=auth_header(pp_token),
+    )
+    assert detail.json()["data"]["items"][0]["quantity_approved"] == 1000
     await delete_request(request_id)
 
 
@@ -458,4 +465,100 @@ async def test_pp_edit_rejects_non_positive_quantity(
         },
     )
     assert response.status_code == 422
+    await delete_request(request_id)
+
+
+async def test_pp_edit_visible_to_economist(
+    client: AsyncClient,
+    test_user: AuthUser,
+    pp_user: AuthUser,
+    economist_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    commercial_token = await login_token(client, test_user)
+    pp_token = await login_token(client, pp_user)
+    economist_token = await login_token(client, economist_user)
+    request_id = await _create_submitted(client, commercial_token)
+
+    edited = await client.post(
+        f"/api/v1/approvals/pp/{request_id}/action",
+        headers=auth_header(pp_token),
+        json={
+            "action": "edit",
+            "items": [
+                {
+                    "product_code": catalog["product_code"],
+                    "warehouse_code": catalog["warehouse_code"],
+                    "quantity_approved": 800,
+                }
+            ],
+            "comment": "Снижаем объем",
+        },
+    )
+    assert edited.status_code == 200, edited.text
+
+    pending = await client.get(
+        "/api/v1/approvals/economy/pending",
+        headers=auth_header(economist_token),
+    )
+    assert pending.status_code == 200, pending.text
+    matched = next(item for item in pending.json()["data"] if item["id"] == request_id)
+    assert matched["items"][0]["quantity_requested"] == 1000
+    assert matched["items"][0]["quantity_approved"] == 800
+    await delete_request(request_id)
+
+
+async def test_final_approve_exposes_quantity_approved(
+    client: AsyncClient,
+    test_user: AuthUser,
+    pp_user: AuthUser,
+    economist_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    commercial_token = await login_token(client, test_user)
+    pp_token = await login_token(client, pp_user)
+    economist_token = await login_token(client, economist_user)
+    request_id = await _create_submitted(client, commercial_token)
+
+    edited = await client.post(
+        f"/api/v1/approvals/pp/{request_id}/action",
+        headers=auth_header(pp_token),
+        json={
+            "action": "edit",
+            "items": [
+                {
+                    "product_code": catalog["product_code"],
+                    "warehouse_code": catalog["warehouse_code"],
+                    "quantity_approved": 800,
+                }
+            ],
+            "comment": "Снижаем объем",
+        },
+    )
+    assert edited.status_code == 200, edited.text
+
+    approved = await client.post(
+        f"/api/v1/approvals/economy/{request_id}/action",
+        headers=auth_header(economist_token),
+        json={"action": "approve", "comment": "Экономика приемлема"},
+    )
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["data"]["status"] == "active"
+
+    detail = await client.get(
+        f"/api/v1/requests/{request_id}",
+        headers=auth_header(economist_token),
+    )
+    assert detail.status_code == 200
+    item = detail.json()["data"]["items"][0]
+    assert item["quantity_requested"] == 1000
+    assert item["quantity_approved"] == 800
+
+    async with AsyncSessionLocal() as session:
+        normative = (
+            await session.scalars(
+                select(Normative).where(Normative.request_id == request_id)
+            )
+        ).one()
+        assert float(normative.quantity) == 800
     await delete_request(request_id)

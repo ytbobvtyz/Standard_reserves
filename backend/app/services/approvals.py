@@ -159,6 +159,18 @@ async def _apply_edits(
         )
 
 
+def _fill_missing_approved_quantities(request: Request) -> None:
+    for item in request.items:
+        if item.quantity_approved is None:
+            item.quantity_approved = item.quantity_requested
+
+
+def _normative_quantity(item: RequestItem) -> Decimal:
+    if item.quantity_approved is not None:
+        return item.quantity_approved
+    return item.quantity_requested
+
+
 async def _ensure_normatives(db: AsyncSession, request: Request) -> None:
     if request.request_type != "normative":
         return
@@ -184,7 +196,7 @@ async def _ensure_normatives(db: AsyncSession, request: Request) -> None:
                 request_id=request.id,
                 product_code=item.product_code,
                 warehouse_code=item.warehouse_code,
-                quantity=item.quantity_approved or item.quantity_requested,
+                quantity=_normative_quantity(item),
                 unit=item.unit,
                 client_name=request.client_name,
                 expiry_date=request.expiry_date,
@@ -234,6 +246,12 @@ async def apply_action(
     try:
         if body.action == "edit":
             await _apply_edits(db, request, body, user, comment)
+            if stage == "pp":
+                _fill_missing_approved_quantities(request)
+        elif body.action == "approve":
+            if body.items:
+                await _apply_edits(db, request, body, user, comment)
+            _fill_missing_approved_quantities(request)
 
         request.status = _next_status(stage, body.action, request)
         if stage == "pp":

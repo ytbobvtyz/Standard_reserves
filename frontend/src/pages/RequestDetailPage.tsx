@@ -160,8 +160,9 @@ export function RequestDetailPage() {
             {
               title: 'Утверждено',
               dataIndex: 'quantity_approved',
-              width: 130,
-              render: (value: number | null) => value ?? '—',
+              width: 160,
+              render: (value: number | null) =>
+                value == null ? '—' : `Утверждено: ${value}`,
             },
             { title: 'Ед.', dataIndex: 'unit', width: 70 },
           ]}

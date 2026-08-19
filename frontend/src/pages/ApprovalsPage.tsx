@@ -100,7 +100,7 @@ export function ApprovalsPage() {
       message.error('Комментарий обязателен при отказе')
       return
     }
-    if (action === 'edit') {
+    if (action === 'edit' || action === 'approve') {
       const invalid = editableItems.some((item) => item.quantity_approved_input <= 0)
       if (invalid) {
         message.error('Утвержденное количество должно быть больше 0')
@@ -110,18 +110,19 @@ export function ApprovalsPage() {
 
     setSubmitting(true)
     try {
+      const itemsPayload = editableItems.map((item) => ({
+        product_code: item.product_code,
+        warehouse_code: item.warehouse_code,
+        quantity_approved: item.quantity_approved_input,
+      }))
       const payload =
-        action === 'edit'
-          ? {
+        action === 'reject'
+          ? { action, comment: comment.trim() || undefined }
+          : {
               action,
               comment: comment.trim() || undefined,
-              items: editableItems.map((item) => ({
-                product_code: item.product_code,
-                warehouse_code: item.warehouse_code,
-                quantity_approved: item.quantity_approved_input,
-              })),
+              items: itemsPayload,
             }
-          : { action, comment: comment.trim() || undefined }
 
       const request = isEconomy ? approvalsApi.economyAction : approvalsApi.ppAction
       const { data } = await request(selected.id, payload)
@@ -292,9 +293,9 @@ export function ApprovalsPage() {
                 { title: 'Склад', dataIndex: 'warehouse_name', width: 140 },
                 { title: 'Запрос', dataIndex: 'quantity_requested', width: 90 },
                 {
-                  title: 'Утв.',
+                  title: 'Утверждено',
                   dataIndex: 'quantity_approved_input',
-                  width: 120,
+                  width: 140,
                   render: (_value, record, index) => (
                     <InputNumber
                       min={0.01}
