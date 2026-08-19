@@ -10,6 +10,8 @@ import { ApprovalsPage } from '../pages/ApprovalsPage'
 import { LogisticsDashboardPage } from '../pages/LogisticsDashboardPage'
 import { OneTimeRequestsPage } from '../pages/OneTimeRequestsPage'
 import { NormativesPage } from '../pages/NormativesPage'
+import { ProductsPage } from '../pages/ProductsPage'
+import { ObjectsPage } from '../pages/ObjectsPage'
 import { ReferencesPage } from '../pages/ReferencesPage'
 
 export function AppRouter() {
@@ -24,15 +26,17 @@ export function AppRouter() {
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/requests/my" element={<MyRequestsPage />} />
-            <Route path="/requests/create" element={<CreateRequestPage />} />
+            <Route element={<ProtectedRoute roles={['commercial', 'logistics']} />}>
+              <Route path="/requests/create" element={<CreateRequestPage />} />
+            </Route>
             <Route path="/requests/:id" element={<RequestDetailPage />} />
             <Route path="/approvals/pp" element={<ApprovalsPage />} />
             <Route path="/approvals/economy" element={<ApprovalsPage />} />
             <Route path="/logistics/dashboard" element={<LogisticsDashboardPage />} />
             <Route path="/logistics/one-time" element={<OneTimeRequestsPage />} />
             <Route path="/normatives" element={<NormativesPage />} />
-            <Route path="/references/products" element={<ReferencesPage />} />
-            <Route path="/references/objects" element={<ReferencesPage />} />
+            <Route path="/references/products" element={<ProductsPage />} />
+            <Route path="/references/objects" element={<ObjectsPage />} />
             <Route path="/references/users" element={<ReferencesPage />} />
           </Route>
         </Route>

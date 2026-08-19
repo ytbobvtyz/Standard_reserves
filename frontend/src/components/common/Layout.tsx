@@ -18,15 +18,19 @@ export function AppLayout() {
   const user = useAuthStore((state) => state.user)
   const logout = useAuthStore((state) => state.logout)
 
-  const selectedKey = location.pathname.startsWith('/requests')
-    ? '/requests/my'
-    : location.pathname.startsWith('/approvals')
-      ? location.pathname
-      : location.pathname.startsWith('/logistics')
+  const selectedKey = location.pathname.startsWith('/requests/create')
+    ? '/requests/create'
+    : location.pathname.startsWith('/requests')
+      ? '/requests/my'
+      : location.pathname.startsWith('/approvals')
         ? location.pathname
-        : location.pathname.startsWith('/references')
+        : location.pathname.startsWith('/logistics')
           ? location.pathname
-          : location.pathname
+          : location.pathname.startsWith('/references')
+            ? location.pathname
+            : location.pathname
+
+  const canCreate = user?.role === 'commercial' || user?.role === 'logistics'
 
   return (
     <AntLayout style={{ minHeight: '100vh' }}>
@@ -48,8 +52,16 @@ export function AppLayout() {
           onClick={({ key }) => navigate(key)}
           items={[
             { key: '/dashboard', icon: <DashboardOutlined />, label: 'Дашборд' },
-            { key: '/requests/my', icon: <FileTextOutlined />, label: 'Мои запросы' },
-            { key: '/requests/create', icon: <FileTextOutlined />, label: 'Создать запрос' },
+            { key: '/requests/my', icon: <FileTextOutlined />, label: 'Запросы' },
+            ...(canCreate
+              ? [
+                  {
+                    key: '/requests/create',
+                    icon: <FileTextOutlined />,
+                    label: 'Создать запрос',
+                  },
+                ]
+              : []),
             { key: '/approvals/pp', icon: <CheckSquareOutlined />, label: 'Согласование ПП' },
             {
               key: '/approvals/economy',
