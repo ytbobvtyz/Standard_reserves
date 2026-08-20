@@ -354,3 +354,83 @@ export interface ExecuteOneTimeData {
   order_number: string
   executed_comment?: string | null
 }
+
+export interface ProductDetail extends ProductListItem {
+  description?: string | null
+  second_plant_id?: number | null
+  third_plant_id?: number | null
+  parent_code?: number | null
+  children_code?: number | null
+}
+
+export interface RelatedProduct {
+  code: number
+  name: string
+  relation: 'parent' | 'child'
+  is_active: boolean
+}
+
+export interface RelatedProductsData {
+  product_code: number
+  product_name: string
+  related_products: RelatedProduct[]
+}
+
+export interface NormativeListParams {
+  warehouse_code?: number
+  product_code?: number
+  client_name?: string
+  category?: 'A' | 'B' | 'C'
+  page?: number
+  limit?: number
+}
+
+export interface NormativeListItem {
+  id: string
+  product_code: number
+  product_name: string
+  category: string
+  warehouse_code: number
+  warehouse_name: string
+  quantity: number
+  unit: Unit
+  client_name: string
+  expiry_date: string
+  created_at: string
+}
+
+export interface NormativeOnDateParams {
+  date: string
+  warehouse_code?: number
+  product_code?: number
+}
+
+export interface NormativeOnDateDetail {
+  client_name: string
+  quantity: number
+  expiry_date: string
+}
+
+export interface NormativeOnDateItem {
+  product_code: number
+  product_name: string
+  warehouse_code: number
+  warehouse_name: string
+  total_quantity: number
+  unit: Unit
+  category?: string
+  details: NormativeOnDateDetail[]
+}
+
+export interface RequestItemHistoryEntry {
+  item_id: string
+  field_name: string
+  old_value: number | null
+  new_value: number | null
+  changed_by: {
+    id: string
+    full_name: string
+  }
+  changed_at: string
+  comment: string | null
+}

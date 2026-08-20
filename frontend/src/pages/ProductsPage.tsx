@@ -1,10 +1,12 @@
 import { Input, Select, Space, Table, Typography } from 'antd'
 import { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { referencesApi } from '../api/references'
 import { getApiErrorMessage } from '../api/client'
 import type { ProductListItem } from '../api/types'
 
 export function ProductsPage() {
+  const navigate = useNavigate()
   const [items, setItems] = useState<ProductListItem[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -71,6 +73,10 @@ export function ProductsPage() {
         rowKey="code"
         loading={loading}
         dataSource={items}
+        onRow={(record) => ({
+          onClick: () => navigate(`/references/products/${record.code}`),
+          style: { cursor: 'pointer' },
+        })}
         pagination={{
           current: page,
           pageSize: limit,

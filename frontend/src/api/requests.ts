@@ -3,6 +3,7 @@ import type {
   ApiSuccess,
   RequestCreatePayload,
   RequestDetail,
+  RequestItemHistoryEntry,
   RequestListItem,
   RequestListParams,
   RequestStatusData,
@@ -25,4 +26,7 @@ export const requestsApi = {
 
   submit: (id: string) =>
     api.post<ApiSuccess<RequestStatusData>>(`/requests/${id}/submit`),
+
+  getHistory: (id: string) =>
+    api.get<ApiSuccess<RequestItemHistoryEntry[]>>(`/requests/${id}/history`),
 }

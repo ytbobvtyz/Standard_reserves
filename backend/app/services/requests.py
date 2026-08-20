@@ -11,9 +11,11 @@ from app.models.object import Object
 from app.models.product import Product
 from app.models.request import Request
 from app.models.request_item import RequestItem
+from app.models.request_item_history import RequestItemHistory
 from app.models.user import User
 from app.schemas.request import (
     ApprovalActor,
+    HistoryChangedBy,
     ProductBrief,
     RequestApprovals,
     RequestCreate,
@@ -23,6 +25,7 @@ from app.schemas.request import (
     RequestItemCreate,
     RequestItemCreated,
     RequestItemDetail,
+    RequestItemHistoryEntry,
     RequestListItem,
     RequestUpdate,
     WarehouseBrief,
@@ -289,6 +292,37 @@ async def get_visible_request(
     if not can_view_request(user, request):
         raise APIError(403, "FORBIDDEN", "Недостаточно прав")
     return request
+
+
+async def get_request_item_history(
+    db: AsyncSession, request_id: UUID, user: User
+) -> list[RequestItemHistoryEntry]:
+    await get_visible_request(db, request_id, user)
+    result = await db.execute(
+        select(RequestItemHistory)
+        .options(selectinload(RequestItemHistory.changed_by_user))
+        .join(RequestItem, RequestItem.id == RequestItemHistory.request_item_id)
+        .where(RequestItem.request_id == request_id)
+        .order_by(RequestItemHistory.changed_at.asc())
+    )
+    entries: list[RequestItemHistoryEntry] = []
+    for row in result.scalars().unique().all():
+        changer = row.changed_by_user
+        entries.append(
+            RequestItemHistoryEntry(
+                item_id=row.request_item_id,
+                field_name=row.field_name,
+                old_value=row.old_value,
+                new_value=row.new_value,
+                changed_by=HistoryChangedBy(
+                    id=changer.id if changer else row.changed_by,
+                    full_name=changer.full_name if changer else "",
+                ),
+                changed_at=row.changed_at,
+                comment=row.comment,
+            )
+        )
+    return entries
 
 
 def ensure_draft_owner(request: Request, user: User) -> None:

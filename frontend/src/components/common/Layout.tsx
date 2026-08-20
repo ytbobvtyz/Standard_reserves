@@ -26,9 +26,13 @@ export function AppLayout() {
         ? location.pathname
         : location.pathname.startsWith('/logistics')
           ? location.pathname
-          : location.pathname.startsWith('/references')
-            ? location.pathname
-            : location.pathname
+          : location.pathname.startsWith('/references/products')
+            ? '/references/products'
+            : location.pathname.startsWith('/references/objects')
+              ? '/references/objects'
+              : location.pathname.startsWith('/references')
+                ? location.pathname
+                : location.pathname
 
   const canCreate = user?.role === 'commercial' || user?.role === 'logistics'
   const isLogistics = user?.role === 'logistics'

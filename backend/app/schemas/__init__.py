@@ -18,16 +18,23 @@ from app.schemas.logistics import (
     GenerateOrdersData,
     GenerateOrdersRequest,
 )
+from app.schemas.normative import (
+    NormativeCalculateData,
+    NormativeListItem,
+    NormativeOnDateItem,
+)
 from app.schemas.reference import (
     ObjectListItem,
     ProductDetail,
     ProductListItem,
+    RelatedProductsData,
     UserReference,
 )
 from app.schemas.request import (
     RequestCreate,
     RequestCreated,
     RequestDetail,
+    RequestItemHistoryEntry,
     RequestListItem,
     RequestStatusData,
     RequestUpdate,
@@ -46,14 +53,19 @@ __all__ = [
     "GenerateOrdersRequest",
     "LoginRequest",
     "MessageResponse",
+    "NormativeCalculateData",
+    "NormativeListItem",
+    "NormativeOnDateItem",
     "ObjectListItem",
     "PaginatedResponse",
     "ProductDetail",
     "ProductListItem",
     "RefreshRequest",
+    "RelatedProductsData",
     "RequestCreate",
     "RequestCreated",
     "RequestDetail",
+    "RequestItemHistoryEntry",
     "RequestListItem",
     "RequestStatusData",
     "RequestUpdate",

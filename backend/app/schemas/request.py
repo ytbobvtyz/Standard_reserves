@@ -112,6 +112,21 @@ class RequestHistoryEntry(BaseModel):
     comment: str | None = None
 
 
+class HistoryChangedBy(BaseModel):
+    id: UUID
+    full_name: str
+
+
+class RequestItemHistoryEntry(BaseModel):
+    item_id: UUID
+    field_name: str
+    old_value: DecimalNumber | None = None
+    new_value: DecimalNumber | None = None
+    changed_by: HistoryChangedBy
+    changed_at: datetime
+    comment: str | None = None
+
+
 class RequestDetail(BaseModel):
     id: UUID
     request_type: str

@@ -220,3 +220,55 @@ async def test_pp_sees_all_requests(
     ids = {item["id"] for item in response.json()["data"]}
     assert created["data"]["id"] in ids
     await delete_request(created["data"]["id"])
+
+
+async def test_request_item_history(
+    client: AsyncClient,
+    test_user: AuthUser,
+    pp_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    commercial_token = await login_token(client, test_user)
+    pp_token = await login_token(client, pp_user)
+    status, body = await _create(client, commercial_token)
+    assert status == 201, body
+    request_id = body["data"]["id"]
+    submit = await client.post(
+        f"/api/v1/requests/{request_id}/submit",
+        headers=auth_header(commercial_token),
+    )
+    assert submit.status_code == 200, submit.text
+    edit = await client.post(
+        f"/api/v1/approvals/pp/{request_id}/action",
+        headers=auth_header(pp_token),
+        json={
+            "action": "edit",
+            "items": [
+                {
+                    "product_code": catalog["product_code"],
+                    "warehouse_code": catalog["warehouse_code"],
+                    "quantity_approved": 800,
+                }
+            ],
+            "comment": "Снижаем объем на 20%",
+        },
+    )
+    assert edit.status_code == 200, edit.text
+
+    response = await client.get(
+        f"/api/v1/requests/{request_id}/history",
+        headers=auth_header(commercial_token),
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data
+    entry = data[0]
+    assert entry["field_name"] == "quantity_approved"
+    assert entry["old_value"] is None
+    assert entry["new_value"] == 800
+    assert entry["changed_by"]["id"] == str(pp_user.id)
+    assert entry["changed_by"]["full_name"] == pp_user.full_name
+    assert entry["comment"] == "Снижаем объем на 20%"
+    assert "item_id" in entry
+    assert "changed_at" in entry
+    await delete_request(request_id)

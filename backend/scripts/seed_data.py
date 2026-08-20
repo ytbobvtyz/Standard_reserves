@@ -19,6 +19,7 @@ from app.models import (
     Product,
     Request,
     RequestItem,
+    RequestItemHistory,
     User,
 )
 
@@ -368,6 +369,34 @@ async def _upsert_logistics_demo(session: AsyncSession) -> None:
         current.unit = "шт"
         current.source = "manual"
 
+    pp_user = await session.get(User, USERS[1]["id"])
+    if pp_user is not None:
+        items = (
+            await session.scalars(
+                select(RequestItem).where(RequestItem.request_id == SEED_REQUEST_ID)
+            )
+        ).all()
+        if items:
+            existing_history = await session.scalar(
+                select(RequestItemHistory.id).where(
+                    RequestItemHistory.request_item_id == items[0].id
+                )
+            )
+            if existing_history is None:
+                session.add(
+                    RequestItemHistory(
+                        request_item_id=items[0].id,
+                        field_name="quantity_approved",
+                        old_value=Decimal("1200"),
+                        new_value=(
+                            items[0].quantity_approved
+                            or items[0].quantity_requested
+                        ),
+                        changed_by=pp_user.id,
+                        comment="Снижаем объем на этапе согласования",
+                    )
+                )
+
 
 async def _upsert_one_time_demo(session: AsyncSession) -> None:
     commercial = await session.get(User, USERS[0]["id"])
@@ -480,6 +509,8 @@ async def seed() -> None:
         print(f"  sample plant: {sample_label}")
         print("  logistics demo: active normatives + available_balances")
         print("  one-time demo: approved request ООО «Тюльпан»")
+        print("  related products: 10001 → 10004")
+        print("  request item history: seeded for demo normative request")
 
     await engine.dispose()
 

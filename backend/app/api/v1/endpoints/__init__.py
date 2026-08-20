@@ -5,6 +5,8 @@ from app.api.v1.endpoints import (
     auth,
     logistics_normative,
     logistics_one_time,
+    normatives,
+    products,
     references,
     requests,
 )
@@ -14,6 +16,8 @@ __all__ = [
     "auth",
     "logistics_normative",
     "logistics_one_time",
+    "normatives",
+    "products",
     "references",
     "requests",
 ]

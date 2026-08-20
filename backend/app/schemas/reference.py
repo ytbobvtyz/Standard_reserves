@@ -26,6 +26,19 @@ class ProductDetail(ProductListItem):
     children_code: int | None = None
 
 
+class RelatedProductItem(BaseModel):
+    code: int
+    name: str
+    relation: str
+    is_active: bool
+
+
+class RelatedProductsData(BaseModel):
+    product_code: int
+    product_name: str
+    related_products: list[RelatedProductItem]
+
+
 class ObjectListItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

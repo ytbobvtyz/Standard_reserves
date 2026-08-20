@@ -5,6 +5,7 @@ import {
   Popconfirm,
   Space,
   Table,
+  Tabs,
   Timeline,
   Typography,
   message,
@@ -13,7 +14,11 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getApiErrorMessage } from '../api/client'
 import { requestsApi } from '../api/requests'
-import type { RequestDetail, RequestHistoryEntry } from '../api/types'
+import type {
+  RequestDetail,
+  RequestHistoryEntry,
+  RequestItemHistoryEntry,
+} from '../api/types'
 import { StatusBadge } from '../components/common/StatusBadge'
 import { useAuthStore } from '../stores/auth'
 
@@ -32,6 +37,11 @@ const HISTORY_LABEL: Record<string, string> = {
   economy_reviewed: 'Рассмотрен экономистом',
 }
 
+const FIELD_LABEL: Record<string, string> = {
+  quantity_requested: 'Запрошенное количество',
+  quantity_approved: 'Утвержденное количество',
+}
+
 function historyTitle(entry: RequestHistoryEntry): string {
   const action = HISTORY_LABEL[entry.action] ?? entry.action
   return entry.user_name ? `${action} (${entry.user_name})` : action
@@ -42,6 +52,7 @@ export function RequestDetailPage() {
   const navigate = useNavigate()
   const user = useAuthStore((state) => state.user)
   const [request, setRequest] = useState<RequestDetail | null>(null)
+  const [itemHistory, setItemHistory] = useState<RequestItemHistoryEntry[]>([])
   const [loading, setLoading] = useState(false)
 
   const load = useCallback(async () => {
@@ -52,6 +63,12 @@ export function RequestDetailPage() {
     try {
       const { data } = await requestsApi.get(id)
       setRequest(data.data)
+      try {
+        const historyResp = await requestsApi.getHistory(id)
+        setItemHistory(historyResp.data.data)
+      } catch {
+        setItemHistory([])
+      }
     } catch (error) {
       message.error(getApiErrorMessage(error, 'Не удалось загрузить запрос'))
     } finally {
@@ -168,22 +185,77 @@ export function RequestDetailPage() {
           ]}
         />
       </Card>
-      <Card title="История">
-        <Timeline
-          items={(request.history ?? []).map((entry) => ({
+      <Tabs
+        items={[
+          {
+            key: 'approval-history',
+            label: 'История согласования',
             children: (
-              <Space direction="vertical" size={0}>
-                <Typography.Text>
-                  {new Date(entry.timestamp).toLocaleString('ru-RU')} — {historyTitle(entry)}
-                </Typography.Text>
-                {entry.comment ? (
-                  <Typography.Text type="secondary">{entry.comment}</Typography.Text>
-                ) : null}
-              </Space>
+              <Timeline
+                items={(request.history ?? []).map((entry) => ({
+                  children: (
+                    <Space direction="vertical" size={0}>
+                      <Typography.Text>
+                        {new Date(entry.timestamp).toLocaleString('ru-RU')} —{' '}
+                        {historyTitle(entry)}
+                      </Typography.Text>
+                      {entry.comment ? (
+                        <Typography.Text type="secondary">{entry.comment}</Typography.Text>
+                      ) : null}
+                    </Space>
+                  ),
+                }))}
+              />
             ),
-          }))}
-        />
-      </Card>
+          },
+          {
+            key: 'item-history',
+            label: 'История изменений',
+            children: (
+              <Table
+                rowKey={(row) => `${row.item_id}-${row.changed_at}`}
+                pagination={false}
+                dataSource={itemHistory}
+                locale={{ emptyText: 'Изменений позиций нет' }}
+                columns={[
+                  {
+                    title: 'Поле',
+                    dataIndex: 'field_name',
+                    render: (value: string) => FIELD_LABEL[value] ?? value,
+                  },
+                  {
+                    title: 'Было',
+                    dataIndex: 'old_value',
+                    width: 120,
+                    render: (value: number | null) => (value == null ? '—' : value),
+                  },
+                  {
+                    title: 'Стало',
+                    dataIndex: 'new_value',
+                    width: 120,
+                    render: (value: number | null) => (value == null ? '—' : value),
+                  },
+                  {
+                    title: 'Кто изменил',
+                    dataIndex: ['changed_by', 'full_name'],
+                  },
+                  {
+                    title: 'Когда',
+                    dataIndex: 'changed_at',
+                    render: (value: string) =>
+                      new Date(value).toLocaleString('ru-RU'),
+                  },
+                  {
+                    title: 'Комментарий',
+                    dataIndex: 'comment',
+                    render: (value: string | null) => value || '—',
+                  },
+                ]}
+              />
+            ),
+          },
+        ]}
+      />
     </Space>
   )
 }

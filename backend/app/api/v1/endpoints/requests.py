@@ -21,6 +21,7 @@ from app.schemas.request import (
     RequestCreate,
     RequestCreated,
     RequestDetail,
+    RequestItemHistoryEntry,
     RequestListItem,
     RequestStatusData,
     RequestUpdate,
@@ -30,6 +31,7 @@ from app.services.requests import (
     create_request,
     delete_draft,
     ensure_draft_owner,
+    get_request_item_history,
     get_visible_request,
     load_request,
     submit_draft,
@@ -137,6 +139,19 @@ async def get_request(
 ) -> SuccessResponse[RequestDetail]:
     request = await get_visible_request(db, request_id, current_user)
     return SuccessResponse(data=to_detail(request))
+
+
+@router.get(
+    "/requests/{request_id}/history",
+    response_model=SuccessResponse[list[RequestItemHistoryEntry]],
+)
+async def get_request_history(
+    request_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[list[RequestItemHistoryEntry]]:
+    data = await get_request_item_history(db, request_id, current_user)
+    return SuccessResponse(data=data)
 
 
 @router.put("/requests/{request_id}", response_model=SuccessResponse[RequestStatusData])

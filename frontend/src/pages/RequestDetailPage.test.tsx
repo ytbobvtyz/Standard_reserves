@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { RequestDetailPage } from './RequestDetailPage'
@@ -6,10 +6,12 @@ import { useAuthStore } from '../stores/auth'
 import type { RequestDetail } from '../api/types'
 
 const getRequest = vi.fn()
+const getHistory = vi.fn()
 
 vi.mock('../api/requests', () => ({
   requestsApi: {
     get: (...args: unknown[]) => getRequest(...args),
+    getHistory: (...args: unknown[]) => getHistory(...args),
     submit: vi.fn(),
     remove: vi.fn(),
   },
@@ -54,7 +56,27 @@ const request: RequestDetail = {
 describe('RequestDetailPage', () => {
   beforeEach(() => {
     getRequest.mockReset()
+    getHistory.mockReset()
     getRequest.mockResolvedValue({ data: { status: 'success', data: request } })
+    getHistory.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: [
+          {
+            item_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+            field_name: 'quantity_approved',
+            old_value: 1000,
+            new_value: 800,
+            changed_by: {
+              id: '22222222-2222-2222-2222-222222222222',
+              full_name: 'Петров Петр',
+            },
+            changed_at: '2026-08-18T09:30:00Z',
+            comment: 'Снижаем объем на 20%',
+          },
+        ],
+      },
+    })
     useAuthStore.setState({
       user: request.initiator,
       token: 'token',
@@ -76,5 +98,26 @@ describe('RequestDetailPage', () => {
       expect(screen.getByText("ООО 'Ромашка'")).toBeTruthy()
     })
     expect(screen.getByText('Утверждено: 800')).toBeTruthy()
+  })
+
+  it('shows item change history on the history tab', async () => {
+    render(
+      <MemoryRouter initialEntries={[`/requests/${request.id}`]}>
+        <Routes>
+          <Route path="/requests/:id" element={<RequestDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("ООО 'Ромашка'")).toBeTruthy()
+    })
+    fireEvent.click(screen.getByText('История изменений'))
+    await waitFor(() => {
+      expect(screen.getByText('Петров Петр')).toBeTruthy()
+    })
+    expect(screen.getByText('Утвержденное количество')).toBeTruthy()
+    expect(screen.getByText('Снижаем объем на 20%')).toBeTruthy()
+    expect(getHistory).toHaveBeenCalledWith(request.id)
   })
 })

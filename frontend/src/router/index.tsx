@@ -11,6 +11,7 @@ import { LogisticsDashboardPage } from '../pages/LogisticsDashboardPage'
 import { OneTimeRequestsPage } from '../pages/OneTimeRequestsPage'
 import { NormativesPage } from '../pages/NormativesPage'
 import { ProductsPage } from '../pages/ProductsPage'
+import { ProductDetailPage } from '../pages/ProductDetailPage'
 import { ObjectsPage } from '../pages/ObjectsPage'
 import { ReferencesPage } from '../pages/ReferencesPage'
 
@@ -41,6 +42,7 @@ export function AppRouter() {
               <Route path="/logistics/one-time" element={<OneTimeRequestsPage />} />
             </Route>
             <Route path="/normatives" element={<NormativesPage />} />
+            <Route path="/references/products/:code" element={<ProductDetailPage />} />
             <Route path="/references/products" element={<ProductsPage />} />
             <Route path="/references/objects" element={<ObjectsPage />} />
             <Route path="/references/users" element={<ReferencesPage />} />

@@ -3,8 +3,10 @@ import type {
   ApiSuccess,
   ObjectListItem,
   ObjectListParams,
+  ProductDetail,
   ProductListItem,
   ProductListParams,
+  RelatedProductsData,
   User,
 } from './types'
 
@@ -13,7 +15,10 @@ export const referencesApi = {
     api.get<ApiSuccess<ProductListItem[]>>('/references/products', { params }),
 
   getProduct: (code: number) =>
-    api.get<ApiSuccess<ProductListItem>>(`/references/products/${code}`),
+    api.get<ApiSuccess<ProductDetail>>(`/references/products/${code}`),
+
+  getRelated: (code: number) =>
+    api.get<ApiSuccess<RelatedProductsData>>(`/products/${code}/related`),
 
   getObjects: (params?: ObjectListParams) =>
     api.get<ApiSuccess<ObjectListItem[]>>('/references/objects', { params }),
