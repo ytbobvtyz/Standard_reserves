@@ -303,3 +303,54 @@ export interface GenerateOrdersBulkPayload {
   warehouse_codes: number[]
   product_codes?: number[]
 }
+
+export interface OneTimeListParams {
+  warehouse_code?: number
+  client_name?: string
+  initiator_id?: string
+  from_date?: string
+  to_date?: string
+  status?: RequestStatus
+  page?: number
+  limit?: number
+}
+
+export interface OneTimeItem {
+  product_code: number
+  product_name: string
+  warehouse_code: number
+  warehouse_name: string
+  quantity: number
+  unit: Unit
+}
+
+export interface OneTimeListItem {
+  id: string
+  client_name: string
+  status: RequestStatus
+  initiator: User
+  items: OneTimeItem[]
+  created_at: string
+  order_number?: string | null
+  executed_at?: string | null
+}
+
+export interface OneTimeInitiator {
+  id: string
+  username: string
+  full_name: string
+}
+
+export interface ExecuteOneTimePayload {
+  order_number: string
+  comment?: string
+}
+
+export interface ExecuteOneTimeData {
+  id: string
+  status: RequestStatus
+  executed_at: string
+  executed_by: string
+  order_number: string
+  executed_comment?: string | null
+}

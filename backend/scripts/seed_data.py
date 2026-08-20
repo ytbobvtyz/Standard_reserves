@@ -216,7 +216,9 @@ USERS = [
 
 SEED_PASSWORD = "password"
 SEED_REQUEST_ID = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+SEED_ONE_TIME_ID = uuid.UUID("cccccccc-cccc-cccc-cccc-cccccccccccc")
 SEED_CLIENT = "ООО «Ромашка»"
+SEED_ONE_TIME_CLIENT = "ООО «Тюльпан»"
 
 SEED_NORMATIVES = [
     {
@@ -367,6 +369,57 @@ async def _upsert_logistics_demo(session: AsyncSession) -> None:
         current.source = "manual"
 
 
+async def _upsert_one_time_demo(session: AsyncSession) -> None:
+    commercial = await session.get(User, USERS[0]["id"])
+    if commercial is None:
+        return
+
+    request = await session.get(Request, SEED_ONE_TIME_ID)
+    if request is None:
+        session.add(
+            Request(
+                id=SEED_ONE_TIME_ID,
+                request_type="one_time",
+                status="approved",
+                client_name=SEED_ONE_TIME_CLIENT,
+                initiator_id=commercial.id,
+                initiator_comment="Разовое перемещение для проверки этапа 6",
+            )
+        )
+        await session.flush()
+    else:
+        if request.status != "executed":
+            request.status = "approved"
+            request.executed_at = None
+            request.executed_by = None
+            request.order_number = None
+            request.executed_comment = None
+        request.client_name = SEED_ONE_TIME_CLIENT
+        request.request_type = "one_time"
+        request.deleted_at = None
+
+    existing_items = {
+        (item.product_code, item.warehouse_code): item
+        for item in (
+            await session.scalars(
+                select(RequestItem).where(RequestItem.request_id == SEED_ONE_TIME_ID)
+            )
+        ).all()
+    }
+    item_key = (10001, 2001)
+    if item_key not in existing_items:
+        session.add(
+            RequestItem(
+                request_id=SEED_ONE_TIME_ID,
+                product_code=10001,
+                warehouse_code=2001,
+                quantity_requested=Decimal("200"),
+                quantity_approved=Decimal("200"),
+                unit="шт",
+            )
+        )
+
+
 async def _upsert_user(session: AsyncSession, payload: dict) -> None:
     password_hash = hash_password(SEED_PASSWORD)
     existing = await session.get(User, payload["id"])
@@ -406,6 +459,7 @@ async def seed() -> None:
             await _upsert_user(session, item)
 
         await _upsert_logistics_demo(session)
+        await _upsert_one_time_demo(session)
 
         await session.commit()
 
@@ -425,6 +479,7 @@ async def seed() -> None:
         print(f"  users: {users_count}")
         print(f"  sample plant: {sample_label}")
         print("  logistics demo: active normatives + available_balances")
+        print("  one-time demo: approved request ООО «Тюльпан»")
 
     await engine.dispose()
 

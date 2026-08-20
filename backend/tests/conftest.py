@@ -6,7 +6,7 @@ from decimal import Decimal
 import pytest
 from fastapi import Depends
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 
 from app.api.deps import require_roles
 from app.core.database import AsyncSessionLocal, check_database_connection, engine
@@ -48,6 +48,21 @@ async def db_ready() -> AsyncGenerator[None, None]:
     await check_database_connection()
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+        await connection.execute(
+            text(
+                "ALTER TABLE requests "
+                "ADD COLUMN IF NOT EXISTS executed_by UUID"
+            )
+        )
+        await connection.execute(
+            text("ALTER TABLE requests ADD COLUMN IF NOT EXISTS order_number TEXT")
+        )
+        await connection.execute(
+            text(
+                "ALTER TABLE requests "
+                "ADD COLUMN IF NOT EXISTS executed_comment TEXT"
+            )
+        )
     yield
 
 
@@ -120,6 +135,7 @@ async def _delete_user(user_id: uuid.UUID) -> None:
                     (Request.initiator_id == user_id)
                     | (Request.pp_approved_by == user_id)
                     | (Request.economy_approved_by == user_id)
+                    | (Request.executed_by == user_id)
                 )
             )
         ).all()

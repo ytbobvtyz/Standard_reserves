@@ -1,9 +1,11 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 from app.schemas.common import DecimalNumber
+from app.schemas.user import UserBrief
 
 FilterMode = Literal["all", "with_normatives", "deficit_only"]
 Unit = Literal["шт", "т"]
@@ -72,3 +74,43 @@ class GenerateOrdersData(BaseModel):
     total_orders: int
     total_products: int
     total_quantity: DecimalNumber
+
+
+class ExecuteOneTimeRequest(BaseModel):
+    order_number: str = Field(min_length=1, max_length=100)
+    comment: str | None = None
+
+
+class ExecuteOneTimeData(BaseModel):
+    id: UUID
+    status: str
+    executed_at: datetime
+    executed_by: UUID
+    order_number: str
+    executed_comment: str | None = None
+
+
+class OneTimeItem(BaseModel):
+    product_code: int
+    product_name: str
+    warehouse_code: int
+    warehouse_name: str
+    quantity: DecimalNumber
+    unit: str
+
+
+class OneTimeListItem(BaseModel):
+    id: UUID
+    client_name: str
+    status: str
+    initiator: UserBrief
+    items: list[OneTimeItem]
+    created_at: datetime
+    order_number: str | None = None
+    executed_at: datetime | None = None
+
+
+class OneTimeInitiator(BaseModel):
+    id: UUID
+    username: str
+    full_name: str

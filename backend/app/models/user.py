@@ -77,6 +77,11 @@ class User(TimestampMixin, SoftDeleteMixin, Base):
         back_populates="economy_approver",
         foreign_keys="Request.economy_approved_by",
     )
+    executed_requests: Mapped[list["Request"]] = relationship(
+        "Request",
+        back_populates="executor",
+        foreign_keys="Request.executed_by",
+    )
     item_changes: Mapped[list["RequestItemHistory"]] = relationship(
         "RequestItemHistory",
         back_populates="changed_by_user",

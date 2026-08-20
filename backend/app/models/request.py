@@ -83,6 +83,12 @@ class Request(TimestampMixin, SoftDeleteMixin, Base):
     expiry_date: Mapped[date | None] = mapped_column(Date)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    executed_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+    )
+    order_number: Mapped[str | None] = mapped_column(Text)
+    executed_comment: Mapped[str | None] = mapped_column(Text)
     pp_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     pp_approved_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
@@ -112,6 +118,11 @@ class Request(TimestampMixin, SoftDeleteMixin, Base):
         "User",
         foreign_keys=[economy_approved_by],
         back_populates="economy_approved_requests",
+    )
+    executor: Mapped["User | None"] = relationship(
+        "User",
+        foreign_keys=[executed_by],
+        back_populates="executed_requests",
     )
     items: Mapped[list["RequestItem"]] = relationship(
         "RequestItem",
