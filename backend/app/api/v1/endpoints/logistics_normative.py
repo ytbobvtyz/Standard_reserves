@@ -9,6 +9,7 @@ from app.models.user import User
 from app.schemas.common import SuccessResponse
 from app.schemas.logistics import (
     DashboardResponse,
+    GenerateOrdersBulkRequest,
     GenerateOrdersData,
     GenerateOrdersRequest,
 )
@@ -69,6 +70,23 @@ async def export_orders(
         ),
         headers={"Content-Disposition": 'attachment; filename="orders.xlsx"'},
     )
+
+
+@router.post(
+    "/generate-orders",
+    response_model=SuccessResponse[GenerateOrdersData],
+)
+async def generate_orders_bulk(
+    body: GenerateOrdersBulkRequest,
+    _current_user: User = Depends(require_roles("logistics")),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[GenerateOrdersData]:
+    data = await service.generate_orders_for_warehouses(
+        db,
+        warehouse_codes=body.warehouse_codes,
+        product_codes=body.product_codes,
+    )
+    return SuccessResponse(data=data)
 
 
 @router.post(

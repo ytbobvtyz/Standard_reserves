@@ -1,5 +1,6 @@
 import {
   Button,
+  Checkbox,
   Collapse,
   Empty,
   Input,
@@ -77,6 +78,7 @@ export function LogisticsDashboardPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [orders, setOrders] = useState<GeneratedOrder[]>([])
   const [confirmedOrders, setConfirmedOrders] = useState<GeneratedOrder[]>([])
+  const [selectedWarehouseCodes, setSelectedWarehouseCodes] = useState<number[]>([])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -119,6 +121,17 @@ export function LogisticsDashboardPage() {
       .filter((warehouse) => warehouse.deficit_items.length > 0)
   }, [items, search])
 
+  const visibleWarehouseCodes = useMemo(
+    () => visibleWarehouses.map((item) => item.warehouse_code),
+    [visibleWarehouses],
+  )
+
+  useEffect(() => {
+    setSelectedWarehouseCodes((current) =>
+      current.filter((code) => visibleWarehouseCodes.includes(code)),
+    )
+  }, [visibleWarehouseCodes])
+
   const columns: ColumnsType<DeficitItem> = [
     { title: 'Артикул', dataIndex: 'product_code', width: 110 },
     { title: 'Название', dataIndex: 'product_name' },
@@ -153,10 +166,10 @@ export function LogisticsDashboardPage() {
     }
     setGenerating(true)
     try {
-      const results = await Promise.all(
-        codes.map((code) => logisticsApi.generateOrders(code)),
-      )
-      const collected = results.flatMap((result) => result.data.data.orders)
+      const { data } = await logisticsApi.generateOrdersBulk({
+        warehouse_codes: codes,
+      })
+      const collected = data.data.orders
       if (collected.length === 0) {
         message.info('Нет позиций с дефицитом')
         return
@@ -187,13 +200,26 @@ export function LogisticsDashboardPage() {
     }
   }
 
-  const deficitWarehouseCodes = visibleWarehouses
-    .filter(
-      (item) =>
-        item.deficit_count > 0 ||
-        item.deficit_items.some((row) => row.deficit > 0),
+  const allVisibleSelected =
+    visibleWarehouseCodes.length > 0 &&
+    visibleWarehouseCodes.every((code) => selectedWarehouseCodes.includes(code))
+  const someVisibleSelected = selectedWarehouseCodes.some((code) =>
+    visibleWarehouseCodes.includes(code),
+  )
+
+  const toggleWarehouse = (code: number, checked: boolean) => {
+    setSelectedWarehouseCodes((current) =>
+      checked
+        ? current.includes(code)
+          ? current
+          : [...current, code]
+        : current.filter((item) => item !== code),
     )
-    .map((item) => item.warehouse_code)
+  }
+
+  const toggleAllVisible = (checked: boolean) => {
+    setSelectedWarehouseCodes(checked ? [...visibleWarehouseCodes] : [])
+  }
 
   return (
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -244,48 +270,80 @@ export function LogisticsDashboardPage() {
       {visibleWarehouses.length === 0 && !loading ? (
         <Empty description="Складов с выбранным фильтром не найдено" />
       ) : (
-        <Collapse
-          key={visibleWarehouses.map((item) => item.warehouse_code).join('-')}
-          defaultActiveKey={visibleWarehouses.map((item) =>
-            String(item.warehouse_code),
-          )}
-          items={visibleWarehouses.map((warehouse) => ({
-            key: String(warehouse.warehouse_code),
-            label: (
-              <Space>
-                <DeficitIndicator
-                  deficit={warehouse.total_deficit}
-                  status={warehouse.total_deficit > 0 ? 'warning' : 'ok'}
-                  unit={unit}
+        <Space direction="vertical" size="small" style={{ width: '100%' }}>
+          <Checkbox
+            checked={allVisibleSelected}
+            indeterminate={someVisibleSelected && !allVisibleSelected}
+            disabled={visibleWarehouseCodes.length === 0}
+            onChange={(event) => toggleAllVisible(event.target.checked)}
+          >
+            Выбрать все склады
+          </Checkbox>
+          <Collapse
+            key={visibleWarehouses.map((item) => item.warehouse_code).join('-')}
+            defaultActiveKey={visibleWarehouses.map((item) =>
+              String(item.warehouse_code),
+            )}
+            items={visibleWarehouses.map((warehouse) => ({
+              key: String(warehouse.warehouse_code),
+              label: (
+                <Space>
+                  <Checkbox
+                    aria-label={`Выбрать ${warehouse.warehouse_name}`}
+                    checked={selectedWarehouseCodes.includes(warehouse.warehouse_code)}
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={(event) =>
+                      toggleWarehouse(
+                        warehouse.warehouse_code,
+                        event.target.checked,
+                      )
+                    }
+                  />
+                  <DeficitIndicator
+                    deficit={warehouse.total_deficit}
+                    status={warehouse.total_deficit > 0 ? 'warning' : 'ok'}
+                    unit={unit}
+                  />
+                  <Typography.Text strong>{warehouse.warehouse_name}</Typography.Text>
+                  <Typography.Text type="secondary">
+                    дефицит: {warehouse.deficit_count} позиций,{' '}
+                    {formatQty(warehouse.total_deficit, unit)} {unit}
+                  </Typography.Text>
+                </Space>
+              ),
+              children: (
+                <Table
+                  rowKey={(item) => `${item.product_code}-${item.client_name}`}
+                  loading={loading}
+                  pagination={false}
+                  size="small"
+                  columns={columns}
+                  dataSource={warehouse.deficit_items}
                 />
-                <Typography.Text strong>{warehouse.warehouse_name}</Typography.Text>
-                <Typography.Text type="secondary">
-                  дефицит: {warehouse.deficit_count} позиций,{' '}
-                  {formatQty(warehouse.total_deficit, unit)} {unit}
-                </Typography.Text>
-              </Space>
-            ),
-            children: (
-              <Table
-                rowKey={(item) => `${item.product_code}-${item.client_name}`}
-                loading={loading}
-                pagination={false}
-                size="small"
-                columns={columns}
-                dataSource={warehouse.deficit_items}
-              />
-            ),
-          }))}
-        />
+              ),
+            }))}
+          />
+        </Space>
       )}
-      <Button
-        type="primary"
-        icon={<SendOutlined />}
-        loading={generating}
-        onClick={() => void generateForWarehouses(deficitWarehouseCodes)}
-      >
-        Сформировать заказы на все склады
-      </Button>
+      <Space wrap>
+        <Button
+          type="primary"
+          icon={<SendOutlined />}
+          loading={generating}
+          disabled={selectedWarehouseCodes.length === 0}
+          onClick={() => void generateForWarehouses(selectedWarehouseCodes)}
+        >
+          Сформировать заказы на выбранные склады
+        </Button>
+        <Button
+          icon={<SendOutlined />}
+          loading={generating}
+          disabled={visibleWarehouseCodes.length === 0}
+          onClick={() => void generateForWarehouses(visibleWarehouseCodes)}
+        >
+          Сформировать заказы на все склады
+        </Button>
+      </Space>
       {confirmedOrders.length > 0 ? (
         <Space direction="vertical">
           <Typography.Text>

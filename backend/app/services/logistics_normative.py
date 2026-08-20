@@ -343,12 +343,21 @@ async def get_dashboard(
     return build_dashboard(rows)
 
 
-async def generate_orders(
-    db: AsyncSession,
-    *,
-    warehouse_code: int,
-    product_codes: list[int] | None = None,
-) -> GenerateOrdersData:
+def _orders_payload(orders: list[PlantOrder]) -> GenerateOrdersData:
+    product_codes_count = {item.product_code for row in orders for item in row.items}
+    total_quantity = sum(
+        (item.deficit for row in orders for item in row.items),
+        Decimal("0"),
+    )
+    return GenerateOrdersData(
+        orders=orders,
+        total_orders=len(orders),
+        total_products=len(product_codes_count),
+        total_quantity=total_quantity,
+    )
+
+
+async def _get_warehouse(db: AsyncSession, warehouse_code: int) -> Object:
     warehouse = await db.get(Object, warehouse_code)
     if (
         warehouse is None
@@ -356,6 +365,16 @@ async def generate_orders(
         or warehouse.type != "warehouse"
     ):
         raise APIError(404, "NOT_FOUND", "Склад не найден")
+    return warehouse
+
+
+async def generate_orders(
+    db: AsyncSession,
+    *,
+    warehouse_code: int,
+    product_codes: list[int] | None = None,
+) -> GenerateOrdersData:
+    warehouse = await _get_warehouse(db, warehouse_code)
 
     rows = await collect_deficit_rows(
         db,
@@ -395,17 +414,31 @@ async def generate_orders(
             )
         )
 
-    product_codes_count = {item.product_code for row in orders for item in row.items}
-    total_quantity = sum(
-        (item.deficit for row in orders for item in row.items),
-        Decimal("0"),
-    )
-    return GenerateOrdersData(
-        orders=orders,
-        total_orders=len(orders),
-        total_products=len(product_codes_count),
-        total_quantity=total_quantity,
-    )
+    return _orders_payload(orders)
+
+
+async def generate_orders_for_warehouses(
+    db: AsyncSession,
+    *,
+    warehouse_codes: list[int],
+    product_codes: list[int] | None = None,
+) -> GenerateOrdersData:
+    if not warehouse_codes:
+        raise APIError(400, "VALIDATION_ERROR", "Укажите хотя бы один склад")
+
+    unique_codes = list(dict.fromkeys(warehouse_codes))
+    for code in unique_codes:
+        await _get_warehouse(db, code)
+
+    orders: list[PlantOrder] = []
+    for code in unique_codes:
+        result = await generate_orders(
+            db,
+            warehouse_code=code,
+            product_codes=product_codes,
+        )
+        orders.extend(result.orders)
+    return _orders_payload(orders)
 
 
 async def export_excel(

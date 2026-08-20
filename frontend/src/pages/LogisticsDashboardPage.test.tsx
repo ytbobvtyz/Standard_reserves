@@ -28,16 +28,37 @@ const dashboard: LogisticsDashboardData = {
         },
       ],
     },
+    {
+      warehouse_code: 2003,
+      warehouse_name: 'Склад Казань',
+      total_deficit: 80,
+      deficit_count: 1,
+      deficit_items: [
+        {
+          product_code: 10003,
+          product_name: 'Вал приводной 500мм',
+          category: 'C',
+          normative_quantity: 120,
+          fact_quantity: 40,
+          unit: 'шт',
+          deficit: 80,
+          client_name: "ООО 'Ромашка'",
+          expiry_date: '2026-12-31',
+          status: 'warning',
+        },
+      ],
+    },
   ],
   summary: {
-    total_deficit: 400,
-    deficit_warehouses: 1,
-    deficit_products: 1,
+    total_deficit: 480,
+    deficit_warehouses: 2,
+    deficit_products: 2,
   },
 }
 
 const getDashboard = vi.fn()
 const generateOrders = vi.fn()
+const generateOrdersBulk = vi.fn()
 const exportOrders = vi.fn()
 const getObjects = vi.fn()
 
@@ -45,6 +66,7 @@ vi.mock('../api/logistics', () => ({
   logisticsApi: {
     getDashboard: (...args: unknown[]) => getDashboard(...args),
     generateOrders: (...args: unknown[]) => generateOrders(...args),
+    generateOrdersBulk: (...args: unknown[]) => generateOrdersBulk(...args),
     exportOrders: (...args: unknown[]) => exportOrders(...args),
   },
 }))
@@ -59,16 +81,20 @@ describe('LogisticsDashboardPage', () => {
   beforeEach(() => {
     getDashboard.mockReset()
     generateOrders.mockReset()
+    generateOrdersBulk.mockReset()
     exportOrders.mockReset()
     getObjects.mockReset()
     getDashboard.mockResolvedValue({ data: dashboard })
     getObjects.mockResolvedValue({
       data: {
         status: 'success',
-        data: [{ code: 2001, name: 'Склад Ростов', city: 'Ростов', type: 'warehouse' }],
+        data: [
+          { code: 2001, name: 'Склад Ростов', city: 'Ростов', type: 'warehouse' },
+          { code: 2003, name: 'Склад Казань', city: 'Казань', type: 'warehouse' },
+        ],
       },
     })
-    generateOrders.mockResolvedValue({
+    generateOrdersBulk.mockResolvedValue({
       data: {
         status: 'success',
         data: {
@@ -120,7 +146,7 @@ describe('LogisticsDashboardPage', () => {
       expect(screen.getByText('Склад Ростов')).toBeTruthy()
     })
     expect(screen.getByText('Подшипник 6204ZZ')).toBeTruthy()
-    expect(screen.getByText("ООО 'Ромашка'")).toBeTruthy()
+    expect(screen.getAllByText("ООО 'Ромашка'").length).toBeGreaterThan(0)
     expect(getDashboard).toHaveBeenCalled()
   })
 
@@ -171,13 +197,70 @@ describe('LogisticsDashboardPage', () => {
       screen.getByRole('button', { name: /Сформировать заказы на все склады/ }),
     )
     await waitFor(() => {
-      expect(generateOrders).toHaveBeenCalledWith(2001)
+      expect(generateOrdersBulk).toHaveBeenCalledWith({
+        warehouse_codes: [2001, 2003],
+      })
     })
     await waitFor(() => {
       expect(screen.getByText('Сформировать заказы')).toBeTruthy()
       expect(screen.getByText(/Завод Московский/)).toBeTruthy()
       expect(screen.getByRole('button', { name: /Подтвердить/ })).toBeTruthy()
       expect(screen.getByRole('button', { name: /Скачать Excel/ })).toBeTruthy()
+    })
+  })
+
+  it('keeps selected orders button disabled until a warehouse is checked', async () => {
+    render(
+      <MemoryRouter>
+        <LogisticsDashboardPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByText('Склад Ростов')).toBeTruthy()
+    })
+    expect(
+      screen.getByRole('button', { name: /Сформировать заказы на выбранные склады/ }),
+    ).toHaveProperty('disabled', true)
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Выбрать Склад Ростов' }))
+    expect(
+      screen.getByRole('button', { name: /Сформировать заказы на выбранные склады/ }),
+    ).toHaveProperty('disabled', false)
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /Сформировать заказы на выбранные склады/ }),
+    )
+    await waitFor(() => {
+      expect(generateOrdersBulk).toHaveBeenCalledWith({
+        warehouse_codes: [2001],
+      })
+    })
+  })
+
+  it('selects all visible warehouses', async () => {
+    render(
+      <MemoryRouter>
+        <LogisticsDashboardPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByText('Склад Казань')).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Выбрать все склады' }))
+    expect(
+      screen.getByRole('checkbox', { name: 'Выбрать Склад Ростов' }),
+    ).toHaveProperty('checked', true)
+    expect(
+      screen.getByRole('checkbox', { name: 'Выбрать Склад Казань' }),
+    ).toHaveProperty('checked', true)
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /Сформировать заказы на выбранные склады/ }),
+    )
+    await waitFor(() => {
+      expect(generateOrdersBulk).toHaveBeenCalledWith({
+        warehouse_codes: [2001, 2003],
+      })
     })
   })
 })

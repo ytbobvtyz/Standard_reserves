@@ -13,6 +13,11 @@ class GenerateOrdersRequest(BaseModel):
     product_codes: list[int] | None = None
 
 
+class GenerateOrdersBulkRequest(BaseModel):
+    warehouse_codes: list[int] = Field(default_factory=list)
+    product_codes: list[int] | None = None
+
+
 class DeficitItem(BaseModel):
     product_code: int
     product_name: str

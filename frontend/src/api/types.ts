@@ -298,3 +298,8 @@ export interface GenerateOrdersData {
 export interface GenerateOrdersPayload {
   product_codes?: number[]
 }
+
+export interface GenerateOrdersBulkPayload {
+  warehouse_codes: number[]
+  product_codes?: number[]
+}

@@ -336,6 +336,68 @@ async def test_generate_orders_unknown_warehouse(
     assert response.status_code == 404
 
 
+async def test_generate_orders_bulk_returns_selected_warehouses(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    logistics_catalog: dict,
+) -> None:
+    token = await login_token(client, logistics_user)
+    warehouse_code = logistics_catalog["warehouse_code"]
+    response = await client.post(
+        "/api/v1/logistics/normative/generate-orders",
+        headers=auth_header(token),
+        json={"warehouse_codes": [warehouse_code, 2002]},
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["total_orders"] >= 1
+    assert {order["warehouse_code"] for order in data["orders"]} <= {
+        warehouse_code,
+        2002,
+    }
+    product = next(
+        item
+        for order in data["orders"]
+        for item in order["items"]
+        if item["product_code"] == TEST_PRODUCT_DEFICIT
+    )
+    assert product["deficit"] == 400
+
+
+async def test_generate_orders_bulk_requires_warehouse_codes(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    logistics_catalog: dict,
+) -> None:
+    token = await login_token(client, logistics_user)
+    empty = await client.post(
+        "/api/v1/logistics/normative/generate-orders",
+        headers=auth_header(token),
+        json={"warehouse_codes": []},
+    )
+    assert empty.status_code == 400
+    missing = await client.post(
+        "/api/v1/logistics/normative/generate-orders",
+        headers=auth_header(token),
+        json={},
+    )
+    assert missing.status_code == 400
+
+
+async def test_generate_orders_bulk_unknown_warehouse(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    logistics_catalog: dict,
+) -> None:
+    token = await login_token(client, logistics_user)
+    response = await client.post(
+        "/api/v1/logistics/normative/generate-orders",
+        headers=auth_header(token),
+        json={"warehouse_codes": [9999]},
+    )
+    assert response.status_code == 404
+
+
 async def test_export_excel_returns_file(
     client: AsyncClient,
     logistics_user: AuthUser,

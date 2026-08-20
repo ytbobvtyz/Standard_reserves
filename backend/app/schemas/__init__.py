@@ -14,6 +14,7 @@ from app.schemas.auth import (
 from app.schemas.common import MessageResponse, PaginatedResponse, SuccessResponse
 from app.schemas.logistics import (
     DashboardResponse,
+    GenerateOrdersBulkRequest,
     GenerateOrdersData,
     GenerateOrdersRequest,
 )
@@ -40,6 +41,7 @@ __all__ = [
     "ApprovalPendingRequest",
     "ChangePasswordRequest",
     "DashboardResponse",
+    "GenerateOrdersBulkRequest",
     "GenerateOrdersData",
     "GenerateOrdersRequest",
     "LoginRequest",
