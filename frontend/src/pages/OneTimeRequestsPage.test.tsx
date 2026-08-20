@@ -59,6 +59,20 @@ vi.mock('../api/references', () => ({
   },
 }))
 
+function setRole(role: 'logistics' | 'commercial') {
+  useAuthStore.setState({
+    user: {
+      id: '44444444-4444-4444-4444-444444444444',
+      username: role,
+      full_name: role === 'logistics' ? 'Кузнецов Кузьма' : 'Иванов Иван',
+      role,
+    },
+    token: 'token',
+    isAuthenticated: true,
+    isLoading: false,
+  })
+}
+
 describe('OneTimeRequestsPage', () => {
   beforeEach(() => {
     getOneTimeList.mockReset()
@@ -111,17 +125,7 @@ describe('OneTimeRequestsPage', () => {
         },
       },
     })
-    useAuthStore.setState({
-      user: {
-        id: '44444444-4444-4444-4444-444444444444',
-        username: 'logistics',
-        full_name: 'Кузнецов Кузьма',
-        role: 'logistics',
-      },
-      token: 'token',
-      isAuthenticated: true,
-      isLoading: false,
-    })
+    setRole('logistics')
   })
 
   it('opens the one-time logistics page', async () => {
@@ -216,5 +220,21 @@ describe('OneTimeRequestsPage', () => {
     await waitFor(() => {
       expect(getOneTimeList).toHaveBeenCalledTimes(2)
     })
+  })
+
+  it('hides execute and excel buttons for commercial', async () => {
+    setRole('commercial')
+    render(
+      <MemoryRouter>
+        <OneTimeRequestsPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByText('ООО «Тюльпан»')).toBeTruthy()
+    })
+    expect(screen.getByText('ООО «Бета»')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Исполнить' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Скачать Excel/ })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Применить фильтр' })).toBeTruthy()
   })
 })

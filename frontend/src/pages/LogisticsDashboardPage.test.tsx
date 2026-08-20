@@ -77,6 +77,20 @@ vi.mock('../api/references', () => ({
   },
 }))
 
+function setRole(role: 'logistics' | 'commercial') {
+  useAuthStore.setState({
+    user: {
+      id: '44444444-4444-4444-4444-444444444444',
+      username: role,
+      full_name: role === 'logistics' ? 'Кузнецов Кузьма' : 'Иванов Иван',
+      role,
+    },
+    token: 'token',
+    isAuthenticated: true,
+    isLoading: false,
+  })
+}
+
 describe('LogisticsDashboardPage', () => {
   beforeEach(() => {
     getDashboard.mockReset()
@@ -121,17 +135,7 @@ describe('LogisticsDashboardPage', () => {
         },
       },
     })
-    useAuthStore.setState({
-      user: {
-        id: '44444444-4444-4444-4444-444444444444',
-        username: 'logistics',
-        full_name: 'Кузнецов Кузьма',
-        role: 'logistics',
-      },
-      token: 'token',
-      isAuthenticated: true,
-      isLoading: false,
-    })
+    setRole('logistics')
   })
 
   it('shows warehouses grouped with deficit items', async () => {
@@ -262,5 +266,23 @@ describe('LogisticsDashboardPage', () => {
         warehouse_codes: [2001, 2003],
       })
     })
+  })
+
+  it('hides management buttons for commercial and keeps data visible', async () => {
+    setRole('commercial')
+    render(
+      <MemoryRouter>
+        <LogisticsDashboardPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByText('Склад Ростов')).toBeTruthy()
+    })
+    expect(screen.getByText('Подшипник 6204ZZ')).toBeTruthy()
+    expect(
+      screen.queryByRole('button', { name: /Сформировать заказы/ }),
+    ).toBeNull()
+    expect(screen.queryByRole('button', { name: /Скачать Excel/ })).toBeNull()
+    expect(screen.queryByRole('checkbox', { name: 'Выбрать все склады' })).toBeNull()
   })
 })

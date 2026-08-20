@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, require_roles
+from app.api.deps import get_current_user, get_db, require_roles
 from app.models.user import User
 from app.schemas.common import SuccessResponse
 from app.schemas.logistics import (
@@ -16,6 +16,7 @@ from app.schemas.logistics import (
 from app.services import logistics_normative as service
 
 router = APIRouter(prefix="/logistics/normative", tags=["Логистика — нормативы"])
+LOGISTICS_ONLY = require_roles("logistics")
 
 FilterMode = Literal["all", "with_normatives", "deficit_only"]
 Unit = Literal["шт", "т"]
@@ -38,7 +39,7 @@ async def get_dashboard(
     warehouse_code: int | None = Query(default=None),
     filter_mode: FilterMode = Query(default="with_normatives"),
     unit: Unit = Query(default="шт"),
-    _current_user: User = Depends(require_roles("logistics")),
+    _current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> DashboardResponse:
     return await service.get_dashboard(
@@ -54,7 +55,7 @@ async def export_orders(
     warehouse_code: int | None = Query(default=None),
     product_codes: str | None = Query(default=None),
     unit: Unit = Query(default="шт"),
-    _current_user: User = Depends(require_roles("logistics")),
+    _current_user: User = Depends(LOGISTICS_ONLY),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     content = await service.export_excel(
@@ -78,7 +79,7 @@ async def export_orders(
 )
 async def generate_orders_bulk(
     body: GenerateOrdersBulkRequest,
-    _current_user: User = Depends(require_roles("logistics")),
+    _current_user: User = Depends(LOGISTICS_ONLY),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[GenerateOrdersData]:
     data = await service.generate_orders_for_warehouses(
@@ -96,7 +97,7 @@ async def generate_orders_bulk(
 async def generate_orders(
     warehouse_code: int,
     body: GenerateOrdersRequest | None = None,
-    _current_user: User = Depends(require_roles("logistics")),
+    _current_user: User = Depends(LOGISTICS_ONLY),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[GenerateOrdersData]:
     data = await service.generate_orders(

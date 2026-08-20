@@ -110,7 +110,7 @@ async def one_time_catalog(
         await delete_request(request_id)
 
 
-async def test_one_time_list_requires_logistics(
+async def test_one_time_list_allowed_for_commercial(
     client: AsyncClient,
     test_user: AuthUser,
     one_time_catalog: dict,
@@ -120,7 +120,23 @@ async def test_one_time_list_requires_logistics(
         "/api/v1/logistics/one-time/list",
         headers=auth_header(token),
     )
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "success"
+
+
+async def test_one_time_execute_forbidden_for_commercial(
+    client: AsyncClient,
+    test_user: AuthUser,
+    one_time_catalog: dict,
+) -> None:
+    token = await login_token(client, test_user)
+    response = await client.post(
+        f"/api/v1/logistics/one-time/{one_time_catalog['approved_id']}/execute",
+        headers=auth_header(token),
+        json={"order_number": "РН-2026-08-20-001"},
+    )
     assert response.status_code == 403
+    assert response.json()["error"]["code"] == "FORBIDDEN"
 
 
 async def test_one_time_list_filters(

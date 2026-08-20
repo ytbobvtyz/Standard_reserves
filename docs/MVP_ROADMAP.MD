@@ -746,7 +746,7 @@ text
 Требования
 1. Нормативы (app/api/v1/endpoints/logistics_normative.py)
 Эндпоинт	Метод	Описание	Права
-/logistics/normative/dashboard	GET	Дашборд с дефицитом	logistics
+/logistics/normative/dashboard	GET	Дашборд с дефицитом	все авторизованные
 /logistics/normative/{warehouse_code}/generate-orders	POST	Сформировать заказы	logistics
 /logistics/normative/export	GET	Выгрузка в Excel	logistics
 2. Логика дашборда
@@ -825,10 +825,10 @@ GET /logistics/normative/export
 
 5. Разовые перемещения (app/api/v1/endpoints/logistics_one_time.py)
 Эндпоинт	Метод	Описание	Права
-/logistics/one-time/list	GET	Список разовых запросов	logistics
+/logistics/one-time/list	GET	Список разовых запросов	все авторизованные
 /logistics/one-time/{id}/execute	POST	Отметить исполненным	logistics
-/logistics/one-time/initiators	GET	Список заявителей	logistics
-/logistics/one-time/clients	GET	Список клиентов	logistics
+/logistics/one-time/initiators	GET	Список заявителей	все авторизованные
+/logistics/one-time/clients	GET	Список клиентов	все авторизованные
 Фильтры:
 
 warehouse_code
@@ -990,8 +990,8 @@ interface AuthStore {
 /requests/:id	RequestDetailPage	auth
 /approvals/pp	ApprovalsPage	auth (pp)
 /approvals/economy	ApprovalsPage	auth (economist)
-/logistics/dashboard	LogisticsDashboardPage	auth (logistics)
-/logistics/one-time	OneTimeRequestsPage	auth (logistics)
+/logistics/dashboard	LogisticsDashboardPage	auth (все роли, управление — logistics)
+/logistics/one-time	OneTimeRequestsPage	auth (все роли, управление — logistics)
 /normatives	NormativesPage	auth
 /references/products	ReferencesPage	auth
 /references/objects	ReferencesPage	auth

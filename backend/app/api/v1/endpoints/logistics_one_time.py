@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, require_roles
+from app.api.deps import get_current_user, get_db, require_roles
 from app.models.user import User
 from app.schemas.common import PaginatedResponse, PaginationMeta, SuccessResponse
 from app.schemas.logistics import (
@@ -18,6 +18,7 @@ from app.schemas.logistics import (
 from app.services import logistics_one_time as service
 
 router = APIRouter(prefix="/logistics/one-time", tags=["Логистика — разовые"])
+LOGISTICS_ONLY = require_roles("logistics")
 
 OneTimeStatus = Literal["approved", "executed", "rejected"]
 
@@ -32,7 +33,7 @@ async def list_one_time_requests(
     status: OneTimeStatus | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=50, ge=1, le=200),
-    _current_user: User = Depends(require_roles("logistics")),
+    _current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> PaginatedResponse[list[OneTimeListItem]]:
     items, total = await service.list_one_time_requests(
@@ -54,7 +55,7 @@ async def list_one_time_requests(
 
 @router.get("/initiators", response_model=SuccessResponse[list[OneTimeInitiator]])
 async def list_initiators(
-    _current_user: User = Depends(require_roles("logistics")),
+    _current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[list[OneTimeInitiator]]:
     return SuccessResponse(data=await service.list_initiators(db))
@@ -62,7 +63,7 @@ async def list_initiators(
 
 @router.get("/clients", response_model=SuccessResponse[list[str]])
 async def list_clients(
-    _current_user: User = Depends(require_roles("logistics")),
+    _current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[list[str]]:
     return SuccessResponse(data=await service.list_clients(db))
@@ -71,7 +72,7 @@ async def list_clients(
 @router.get("/{request_id}/export")
 async def export_one_time(
     request_id: UUID,
-    _current_user: User = Depends(require_roles("logistics")),
+    _current_user: User = Depends(LOGISTICS_ONLY),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     content = await service.export_one_time_excel(db, request_id)
@@ -95,7 +96,7 @@ async def export_one_time(
 async def execute_one_time(
     request_id: UUID,
     body: ExecuteOneTimeRequest,
-    current_user: User = Depends(require_roles("logistics")),
+    current_user: User = Depends(LOGISTICS_ONLY),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[ExecuteOneTimeData]:
     data = await service.execute_one_time(db, request_id, body, current_user)

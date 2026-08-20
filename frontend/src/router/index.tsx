@@ -37,10 +37,8 @@ export function AppRouter() {
             <Route element={<ProtectedRoute roles={['economist']} />}>
               <Route path="/approvals/economy" element={<ApprovalsPage />} />
             </Route>
-            <Route element={<ProtectedRoute roles={['logistics']} />}>
-              <Route path="/logistics/dashboard" element={<LogisticsDashboardPage />} />
-              <Route path="/logistics/one-time" element={<OneTimeRequestsPage />} />
-            </Route>
+            <Route path="/logistics/dashboard" element={<LogisticsDashboardPage />} />
+            <Route path="/logistics/one-time" element={<OneTimeRequestsPage />} />
             <Route path="/normatives" element={<NormativesPage />} />
             <Route path="/references/products/:code" element={<ProductDetailPage />} />
             <Route path="/references/products" element={<ProductsPage />} />

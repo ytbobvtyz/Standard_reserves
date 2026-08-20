@@ -27,6 +27,7 @@ import type {
   RequestStatus,
 } from '../api/types'
 import { StatusBadge } from '../components/common/StatusBadge'
+import { useAuthStore } from '../stores/auth'
 
 interface FilterState {
   warehouse_code?: number
@@ -78,6 +79,8 @@ function warehouseLabel(items: OneTimeListItem['items']): string {
 
 export function OneTimeRequestsPage() {
   const navigate = useNavigate()
+  const user = useAuthStore((state) => state.user)
+  const canManage = user?.role === 'logistics'
   const [draft, setDraft] = useState<FilterState>({})
   const [applied, setApplied] = useState<FilterState>({})
   const [items, setItems] = useState<OneTimeListItem[]>([])
@@ -229,7 +232,10 @@ export function OneTimeRequestsPage() {
       key: 'items',
       render: (_, record) => formatItems(record.items),
     },
-    {
+  ]
+
+  if (canManage) {
+    columns.push({
       title: 'Действия',
       key: 'actions',
       width: 260,
@@ -250,8 +256,8 @@ export function OneTimeRequestsPage() {
           </Button>
         </Space>
       ),
-    },
-  ]
+    })
+  }
 
   return (
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>

@@ -30,6 +30,7 @@ import type {
 import { DeficitIndicator } from '../components/logistics/DeficitIndicator'
 import { FilterToggle } from '../components/logistics/FilterToggle'
 import { UnitToggle } from '../components/logistics/UnitToggle'
+import { useAuthStore } from '../stores/auth'
 
 function formatQty(value: number, unit: Unit): string {
   return new Intl.NumberFormat('ru-RU', {
@@ -61,6 +62,8 @@ function matchesSearch(item: DeficitItem, search: string): boolean {
 
 export function LogisticsDashboardPage() {
   const navigate = useNavigate()
+  const user = useAuthStore((state) => state.user)
+  const canManage = user?.role === 'logistics'
   const [unit, setUnit] = useState<Unit>('шт')
   const [filterMode, setFilterMode] = useState<FilterMode>('all')
   const [warehouseCode, setWarehouseCode] = useState<number | undefined>()
@@ -271,14 +274,16 @@ export function LogisticsDashboardPage() {
         <Empty description="Складов с выбранным фильтром не найдено" />
       ) : (
         <Space direction="vertical" size="small" style={{ width: '100%' }}>
-          <Checkbox
-            checked={allVisibleSelected}
-            indeterminate={someVisibleSelected && !allVisibleSelected}
-            disabled={visibleWarehouseCodes.length === 0}
-            onChange={(event) => toggleAllVisible(event.target.checked)}
-          >
-            Выбрать все склады
-          </Checkbox>
+          {canManage ? (
+            <Checkbox
+              checked={allVisibleSelected}
+              indeterminate={someVisibleSelected && !allVisibleSelected}
+              disabled={visibleWarehouseCodes.length === 0}
+              onChange={(event) => toggleAllVisible(event.target.checked)}
+            >
+              Выбрать все склады
+            </Checkbox>
+          ) : null}
           <Collapse
             key={visibleWarehouses.map((item) => item.warehouse_code).join('-')}
             defaultActiveKey={visibleWarehouses.map((item) =>
@@ -288,17 +293,19 @@ export function LogisticsDashboardPage() {
               key: String(warehouse.warehouse_code),
               label: (
                 <Space>
-                  <Checkbox
-                    aria-label={`Выбрать ${warehouse.warehouse_name}`}
-                    checked={selectedWarehouseCodes.includes(warehouse.warehouse_code)}
-                    onClick={(event) => event.stopPropagation()}
-                    onChange={(event) =>
-                      toggleWarehouse(
-                        warehouse.warehouse_code,
-                        event.target.checked,
-                      )
-                    }
-                  />
+                  {canManage ? (
+                    <Checkbox
+                      aria-label={`Выбрать ${warehouse.warehouse_name}`}
+                      checked={selectedWarehouseCodes.includes(warehouse.warehouse_code)}
+                      onClick={(event) => event.stopPropagation()}
+                      onChange={(event) =>
+                        toggleWarehouse(
+                          warehouse.warehouse_code,
+                          event.target.checked,
+                        )
+                      }
+                    />
+                  ) : null}
                   <DeficitIndicator
                     deficit={warehouse.total_deficit}
                     status={warehouse.total_deficit > 0 ? 'warning' : 'ok'}
@@ -325,26 +332,28 @@ export function LogisticsDashboardPage() {
           />
         </Space>
       )}
-      <Space wrap>
-        <Button
-          type="primary"
-          icon={<SendOutlined />}
-          loading={generating}
-          disabled={selectedWarehouseCodes.length === 0}
-          onClick={() => void generateForWarehouses(selectedWarehouseCodes)}
-        >
-          Сформировать заказы на выбранные склады
-        </Button>
-        <Button
-          icon={<SendOutlined />}
-          loading={generating}
-          disabled={visibleWarehouseCodes.length === 0}
-          onClick={() => void generateForWarehouses(visibleWarehouseCodes)}
-        >
-          Сформировать заказы на все склады
-        </Button>
-      </Space>
-      {confirmedOrders.length > 0 ? (
+      {canManage ? (
+        <Space wrap>
+          <Button
+            type="primary"
+            icon={<SendOutlined />}
+            loading={generating}
+            disabled={selectedWarehouseCodes.length === 0}
+            onClick={() => void generateForWarehouses(selectedWarehouseCodes)}
+          >
+            Сформировать заказы на выбранные склады
+          </Button>
+          <Button
+            icon={<SendOutlined />}
+            loading={generating}
+            disabled={visibleWarehouseCodes.length === 0}
+            onClick={() => void generateForWarehouses(visibleWarehouseCodes)}
+          >
+            Сформировать заказы на все склады
+          </Button>
+        </Space>
+      ) : null}
+      {canManage && confirmedOrders.length > 0 ? (
         <Space direction="vertical">
           <Typography.Text>
             Сформировано: {confirmedOrders.length} заказ(ов)

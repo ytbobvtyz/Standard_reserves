@@ -333,6 +333,8 @@ text
 
 **Назначение:** Мониторинг дефицита и управление заказами.
 
+**Доступ:** все авторизованные роли. Просмотр данных и фильтры — у всех. Кнопки «Сформировать заказы» и «Скачать Excel» — только `logistics`.
+
 **Макет (текстовый):**
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
 │ 🚚 Логистика [📦 Нормативы] [📋 Разовые перемещения] │
@@ -394,6 +396,8 @@ text
 **URL:** `/logistics/one-time`
 
 **Назначение:** Список разовых запросов с фильтрацией.
+
+**Доступ:** все авторизованные роли. Фильтры и список — у всех. Кнопки «Исполнить» и «Скачать Excel» — только `logistics`.
 
 **Макет (текстовый):**
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
@@ -631,8 +635,8 @@ text
 /requests/:id	RequestDetailPage	Все авторизованные
 /approvals/pp	ApprovalPage	PP
 /approvals/economy	ApprovalPage	Economist
-/logistics/dashboard	LogisticsDashboardPage	Logistics
-/logistics/one-time	OneTimeRequestsPage	Logistics
+/logistics/dashboard	LogisticsDashboardPage	Все авторизованные (кнопки управления — только logistics)
+/logistics/one-time	OneTimeRequestsPage	Все авторизованные (кнопки управления — только logistics)
 /normatives	NormativesPage	Все авторизованные
 /references/products	ProductsPage	Все авторизованные
 /references/objects	ObjectsPage	Все авторизованные

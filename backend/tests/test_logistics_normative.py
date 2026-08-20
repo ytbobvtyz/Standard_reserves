@@ -275,7 +275,7 @@ async def test_dashboard_unit_conversion(
     assert item["deficit"] == pytest.approx(0.1)
 
 
-async def test_dashboard_forbidden_for_commercial(
+async def test_dashboard_allowed_for_commercial(
     client: AsyncClient,
     test_user: AuthUser,
     logistics_catalog: dict,
@@ -285,7 +285,23 @@ async def test_dashboard_forbidden_for_commercial(
         "/api/v1/logistics/normative/dashboard",
         headers=auth_header(token),
     )
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "success"
+
+
+async def test_generate_orders_forbidden_for_commercial(
+    client: AsyncClient,
+    test_user: AuthUser,
+    logistics_catalog: dict,
+) -> None:
+    token = await login_token(client, test_user)
+    warehouse_code = logistics_catalog["warehouse_code"]
+    response = await client.post(
+        f"/api/v1/logistics/normative/{warehouse_code}/generate-orders",
+        headers=auth_header(token),
+    )
     assert response.status_code == 403
+    assert response.json()["error"]["code"] == "FORBIDDEN"
 
 
 async def test_generate_orders_returns_correct_structure(
