@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -11,7 +12,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.config import settings
 from app.core.security import hash_password
-from app.models import Object, Product, User
+from app.models import (
+    AvailableBalance,
+    Normative,
+    Object,
+    Product,
+    Request,
+    RequestItem,
+    User,
+)
 
 PLANTS = [
     {
@@ -206,6 +215,39 @@ USERS = [
 ]
 
 SEED_PASSWORD = "password"
+SEED_REQUEST_ID = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+SEED_CLIENT = "ООО «Ромашка»"
+
+SEED_NORMATIVES = [
+    {
+        "product_code": 10001,
+        "warehouse_code": 2001,
+        "quantity": Decimal("1000"),
+        "unit": "шт",
+        "category": "A",
+    },
+    {
+        "product_code": 10002,
+        "warehouse_code": 2002,
+        "quantity": Decimal("500"),
+        "unit": "шт",
+        "category": "B",
+    },
+    {
+        "product_code": 10005,
+        "warehouse_code": 2001,
+        "quantity": Decimal("500"),
+        "unit": "шт",
+        "category": "B",
+    },
+]
+
+SEED_BALANCES = [
+    {"warehouse_code": 2001, "product_code": 10001, "quantity": Decimal("600")},
+    {"warehouse_code": 2002, "product_code": 10002, "quantity": Decimal("200")},
+    {"warehouse_code": 2001, "product_code": 10005, "quantity": Decimal("450")},
+    {"warehouse_code": 2003, "product_code": 10003, "quantity": Decimal("40")},
+]
 
 
 async def _upsert_object(session: AsyncSession, payload: dict) -> None:
@@ -221,6 +263,108 @@ async def _upsert_product(session: AsyncSession, payload: dict) -> None:
     existing = await session.get(Product, data["code"])
     if existing is None:
         session.add(Product(**data, is_active=True))
+
+
+async def _upsert_logistics_demo(session: AsyncSession) -> None:
+    commercial = await session.get(User, USERS[0]["id"])
+    if commercial is None:
+        return
+
+    request = await session.get(Request, SEED_REQUEST_ID)
+    if request is None:
+        session.add(
+            Request(
+                id=SEED_REQUEST_ID,
+                request_type="normative",
+                status="active",
+                client_name=SEED_CLIENT,
+                initiator_id=commercial.id,
+                expiry_date=date(2026, 12, 31),
+            )
+        )
+        await session.flush()
+    else:
+        request.status = "active"
+        request.client_name = SEED_CLIENT
+        request.expiry_date = date(2026, 12, 31)
+        request.deleted_at = None
+
+    existing_items = {
+        (item.product_code, item.warehouse_code): item
+        for item in (
+            await session.scalars(
+                select(RequestItem).where(RequestItem.request_id == SEED_REQUEST_ID)
+            )
+        ).all()
+    }
+    for item in SEED_NORMATIVES:
+        key = (item["product_code"], item["warehouse_code"])
+        if key in existing_items:
+            continue
+        session.add(
+            RequestItem(
+                request_id=SEED_REQUEST_ID,
+                product_code=item["product_code"],
+                warehouse_code=item["warehouse_code"],
+                quantity_requested=item["quantity"],
+                quantity_approved=item["quantity"],
+                unit=item["unit"],
+            )
+        )
+
+    existing_normatives = {
+        (item.product_code, item.warehouse_code): item
+        for item in (
+            await session.scalars(
+                select(Normative).where(
+                    Normative.request_id == SEED_REQUEST_ID,
+                    Normative.deleted_at.is_(None),
+                )
+            )
+        ).all()
+    }
+    for item in SEED_NORMATIVES:
+        key = (item["product_code"], item["warehouse_code"])
+        current = existing_normatives.get(key)
+        if current is None:
+            session.add(
+                Normative(
+                    request_id=SEED_REQUEST_ID,
+                    product_code=item["product_code"],
+                    warehouse_code=item["warehouse_code"],
+                    quantity=item["quantity"],
+                    unit=item["unit"],
+                    client_name=SEED_CLIENT,
+                    expiry_date=date(2026, 12, 31),
+                    category=item["category"],
+                )
+            )
+            continue
+        current.quantity = item["quantity"]
+        current.unit = item["unit"]
+        current.client_name = SEED_CLIENT
+        current.expiry_date = date(2026, 12, 31)
+        current.category = item["category"]
+        current.deleted_at = None
+
+    for item in SEED_BALANCES:
+        current = await session.get(
+            AvailableBalance, (item["warehouse_code"], item["product_code"])
+        )
+        if current is None:
+            session.add(
+                AvailableBalance(
+                    warehouse_code=item["warehouse_code"],
+                    product_code=item["product_code"],
+                    quantity=item["quantity"],
+                    unit="шт",
+                    source="manual",
+                )
+            )
+            continue
+        current.quantity = item["quantity"]
+        current.unit = "шт"
+        current.source = "manual"
 
 
 async def _upsert_user(session: AsyncSession, payload: dict) -> None:
@@ -261,6 +405,8 @@ async def seed() -> None:
         for item in USERS:
             await _upsert_user(session, item)
 
+        await _upsert_logistics_demo(session)
+
         await session.commit()
 
         products_count = len((await session.scalars(select(Product))).all())
@@ -278,6 +424,7 @@ async def seed() -> None:
         print(f"  products: {products_count}")
         print(f"  users: {users_count}")
         print(f"  sample plant: {sample_label}")
+        print("  logistics demo: active normatives + available_balances")
 
     await engine.dispose()
 

@@ -229,3 +229,72 @@ export interface ObjectListParams {
   page?: number
   limit?: number
 }
+
+export type FilterMode = 'all' | 'with_normatives' | 'deficit_only'
+export type DeficitStatus = 'warning' | 'ok'
+
+export interface LogisticsDashboardParams {
+  warehouse_code?: number
+  filter_mode?: FilterMode
+  unit?: Unit
+}
+
+export interface DeficitItem {
+  product_code: number
+  product_name: string
+  category: string
+  normative_quantity: number
+  fact_quantity: number
+  unit: Unit
+  deficit: number
+  client_name: string
+  expiry_date: string | null
+  status: DeficitStatus
+}
+
+export interface WarehouseDeficit {
+  warehouse_code: number
+  warehouse_name: string
+  deficit_items: DeficitItem[]
+  total_deficit: number
+  deficit_count: number
+}
+
+export interface LogisticsDashboardSummary {
+  total_deficit: number
+  deficit_warehouses: number
+  deficit_products: number
+}
+
+export interface LogisticsDashboardData {
+  status: 'success'
+  data: WarehouseDeficit[]
+  summary: LogisticsDashboardSummary
+}
+
+export interface GeneratedOrderItem {
+  product_code: number
+  product_name: string
+  deficit: number
+  unit: Unit
+}
+
+export interface GeneratedOrder {
+  plant_code: number
+  plant_name: string
+  warehouse_code: number
+  warehouse_name: string
+  items: GeneratedOrderItem[]
+  estimated_delivery_days: number
+}
+
+export interface GenerateOrdersData {
+  orders: GeneratedOrder[]
+  total_orders: number
+  total_products: number
+  total_quantity: number
+}
+
+export interface GenerateOrdersPayload {
+  product_codes?: number[]
+}

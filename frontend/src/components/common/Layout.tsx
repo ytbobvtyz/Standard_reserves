@@ -31,6 +31,7 @@ export function AppLayout() {
             : location.pathname
 
   const canCreate = user?.role === 'commercial' || user?.role === 'logistics'
+  const isLogistics = user?.role === 'logistics'
 
   return (
     <AntLayout style={{ minHeight: '100vh' }}>
@@ -69,16 +70,20 @@ export function AppLayout() {
               label: 'Согласование экономиста',
             },
             { key: '/normatives', icon: <DatabaseOutlined />, label: 'Нормативы' },
-            {
-              key: '/logistics/dashboard',
-              icon: <CarOutlined />,
-              label: 'Логистика',
-            },
-            {
-              key: '/logistics/one-time',
-              icon: <CarOutlined />,
-              label: 'Разовые перемещения',
-            },
+            ...(isLogistics
+              ? [
+                  {
+                    key: '/logistics/dashboard',
+                    icon: <CarOutlined />,
+                    label: 'Логистика',
+                  },
+                  {
+                    key: '/logistics/one-time',
+                    icon: <CarOutlined />,
+                    label: 'Разовые перемещения',
+                  },
+                ]
+              : []),
             {
               key: '/references/products',
               icon: <DatabaseOutlined />,

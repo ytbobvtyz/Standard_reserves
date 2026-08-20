@@ -12,6 +12,11 @@ from app.schemas.auth import (
     TokenPairData,
 )
 from app.schemas.common import MessageResponse, PaginatedResponse, SuccessResponse
+from app.schemas.logistics import (
+    DashboardResponse,
+    GenerateOrdersData,
+    GenerateOrdersRequest,
+)
 from app.schemas.reference import (
     ObjectListItem,
     ProductDetail,
@@ -34,6 +39,9 @@ __all__ = [
     "ApprovalActionResult",
     "ApprovalPendingRequest",
     "ChangePasswordRequest",
+    "DashboardResponse",
+    "GenerateOrdersData",
+    "GenerateOrdersRequest",
     "LoginRequest",
     "MessageResponse",
     "ObjectListItem",
