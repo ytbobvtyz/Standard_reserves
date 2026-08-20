@@ -1346,6 +1346,87 @@ text
 
 ---
 
+### ЭТАП 7.2: УПРАВЛЕНИЕ ОБЪЕКТАМИ (СКЛАДЫ И ЗАВОДЫ)
+
+**Цель:** Дать роли логист возможность вести справочник объектов (`objects`): создавать склады и заводы, редактировать карточку и удалять объект с проверкой связей. Просмотр остаётся доступным всем авторизованным ролям.
+
+Принцип тот же, что у управления продуктами (этап 7.1), но проще: нет родительских связей, Excel-загрузки и GTIN.
+
+#### Новые поля в `objects`
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `last_modified_by` | UUID → users.id | Кто последний изменил карточку |
+| `last_modified_at` | TIMESTAMPTZ DEFAULT NOW() | Когда последний раз изменили |
+
+Изменения пишутся в `audit_log` (entity_type=`object`). При создании нового склада/завода `is_active = true` по умолчанию. Seed заполняет `last_modified_by` / `last_modified_at` у существующих объектов.
+
+#### Эндпоинты
+
+| Метод | Эндпоинт | Описание | Права |
+|-------|----------|----------|-------|
+| POST | `/references/objects` | Создать объект | logistics |
+| GET | `/references/objects/{code}/edit` | Карточка для редактирования | logistics |
+| PUT | `/references/objects/{code}` | Обновить объект | logistics |
+| DELETE | `/references/objects/{code}` | Удалить объект (soft delete) | logistics |
+
+Просмотр списка и карточки (`GET /references/objects`, `GET /references/objects/{code}`) остаётся доступным всем авторизованным ролям.
+
+#### Поля объекта
+
+| Поле | Тип | Обязательное | Описание |
+|------|-----|--------------|----------|
+| `code` | INTEGER | ✅ | Код объекта (PK, вводит пользователь, не редактируется) |
+| `name` | TEXT | ✅ | Наименование |
+| `city` | TEXT | ✅ | Город |
+| `region` | TEXT | ❌ | Регион |
+| `address` | TEXT | ❌ | Адрес |
+| `type` | VARCHAR(20) | ✅ | `plant` или `warehouse` |
+| `is_active` | BOOLEAN | ✅ | Активен (по умолчанию true) |
+| `last_modified_by` | UUID | ❌ | Кто последний изменил → `users(id)` |
+| `last_modified_at` | TIMESTAMP | ❌ | Дата последнего изменения |
+
+#### Права доступа
+
+| Роль | Просмотр | Создание | Редактирование | Удаление |
+|------|----------|----------|----------------|----------|
+| commercial | ✅ | ❌ | ❌ | ❌ |
+| pp | ✅ | ❌ | ❌ | ❌ |
+| economist | ✅ | ❌ | ❌ | ❌ |
+| logistics | ✅ | ✅ | ✅ | ✅ |
+| guest | ✅ | ❌ | ❌ | ❌ |
+
+#### Валидация и удаление
+
+- `code` — целое число > 0; при создании проверяется уникальность
+- `name`, `city` — не пустые
+- `type` — только `plant` или `warehouse`
+- `code` при обновлении не меняется
+- `last_modified_by` / `last_modified_at` заполняются автоматически
+
+Удаление (soft delete, `deleted_at`) блокируется с **409 Conflict**, если объект используется в:
+
+- `products.plant_id` / `second_plant_id` / `third_plant_id`
+- `request_items.warehouse_code`
+- `normatives.warehouse_code`
+- `available_balances.warehouse_code`
+
+#### Критерии приемки
+
+- [ ] Документация согласована (roadmap, data model, API, frontend)
+- [ ] Поля last_modified_by, last_modified_at в модели и миграции
+- [ ] POST `/references/objects` создаёт объект (is_active=true по умолчанию)
+- [ ] GET `/references/objects/{code}/edit` возвращает объект
+- [ ] PUT `/references/objects/{code}` обновляет объект, code не меняется
+- [ ] DELETE `/references/objects/{code}` — soft delete, связи → 409
+- [ ] last_modified_by и last_modified_at заполняются
+- [ ] Кнопки управления только у logistics
+- [ ] Фронт: модалки создания и редактирования, удаление с подтверждением
+- [ ] Seed: существующие объекты с last_modified_by / last_modified_at
+- [ ] Тесты проходят (`tests/test_objects_crud.py`)
+
+---
+
 ### ЭТАП 8: CI/CD, ТЕСТИРОВАНИЕ И ЗАВЕРШЕНИЕ (1 день)
 
 **Цель:** Настроить полноценный CI/CD пайплайн, написать сквозные тесты, подготовить к деплою.
@@ -1596,6 +1677,7 @@ text
 | 6 | Фронтенд — база | 2 | Роутинг, auth, базовые страницы |
 | 7 | Фронтенд — согласование | 2 | Согласование + логистика на фронте |
 | 7.1 | Управление продуктами | 1 | CRUD номенклатуры, Excel-загрузка, GTIN |
+| 7.2 | Управление объектами | 1 | CRUD складов и заводов, RBAC logistics |
 | 8 | CI/CD + тесты | 1 | Полный пайплайн, E2E тесты, деплой |
 | **Итого** | | **16 дней** | **Полноценный MVP с CI/CD** |
 

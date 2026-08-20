@@ -10,6 +10,7 @@ from app.models.base import Base, SoftDeleteMixin, TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.audit_log import AuditLog
+    from app.models.object import Object
     from app.models.password_reset import PasswordResetToken
     from app.models.product import Product
     from app.models.request import Request
@@ -96,4 +97,9 @@ class User(TimestampMixin, SoftDeleteMixin, Base):
         "Product",
         back_populates="modified_by_user",
         foreign_keys="Product.last_modified_by",
+    )
+    modified_objects: Mapped[list["Object"]] = relationship(
+        "Object",
+        back_populates="modified_by_user",
+        foreign_keys="Object.last_modified_by",
     )

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -218,6 +218,7 @@ USERS = [
 SEED_PASSWORD = "password"
 SEED_REQUEST_ID = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 SEED_ONE_TIME_ID = uuid.UUID("cccccccc-cccc-cccc-cccc-cccccccccccc")
+SEED_LOGISTICS_ID = uuid.UUID("44444444-4444-4444-4444-444444444444")
 SEED_CLIENT = "ООО «Ромашка»"
 SEED_ONE_TIME_CLIENT = "ООО «Тюльпан»"
 
@@ -255,8 +256,20 @@ SEED_BALANCES = [
 
 async def _upsert_object(session: AsyncSession, payload: dict) -> None:
     existing = await session.get(Object, payload["code"])
+    now = datetime.now(UTC)
     if existing is None:
-        session.add(Object(**payload, is_active=True))
+        session.add(
+            Object(
+                **payload,
+                is_active=True,
+                last_modified_by=SEED_LOGISTICS_ID,
+                last_modified_at=now,
+            )
+        )
+        return
+    if existing.last_modified_by is None:
+        existing.last_modified_by = SEED_LOGISTICS_ID
+        existing.last_modified_at = now
 
 
 async def _upsert_product(session: AsyncSession, payload: dict) -> None:
@@ -389,8 +402,7 @@ async def _upsert_logistics_demo(session: AsyncSession) -> None:
                         field_name="quantity_approved",
                         old_value=Decimal("1200"),
                         new_value=(
-                            items[0].quantity_approved
-                            or items[0].quantity_requested
+                            items[0].quantity_approved or items[0].quantity_requested
                         ),
                         changed_by=pp_user.id,
                         comment="Снижаем объем на этапе согласования",
@@ -469,6 +481,10 @@ async def seed() -> None:
     engine = create_async_engine(settings.async_database_url)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as session:
+        for item in USERS:
+            await _upsert_user(session, item)
+        await session.flush()
+
         for item in PLANTS + WAREHOUSES:
             await _upsert_object(session, item)
         await session.flush()
@@ -483,9 +499,6 @@ async def seed() -> None:
                 continue
             product.parent_code = item.get("parent_code")
             product.children_code = item.get("children_code")
-
-        for item in USERS:
-            await _upsert_user(session, item)
 
         await _upsert_logistics_demo(session)
         await _upsert_one_time_demo(session)

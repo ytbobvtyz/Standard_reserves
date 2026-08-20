@@ -1,8 +1,11 @@
 import api from './client'
 import type {
   ApiSuccess,
+  ObjectCreatePayload,
+  ObjectDetail,
   ObjectListItem,
   ObjectListParams,
+  ObjectUpdatePayload,
   ProductDetail,
   ProductListItem,
   ProductListParams,
@@ -56,6 +59,18 @@ export const referencesApi = {
 
   getObject: (code: number) =>
     api.get<ApiSuccess<ObjectListItem>>(`/references/objects/${code}`),
+
+  getObjectForEdit: (code: number) =>
+    api.get<ApiSuccess<ObjectDetail>>(`/references/objects/${code}/edit`),
+
+  createObject: (payload: ObjectCreatePayload) =>
+    api.post<ApiSuccess<ObjectDetail>>('/references/objects', payload),
+
+  updateObject: (code: number, payload: ObjectUpdatePayload) =>
+    api.put<ApiSuccess<ObjectDetail>>(`/references/objects/${code}`, payload),
+
+  deleteObject: (code: number) =>
+    api.delete<{ status: 'success'; message: string }>(`/references/objects/${code}`),
 
   getUsers: () => api.get<ApiSuccess<User[]>>('/references/users'),
 }

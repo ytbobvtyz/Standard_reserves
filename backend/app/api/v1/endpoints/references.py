@@ -18,18 +18,26 @@ from app.schemas.common import (
     SuccessResponse,
 )
 from app.schemas.reference import (
+    ObjectCreate,
+    ObjectDetail,
     ObjectListItem,
+    ObjectUpdate,
     ProductDetail,
     ProductListItem,
     ProductUpdate,
     ProductUploadResult,
     UserReference,
 )
-from app.services import products_admin
-from app.services.references import to_product_detail, to_product_list_item
+from app.services import objects_admin, products_admin
+from app.services.references import (
+    to_object_list_item,
+    to_product_detail,
+    to_product_list_item,
+)
 
 router = APIRouter(prefix="/references", tags=["Справочники"])
 PRODUCT_MANAGERS = require_roles("pp", "economist", "logistics")
+OBJECT_MANAGERS = require_roles("logistics")
 
 
 def _paginate(stmt: Select, page: int, limit: int) -> Select:
@@ -201,9 +209,56 @@ async def list_objects(
     )
     objects = result.scalars().all()
     return PaginatedResponse(
-        data=[ObjectListItem.model_validate(item) for item in objects],
+        data=[to_object_list_item(item) for item in objects],
         meta=PaginationMeta(page=page, limit=limit, total=total or 0),
     )
+
+
+@router.post("/objects", response_model=SuccessResponse[ObjectDetail])
+async def create_object(
+    body: ObjectCreate,
+    current_user: User = Depends(OBJECT_MANAGERS),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[ObjectDetail]:
+    data = await objects_admin.create_object(db, body, current_user)
+    return SuccessResponse(data=data)
+
+
+@router.get(
+    "/objects/{code}/edit",
+    response_model=SuccessResponse[ObjectDetail],
+)
+async def get_object_for_edit(
+    code: int,
+    _user: User = Depends(OBJECT_MANAGERS),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[ObjectDetail]:
+    data = await objects_admin.get_object_for_edit(db, code)
+    return SuccessResponse(data=data)
+
+
+@router.put(
+    "/objects/{code}",
+    response_model=SuccessResponse[ObjectDetail],
+)
+async def update_object(
+    code: int,
+    body: ObjectUpdate,
+    current_user: User = Depends(OBJECT_MANAGERS),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[ObjectDetail]:
+    data = await objects_admin.update_object(db, code, body, current_user)
+    return SuccessResponse(data=data)
+
+
+@router.delete("/objects/{code}", response_model=MessageResponse)
+async def delete_object(
+    code: int,
+    current_user: User = Depends(OBJECT_MANAGERS),
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponse:
+    await objects_admin.delete_object(db, code, current_user)
+    return MessageResponse(message="Объект удален")
 
 
 @router.get("/objects/{code}", response_model=SuccessResponse[ObjectListItem])
@@ -218,7 +273,7 @@ async def get_object(
     obj = result.scalar_one_or_none()
     if obj is None:
         raise APIError(404, "NOT_FOUND", "Объект не найден")
-    return SuccessResponse(data=ObjectListItem.model_validate(obj))
+    return SuccessResponse(data=to_object_list_item(obj))
 
 
 @router.get("/users", response_model=SuccessResponse[list[UserReference]])

@@ -73,6 +73,8 @@ erDiagram
         text address "адрес"
         varchar type "plant / warehouse"
         boolean is_active "активный"
+        uuid last_modified_by FK "кто изменил"
+        timestamp last_modified_at "когда изменили"
         timestamp created_at "дата создания"
         timestamp updated_at "дата обновления"
         timestamp deleted_at "дата удаления (soft delete)"
@@ -218,6 +220,7 @@ erDiagram
     products }o--|| objects : "second_plant_id"
     products }o--|| objects : "third_plant_id"
     products }o--o| users : "last_modified_by"
+    objects }o--o| users : "last_modified_by"
     users ||--o{ audit_log : "changed_by"
 
     %% Users → Sessions
@@ -339,6 +342,8 @@ CREATE TABLE objects (
     address TEXT,
     type VARCHAR(20) NOT NULL CHECK (type IN ('plant', 'warehouse')),
     is_active BOOLEAN DEFAULT true,
+    last_modified_by UUID REFERENCES users(id),
+    last_modified_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted_at TIMESTAMP WITH TIME ZONE
@@ -346,6 +351,8 @@ CREATE TABLE objects (
 
 CREATE INDEX idx_objects_type ON objects(type);
 CREATE INDEX idx_objects_city ON objects(city);
+CREATE INDEX idx_objects_last_modified_at ON objects(last_modified_at);
+CREATE INDEX idx_objects_last_modified_by ON objects(last_modified_by);
 Поля:
 
 Поле	Тип	Обязательное	Описание
@@ -356,6 +363,8 @@ region	TEXT	❌	Регион
 address	TEXT	❌	Адрес
 type	VARCHAR(20)	✅	plant или warehouse
 is_active	BOOLEAN	✅	Активный (по умолчанию true)
+last_modified_by	UUID	❌	Кто изменил → users.id
+last_modified_at	TIMESTAMP	❌	Когда изменили
 created_at	TIMESTAMP	✅	Дата создания
 updated_at	TIMESTAMP	✅	Дата обновления
 deleted_at	TIMESTAMP	❌	Дата удаления (soft delete)
@@ -989,6 +998,7 @@ EXECUTE FUNCTION trigger_create_normative();
 8	008_available_balances.sql	available_balances
 9	009_events.sql	events
 11	011_product_admin.sql	products (gtin, mark_control, audit) + audit_log
+14	014_object_admin.sql	objects (last_modified_by, last_modified_at)
 10	010_functions.sql	Все функции
 11	011_views.sql	Все представления
 12	012_triggers.sql	Все триггеры

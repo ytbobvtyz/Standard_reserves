@@ -1,6 +1,19 @@
+from datetime import datetime
 from typing import TYPE_CHECKING
+from uuid import UUID
 
-from sqlalchemy import Boolean, CheckConstraint, Index, Integer, String, Text, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    text,
+)
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, SoftDeleteMixin, TimestampMixin
@@ -10,6 +23,7 @@ if TYPE_CHECKING:
     from app.models.normative import Normative
     from app.models.product import Product
     from app.models.request_item import RequestItem
+    from app.models.user import User
 
 
 class Object(TimestampMixin, SoftDeleteMixin, Base):
@@ -20,6 +34,8 @@ class Object(TimestampMixin, SoftDeleteMixin, Base):
         CheckConstraint("type IN ('plant', 'warehouse')", name="ck_objects_type"),
         Index("idx_objects_type", "type"),
         Index("idx_objects_city", "city"),
+        Index("idx_objects_last_modified_at", "last_modified_at"),
+        Index("idx_objects_last_modified_by", "last_modified_by"),
     )
 
     code: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -34,6 +50,11 @@ class Object(TimestampMixin, SoftDeleteMixin, Base):
         default=True,
         server_default=text("true"),
     )
+    last_modified_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
+    )
+    last_modified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     products_as_plant: Mapped[list["Product"]] = relationship(
         "Product",
@@ -51,4 +72,8 @@ class Object(TimestampMixin, SoftDeleteMixin, Base):
     available_balances: Mapped[list["AvailableBalance"]] = relationship(
         "AvailableBalance",
         back_populates="warehouse",
+    )
+    modified_by_user: Mapped["User | None"] = relationship(
+        "User",
+        foreign_keys=[last_modified_by],
     )

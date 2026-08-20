@@ -947,7 +947,16 @@ json
 | PUT | `/references/products/{code}` | Обновить продукт | pp, economist, logistics |
 | DELETE | `/references/products/{code}` | Удалить продукт | pp, economist, logistics |
 
-Просмотр списка и карточки доступен всем авторизованным ролям, включая `commercial` и `guest`.
+Управление объектами (Этап 7.2) — роль `logistics`:
+
+| Метод | Эндпоинт | Описание | Права |
+|-------|----------|----------|-------|
+| POST | `/references/objects` | Создать объект | logistics |
+| GET | `/references/objects/{code}/edit` | Получить объект для редактирования | logistics |
+| PUT | `/references/objects/{code}` | Обновить объект | logistics |
+| DELETE | `/references/objects/{code}` | Удалить объект | logistics |
+
+Просмотр списков и карточек продуктов/объектов доступен всем авторизованным ролям, включая `commercial` и `guest`.
 
 8.1. Получить список продуктов
 text
@@ -1013,15 +1022,21 @@ json
             "code": 1001,
             "name": "Завод Московский",
             "city": "Москва",
+            "region": "Московская область",
+            "address": null,
             "type": "plant",
-            "is_active": true
+            "is_active": true,
+            "last_modified_at": "2026-08-20T12:00:00Z"
         },
         {
             "code": 2001,
             "name": "Склад Ростов",
             "city": "Ростов-на-Дону",
+            "region": "Ростовская область",
+            "address": null,
             "type": "warehouse",
-            "is_active": true
+            "is_active": true,
+            "last_modified_at": "2026-08-20T12:00:00Z"
         }
     ]
 }
@@ -1190,6 +1205,115 @@ json
 {
     "status": "success",
     "message": "Продукт удален"
+}
+8.9. Создать объект
+text
+POST /references/objects
+Headers:
+
+text
+Authorization: Bearer <token>
+Права: logistics
+
+Тело:
+
+json
+{
+    "code": 3001,
+    "name": "Склад Тестовый",
+    "city": "Москва",
+    "region": null,
+    "address": null,
+    "type": "warehouse",
+    "is_active": true
+}
+Правила:
+- `code` — целое число > 0, уникален (иначе 409 ALREADY_EXISTS)
+- `name`, `city` — не пустые
+- `type` — `plant` или `warehouse`
+- `is_active` по умолчанию true
+- `last_modified_by` / `last_modified_at` заполняются автоматически
+
+Response (200): тот же объект, что GET .../edit.
+
+8.10. Получить объект для редактирования
+text
+GET /references/objects/{code}/edit
+Headers:
+
+text
+Authorization: Bearer <token>
+Права: logistics
+
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": {
+        "code": 3001,
+        "name": "Склад Тестовый",
+        "city": "Москва",
+        "region": null,
+        "address": null,
+        "type": "warehouse",
+        "is_active": true,
+        "last_modified_by": {
+            "id": "44444444-4444-4444-4444-444444444444",
+            "full_name": "Кузнецов Кузьма"
+        },
+        "last_modified_at": "2026-08-20T12:00:00Z"
+    }
+}
+8.11. Обновить объект
+text
+PUT /references/objects/{code}
+Headers:
+
+text
+Authorization: Bearer <token>
+Права: logistics
+
+Поле `code` не изменяется. Переданные поля обновляются; непереданные сохраняют текущие значения.
+
+json
+{
+    "name": "Склад Тестовый (обновлён)",
+    "city": "Санкт-Петербург",
+    "region": "Санкт-Петербург",
+    "address": null,
+    "type": "warehouse",
+    "is_active": true
+}
+Валидация: name/city не пустые, type = plant|warehouse.
+
+Response (200): тот же объект, что GET .../edit. last_modified_by/at обновляются.
+
+8.12. Удалить объект
+text
+DELETE /references/objects/{code}
+Headers:
+
+text
+Authorization: Bearer <token>
+Права: logistics
+
+Soft delete (deleted_at). Если есть связанные записи в products (plant_id / second_plant_id / third_plant_id), request_items, normatives или available_balances — 409:
+
+json
+{
+    "status": "error",
+    "error": {
+        "code": "HAS_RELATIONS",
+        "message": "Нельзя удалить объект: есть связанные продукты, позиции запросов, нормативы или остатки"
+    }
+}
+Response (200):
+
+json
+{
+    "status": "success",
+    "message": "Объект удален"
 }
 9. УПРАВЛЕНИЕ ОСТАТКАМИ
 9.1. Загрузить остатки (CSV)

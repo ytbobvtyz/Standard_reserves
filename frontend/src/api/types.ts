@@ -82,6 +82,33 @@ export interface ObjectListItem {
   address?: string | null
   type: ObjectType
   is_active: boolean
+  last_modified_at?: string | null
+}
+
+export interface ObjectDetail extends ObjectListItem {
+  last_modified_by?: {
+    id: string
+    full_name: string
+  } | null
+}
+
+export interface ObjectCreatePayload {
+  code: number
+  name: string
+  city: string
+  region?: string | null
+  address?: string | null
+  type: ObjectType
+  is_active: boolean
+}
+
+export interface ObjectUpdatePayload {
+  name?: string
+  city?: string
+  region?: string | null
+  address?: string | null
+  type?: ObjectType
+  is_active?: boolean
 }
 
 export interface RequestItemPayload {

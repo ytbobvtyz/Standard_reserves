@@ -2,9 +2,12 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import APIError
+from app.models.object import Object
 from app.models.product import Product
 from app.schemas.reference import (
     LastModifiedBy,
+    ObjectDetail,
+    ObjectListItem,
     ProductDetail,
     ProductListItem,
     RelatedProductItem,
@@ -43,8 +46,30 @@ def to_product_detail(product: Product) -> ProductDetail:
     )
 
 
-RELATED_PRODUCTS_SQL = text(
-    """
+def to_object_list_item(obj: Object) -> ObjectListItem:
+    return ObjectListItem(
+        code=obj.code,
+        name=obj.name,
+        city=obj.city,
+        region=obj.region,
+        address=obj.address,
+        type=obj.type,
+        is_active=obj.is_active,
+        last_modified_at=obj.last_modified_at,
+    )
+
+
+def to_object_detail(obj: Object) -> ObjectDetail:
+    actor = obj.modified_by_user
+    return ObjectDetail(
+        **to_object_list_item(obj).model_dump(),
+        last_modified_by=(
+            LastModifiedBy(id=actor.id, full_name=actor.full_name) if actor else None
+        ),
+    )
+
+
+RELATED_PRODUCTS_SQL = text("""
     WITH RECURSIVE
     ancestors AS (
         SELECT code, parent_code, children_code, name, is_active,
@@ -89,8 +114,7 @@ RELATED_PRODUCTS_SQL = text(
         WHERE code != :code
     ) q
     ORDER BY relation DESC, code
-    """
-)
+    """)
 
 
 async def get_related_products(db: AsyncSession, code: int) -> RelatedProductsData:

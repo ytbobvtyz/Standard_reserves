@@ -50,25 +50,18 @@ async def db_ready() -> AsyncGenerator[None, None]:
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
         await connection.execute(
-            text(
-                "ALTER TABLE requests "
-                "ADD COLUMN IF NOT EXISTS executed_by UUID"
-            )
+            text("ALTER TABLE requests " "ADD COLUMN IF NOT EXISTS executed_by UUID")
         )
         await connection.execute(
             text("ALTER TABLE requests ADD COLUMN IF NOT EXISTS order_number TEXT")
         )
         await connection.execute(
             text(
-                "ALTER TABLE requests "
-                "ADD COLUMN IF NOT EXISTS executed_comment TEXT"
+                "ALTER TABLE requests " "ADD COLUMN IF NOT EXISTS executed_comment TEXT"
             )
         )
         await connection.execute(
-            text(
-                "ALTER TABLE products "
-                "ADD COLUMN IF NOT EXISTS gtin VARCHAR(13)"
-            )
+            text("ALTER TABLE products " "ADD COLUMN IF NOT EXISTS gtin VARCHAR(13)")
         )
         await connection.execute(
             text(
@@ -78,8 +71,7 @@ async def db_ready() -> AsyncGenerator[None, None]:
         )
         await connection.execute(
             text(
-                "ALTER TABLE products "
-                "ADD COLUMN IF NOT EXISTS last_modified_by UUID"
+                "ALTER TABLE products " "ADD COLUMN IF NOT EXISTS last_modified_by UUID"
             )
         )
         await connection.execute(
@@ -90,10 +82,7 @@ async def db_ready() -> AsyncGenerator[None, None]:
             )
         )
         await connection.execute(
-            text(
-                "ALTER TABLE products "
-                "ALTER COLUMN mark_control SET DEFAULT false"
-            )
+            text("ALTER TABLE products " "ALTER COLUMN mark_control SET DEFAULT false")
         )
         await connection.execute(
             text("UPDATE products SET mark_control = false WHERE mark_control IS NULL")
@@ -102,6 +91,18 @@ async def db_ready() -> AsyncGenerator[None, None]:
             text(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_products_gtin "
                 "ON products(gtin) WHERE gtin IS NOT NULL"
+            )
+        )
+        await connection.execute(
+            text(
+                "ALTER TABLE objects " "ADD COLUMN IF NOT EXISTS last_modified_by UUID"
+            )
+        )
+        await connection.execute(
+            text(
+                "ALTER TABLE objects "
+                "ADD COLUMN IF NOT EXISTS last_modified_at "
+                "TIMESTAMP WITH TIME ZONE"
             )
         )
     yield
@@ -160,7 +161,9 @@ async def _purge_requests(session, request_ids: list[uuid.UUID]) -> None:
                 RequestItemHistory.request_item_id.in_(item_ids)
             )
         )
-    await session.execute(delete(Normative).where(Normative.request_id.in_(request_ids)))
+    await session.execute(
+        delete(Normative).where(Normative.request_id.in_(request_ids))
+    )
     await session.execute(delete(Event).where(Event.request_id.in_(request_ids)))
     await session.execute(
         delete(RequestItem).where(RequestItem.request_id.in_(request_ids))
@@ -187,6 +190,11 @@ async def _delete_user(user_id: uuid.UUID) -> None:
         await session.execute(
             update(Product)
             .where(Product.last_modified_by == user_id)
+            .values(last_modified_by=None)
+        )
+        await session.execute(
+            update(Object)
+            .where(Object.last_modified_by == user_id)
             .values(last_modified_by=None)
         )
         await _purge_requests(session, list(request_ids))
