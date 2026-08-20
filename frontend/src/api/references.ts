@@ -6,6 +6,8 @@ import type {
   ProductDetail,
   ProductListItem,
   ProductListParams,
+  ProductUpdatePayload,
+  ProductUploadResult,
   RelatedProductsData,
   User,
 } from './types'
@@ -16,6 +18,35 @@ export const referencesApi = {
 
   getProduct: (code: number) =>
     api.get<ApiSuccess<ProductDetail>>(`/references/products/${code}`),
+
+  getProductForEdit: (code: number) =>
+    api.get<ApiSuccess<ProductDetail>>(`/references/products/${code}/edit`),
+
+  updateProduct: (code: number, payload: ProductUpdatePayload) =>
+    api.put<ApiSuccess<ProductDetail>>(`/references/products/${code}`, payload),
+
+  deleteProduct: (code: number) =>
+    api.delete<{ status: 'success'; message: string }>(`/references/products/${code}`),
+
+  downloadProductsTemplate: () =>
+    api.get<Blob>('/references/products/template', { responseType: 'blob' }),
+
+  uploadProducts: (file: File, onProgress?: (percent: number) => void) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post<ApiSuccess<ProductUploadResult>>(
+      '/references/products/upload',
+      form,
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (event) => {
+          if (event.total) {
+            onProgress?.(Math.round((event.loaded / event.total) * 100))
+          }
+        },
+      },
+    )
+  },
 
   getRelated: (code: number) =>
     api.get<ApiSuccess<RelatedProductsData>>(`/products/${code}/related`),

@@ -69,6 +69,9 @@ export interface ProductListItem {
   monthly_consumption: number | null
   is_active: boolean
   description?: string | null
+  gtin?: string | null
+  mark_control?: boolean
+  last_modified_at?: string | null
 }
 
 export interface ObjectListItem {
@@ -361,6 +364,39 @@ export interface ProductDetail extends ProductListItem {
   third_plant_id?: number | null
   parent_code?: number | null
   children_code?: number | null
+  last_modified_by?: {
+    id: string
+    full_name: string
+  } | null
+}
+
+export interface ProductUpdatePayload {
+  name: string
+  description?: string | null
+  category: 'A' | 'B' | 'C'
+  is_active: boolean
+  weight_kg: number
+  monthly_consumption?: number | null
+  gtin?: string | null
+  mark_control: boolean
+  plant_id: number
+  second_plant_id?: number | null
+  third_plant_id?: number | null
+  parent_code?: number | null
+  children_code?: number | null
+}
+
+export interface ProductUploadError {
+  row: number
+  message: string
+}
+
+export interface ProductUploadResult {
+  created: number
+  updated: number
+  errors: number
+  message: string
+  error_details: ProductUploadError[]
 }
 
 export interface RelatedProduct {

@@ -1,17 +1,22 @@
+from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from sqlalchemy import (
     CHAR,
     Boolean,
     CheckConstraint,
+    DateTime,
     ForeignKey,
     Index,
     Integer,
     Numeric,
+    String,
     Text,
     text,
 )
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, SoftDeleteMixin, TimestampMixin
@@ -21,6 +26,7 @@ if TYPE_CHECKING:
     from app.models.normative import Normative
     from app.models.object import Object
     from app.models.request_item import RequestItem
+    from app.models.user import User
 
 
 class Product(TimestampMixin, SoftDeleteMixin, Base):
@@ -44,6 +50,18 @@ class Product(TimestampMixin, SoftDeleteMixin, Base):
             "children_code",
             postgresql_where=text("children_code IS NOT NULL"),
         ),
+        Index(
+            "idx_products_gtin",
+            "gtin",
+            unique=True,
+            postgresql_where=text("gtin IS NOT NULL"),
+        ),
+        Index("idx_products_last_modified_at", "last_modified_at"),
+        Index("idx_products_last_modified_by", "last_modified_by"),
+        CheckConstraint(
+            "gtin IS NULL OR gtin ~ '^[0-9]{13}$'",
+            name="ck_products_gtin",
+        ),
     )
 
     code: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -66,6 +84,18 @@ class Product(TimestampMixin, SoftDeleteMixin, Base):
     )
     parent_code: Mapped[int | None] = mapped_column(ForeignKey("products.code"))
     children_code: Mapped[int | None] = mapped_column(ForeignKey("products.code"))
+    gtin: Mapped[str | None] = mapped_column(String(13))
+    mark_control: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
+    last_modified_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
+    )
+    last_modified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     plant: Mapped["Object"] = relationship(
         "Object",
@@ -101,4 +131,8 @@ class Product(TimestampMixin, SoftDeleteMixin, Base):
     available_balances: Mapped[list["AvailableBalance"]] = relationship(
         "AvailableBalance",
         back_populates="product",
+    )
+    modified_by_user: Mapped["User | None"] = relationship(
+        "User",
+        foreign_keys=[last_modified_by],
     )

@@ -6,13 +6,14 @@ from decimal import Decimal
 import pytest
 from fastapi import Depends
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, select, text, update
 
 from app.api.deps import require_roles
 from app.core.database import AsyncSessionLocal, check_database_connection, engine
 from app.core.security import hash_password
 from app.main import app
 from app.models import (
+    AuditLog,
     Base,
     Event,
     Normative,
@@ -61,6 +62,46 @@ async def db_ready() -> AsyncGenerator[None, None]:
             text(
                 "ALTER TABLE requests "
                 "ADD COLUMN IF NOT EXISTS executed_comment TEXT"
+            )
+        )
+        await connection.execute(
+            text(
+                "ALTER TABLE products "
+                "ADD COLUMN IF NOT EXISTS gtin VARCHAR(13)"
+            )
+        )
+        await connection.execute(
+            text(
+                "ALTER TABLE products "
+                "ADD COLUMN IF NOT EXISTS mark_control BOOLEAN DEFAULT false"
+            )
+        )
+        await connection.execute(
+            text(
+                "ALTER TABLE products "
+                "ADD COLUMN IF NOT EXISTS last_modified_by UUID"
+            )
+        )
+        await connection.execute(
+            text(
+                "ALTER TABLE products "
+                "ADD COLUMN IF NOT EXISTS last_modified_at "
+                "TIMESTAMP WITH TIME ZONE"
+            )
+        )
+        await connection.execute(
+            text(
+                "ALTER TABLE products "
+                "ALTER COLUMN mark_control SET DEFAULT false"
+            )
+        )
+        await connection.execute(
+            text("UPDATE products SET mark_control = false WHERE mark_control IS NULL")
+        )
+        await connection.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_products_gtin "
+                "ON products(gtin) WHERE gtin IS NOT NULL"
             )
         )
     yield
@@ -141,6 +182,12 @@ async def _delete_user(user_id: uuid.UUID) -> None:
         ).all()
         await session.execute(
             delete(RequestItemHistory).where(RequestItemHistory.changed_by == user_id)
+        )
+        await session.execute(delete(AuditLog).where(AuditLog.changed_by == user_id))
+        await session.execute(
+            update(Product)
+            .where(Product.last_modified_by == user_id)
+            .values(last_modified_by=None)
         )
         await _purge_requests(session, list(request_ids))
         await session.execute(delete(Session).where(Session.user_id == user_id))

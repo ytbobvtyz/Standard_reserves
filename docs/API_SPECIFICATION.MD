@@ -936,6 +936,19 @@ json
     }
 }
 8. СПРАВОЧНИКИ
+
+Управление номенклатурой (Этап 7.1) — роли `pp`, `economist`, `logistics`:
+
+| Метод | Эндпоинт | Описание | Права |
+|-------|----------|----------|-------|
+| GET | `/references/products/template` | Скачать Excel-шаблон | pp, economist, logistics |
+| POST | `/references/products/upload` | Загрузить продукты из Excel | pp, economist, logistics |
+| GET | `/references/products/{code}/edit` | Получить продукт для редактирования | pp, economist, logistics |
+| PUT | `/references/products/{code}` | Обновить продукт | pp, economist, logistics |
+| DELETE | `/references/products/{code}` | Удалить продукт | pp, economist, logistics |
+
+Просмотр списка и карточки доступен всем авторизованным ролям, включая `commercial` и `guest`.
+
 8.1. Получить список продуктов
 text
 GET /references/products
@@ -965,7 +978,10 @@ json
             "plant_name": "Завод Московский",
             "weight_kg": 0.250,
             "monthly_consumption": 1000,
-            "is_active": true
+            "is_active": true,
+            "gtin": "4601234567890",
+            "mark_control": false,
+            "last_modified_at": "2026-08-20T12:00:00Z"
         }
     ],
     "meta": {
@@ -1034,6 +1050,146 @@ json
             "is_active": true
         }
     ]
+}
+8.4. Скачать Excel-шаблон продуктов
+text
+GET /references/products/template
+Headers:
+
+text
+Authorization: Bearer <token>
+Права: pp, economist, logistics
+
+Response (200): файл application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+
+Колонки шаблона: code, name, status, children_code, parent_code, category, mark_control, gtin, plant_id, weight_kg
+
+8.5. Загрузить продукты из Excel
+text
+POST /references/products/upload
+Headers:
+
+text
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+Права: pp, economist, logistics
+
+Form-data: file — .xlsx или .xls
+
+Правила ячеек:
+- status: «Активный» → is_active=true, пустая → false
+- mark_control: «да» → true, «нет» → false
+- gtin: пусто или ровно 13 цифр, уникален
+- по code: существующая запись обновляется, иначе создаётся
+
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": {
+        "created": 2,
+        "updated": 3,
+        "errors": 1,
+        "message": "Загружено 5, ошибок 1",
+        "error_details": [
+            {"row": 4, "message": "GTIN должен содержать 13 цифр"}
+        ]
+    }
+}
+8.6. Получить продукт для редактирования
+text
+GET /references/products/{code}/edit
+Headers:
+
+text
+Authorization: Bearer <token>
+Права: pp, economist, logistics
+
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": {
+        "code": 10001,
+        "name": "Подшипник 6204ZZ",
+        "description": null,
+        "category": "A",
+        "plant_id": 1001,
+        "plant_name": "Завод Московский",
+        "second_plant_id": null,
+        "third_plant_id": null,
+        "weight_kg": 0.25,
+        "monthly_consumption": 1000,
+        "is_active": true,
+        "parent_code": null,
+        "children_code": 10004,
+        "gtin": "4601234567890",
+        "mark_control": false,
+        "last_modified_by": {
+            "id": "22222222-2222-2222-2222-222222222222",
+            "full_name": "Петров Петр"
+        },
+        "last_modified_at": "2026-08-20T12:00:00Z"
+    }
+}
+8.7. Обновить продукт
+text
+PUT /references/products/{code}
+Headers:
+
+text
+Authorization: Bearer <token>
+Права: pp, economist, logistics
+
+Поле code не изменяется. Тело:
+
+json
+{
+    "name": "Подшипник 6204ZZ",
+    "description": null,
+    "category": "A",
+    "is_active": true,
+    "weight_kg": 0.25,
+    "monthly_consumption": 1000,
+    "gtin": "4601234567890",
+    "mark_control": false,
+    "plant_id": 1001,
+    "second_plant_id": null,
+    "third_plant_id": null,
+    "parent_code": null,
+    "children_code": 10004
+}
+Валидация: категория A/B/C, вес > 0, GTIN 13 цифр или null и уникален, parent_code/children_code существуют.
+
+Response (200): тот же объект, что GET .../edit. last_modified_by/at обновляются.
+
+8.8. Удалить продукт
+text
+DELETE /references/products/{code}
+Headers:
+
+text
+Authorization: Bearer <token>
+Права: pp, economist, logistics
+
+Soft delete (deleted_at). Если есть связанные записи в normatives, request_items или available_balances — 409:
+
+json
+{
+    "status": "error",
+    "error": {
+        "code": "HAS_RELATIONS",
+        "message": "Нельзя удалить продукт: есть связанные нормативы, позиции запросов или остатки"
+    }
+}
+Response (200):
+
+json
+{
+    "status": "success",
+    "message": "Продукт удален"
 }
 9. УПРАВЛЕНИЕ ОСТАТКАМИ
 9.1. Загрузить остатки (CSV)
@@ -1220,7 +1376,7 @@ json
 Согласование (экономист)	/approvals/economy/*	2
 Логистика	/logistics/*	5
 Нормативы	/normatives/*	4
-Справочники	/references/*	3
+Справочники	/references/*	8
 Остатки	/inventory/*	2
 Тарифы (задел)	/tariffs/*	1
 Агент (задел)	/agent/*	2
@@ -1229,9 +1385,9 @@ json
 Роль	Доступные эндпоинты
 guest	Только чтение справочников и нормативов
 commercial	Создание запросов (нормативные + разовые), просмотр своих запросов
-pp	Согласование (ПП), просмотр всех запросов
-economist	Согласование (экономист), просмотр всех запросов, расчет тарифов
-logistics	Дашборд, формирование заказов, исполнение разовых, выгрузка Excel, загрузка остатков
+pp	Согласование (ПП), просмотр всех запросов, CRUD продуктов, Excel-загрузка
+economist	Согласование (экономист), просмотр всех запросов, CRUD продуктов, Excel-загрузка
+logistics	Дашборд, формирование заказов, исполнение разовых, выгрузка Excel, загрузка остатков, CRUD продуктов
 14. ПРИМЕР ПОЛНОГО FLOW
 14.1. Нормативный запас — полный цикл
 text

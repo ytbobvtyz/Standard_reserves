@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import APIError
 from app.models.product import Product
 from app.schemas.reference import (
+    LastModifiedBy,
     ProductDetail,
     ProductListItem,
     RelatedProductItem,
@@ -21,10 +22,14 @@ def to_product_list_item(product: Product) -> ProductListItem:
         weight_kg=product.weight_kg,
         monthly_consumption=product.monthly_consumption,
         is_active=product.is_active,
+        gtin=product.gtin,
+        mark_control=bool(product.mark_control),
+        last_modified_at=product.last_modified_at,
     )
 
 
 def to_product_detail(product: Product) -> ProductDetail:
+    actor = product.modified_by_user
     return ProductDetail(
         **to_product_list_item(product).model_dump(),
         description=product.description,
@@ -32,6 +37,9 @@ def to_product_detail(product: Product) -> ProductDetail:
         third_plant_id=product.third_plant_id,
         parent_code=product.parent_code,
         children_code=product.children_code,
+        last_modified_by=(
+            LastModifiedBy(id=actor.id, full_name=actor.full_name) if actor else None
+        ),
     )
 
 

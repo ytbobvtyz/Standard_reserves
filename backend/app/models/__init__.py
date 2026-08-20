@@ -1,3 +1,4 @@
+from app.models.audit_log import AuditLog
 from app.models.available_balance import AvailableBalance
 from app.models.base import Base
 from app.models.event import Event
@@ -12,6 +13,7 @@ from app.models.session import Session
 from app.models.user import User
 
 __all__ = [
+    "AuditLog",
     "AvailableBalance",
     "Base",
     "Event",

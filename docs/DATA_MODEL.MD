@@ -12,7 +12,7 @@
 | **Первичные ключи** | `INTEGER` для справочников (артикулы, коды объектов), `UUID` для транзакционных таблиц |
 | **Временные метки** | `TIMESTAMP WITH TIME ZONE` (храним в UTC) |
 | **Мягкое удаление** | Используем `deleted_at TIMESTAMP` вместо физического удаления |
-| **Аудит** | История изменений хранится в `request_item_history` |
+| **Аудит** | История позиций — в `request_item_history`; изменения номенклатуры — в `audit_log` |
 | **Индексы** | По всем foreign key и часто фильтруемым полям |
 | **Наименования** | snake_case, английские названия |
 
@@ -46,9 +46,23 @@ erDiagram
         boolean is_active "активный"
         int parent_code FK "ссылка на старый артикул"
         int children_code FK "ссылка на новый артикул"
+        varchar gtin "GTIN-13 (уникальный)"
+        boolean mark_control "Честный знак"
+        uuid last_modified_by FK "кто изменил"
+        timestamp last_modified_at "когда изменили"
         timestamp created_at "дата создания"
         timestamp updated_at "дата обновления"
         timestamp deleted_at "дата удаления (soft delete)"
+    }
+
+    audit_log {
+        uuid id PK
+        text entity_type "product / ..."
+        text entity_id "код сущности"
+        text action "create/update/delete/upload"
+        uuid changed_by FK
+        jsonb payload
+        timestamp created_at
     }
 
     objects {
@@ -203,6 +217,8 @@ erDiagram
     products }o--|| objects : "plant_id"
     products }o--|| objects : "second_plant_id"
     products }o--|| objects : "third_plant_id"
+    products }o--o| users : "last_modified_by"
+    users ||--o{ audit_log : "changed_by"
 
     %% Users → Sessions
     users ||--o{ sessions : "имеет"
@@ -256,6 +272,10 @@ CREATE TABLE products (
     is_active BOOLEAN DEFAULT true,
     parent_code INTEGER REFERENCES products(code),
     children_code INTEGER REFERENCES products(code),
+    gtin VARCHAR(13) UNIQUE,
+    mark_control BOOLEAN DEFAULT false,
+    last_modified_by UUID REFERENCES users(id),
+    last_modified_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted_at TIMESTAMP WITH TIME ZONE
@@ -267,6 +287,9 @@ CREATE INDEX idx_products_plant_id ON products(plant_id);
 CREATE INDEX idx_products_is_active ON products(is_active) WHERE is_active = true;
 CREATE INDEX idx_products_parent_code ON products(parent_code) WHERE parent_code IS NOT NULL;
 CREATE INDEX idx_products_children_code ON products(children_code) WHERE children_code IS NOT NULL;
+CREATE UNIQUE INDEX idx_products_gtin ON products(gtin) WHERE gtin IS NOT NULL;
+CREATE INDEX idx_products_last_modified_at ON products(last_modified_at);
+CREATE INDEX idx_products_last_modified_by ON products(last_modified_by);
 Поля:
 
 Поле	Тип	Обязательное	Описание
@@ -282,9 +305,28 @@ monthly_consumption	DECIMAL(12,2)	❌	Потребление в месяц
 is_active	BOOLEAN	✅	Активный (по умолчанию true)
 parent_code	INTEGER	❌	Ссылка на старый артикул
 children_code	INTEGER	❌	Ссылка на новый артикул
+gtin	VARCHAR(13)	❌	GTIN-13, уникален если заполнен
+mark_control	BOOLEAN	✅	Честный знак (по умолчанию false)
+last_modified_by	UUID	❌	Кто изменил → users.id
+last_modified_at	TIMESTAMP	✅	Когда изменили
 created_at	TIMESTAMP	✅	Дата создания
 updated_at	TIMESTAMP	✅	Дата обновления
 deleted_at	TIMESTAMP	❌	Дата удаления (soft delete)
+3.1.1. audit_log — Журнал изменений справочников
+sql
+CREATE TABLE audit_log (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    action TEXT NOT NULL CHECK (action IN ('create', 'update', 'delete', 'upload')),
+    changed_by UUID REFERENCES users(id),
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_audit_log_entity ON audit_log(entity_type, entity_id);
+CREATE INDEX idx_audit_log_changed_by ON audit_log(changed_by);
+CREATE INDEX idx_audit_log_created_at ON audit_log(created_at);
 3.2. objects — Объекты (заводы и склады)
 Объединенная таблица для заводов и складов. Тип определяется полем type.
 
@@ -946,6 +988,7 @@ EXECUTE FUNCTION trigger_create_normative();
 7	007_normatives.sql	normatives
 8	008_available_balances.sql	available_balances
 9	009_events.sql	events
+11	011_product_admin.sql	products (gtin, mark_control, audit) + audit_log
 10	010_functions.sql	Все функции
 11	011_views.sql	Все представления
 12	012_triggers.sql	Все триггеры

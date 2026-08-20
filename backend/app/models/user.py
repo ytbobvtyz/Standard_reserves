@@ -9,7 +9,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, SoftDeleteMixin, TimestampMixin
 
 if TYPE_CHECKING:
+    from app.models.audit_log import AuditLog
     from app.models.password_reset import PasswordResetToken
+    from app.models.product import Product
     from app.models.request import Request
     from app.models.request_item_history import RequestItemHistory
     from app.models.session import Session
@@ -85,4 +87,13 @@ class User(TimestampMixin, SoftDeleteMixin, Base):
     item_changes: Mapped[list["RequestItemHistory"]] = relationship(
         "RequestItemHistory",
         back_populates="changed_by_user",
+    )
+    audit_entries: Mapped[list["AuditLog"]] = relationship(
+        "AuditLog",
+        back_populates="actor",
+    )
+    modified_products: Mapped[list["Product"]] = relationship(
+        "Product",
+        back_populates="modified_by_user",
+        foreign_keys="Product.last_modified_by",
     )

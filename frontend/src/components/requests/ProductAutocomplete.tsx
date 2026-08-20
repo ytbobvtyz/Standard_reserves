@@ -7,12 +7,14 @@ interface ProductAutocompleteProps {
   value?: number
   onChange?: (code: number | undefined, product?: ProductListItem | null) => void
   disabled?: boolean
+  activeOnly?: boolean
 }
 
 export function ProductAutocomplete({
   value,
   onChange,
   disabled,
+  activeOnly = true,
 }: ProductAutocompleteProps) {
   const [options, setOptions] = useState<ProductListItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -23,7 +25,7 @@ export function ProductAutocomplete({
     try {
       const { data } = await referencesApi.getProducts({
         search: term || undefined,
-        is_active: true,
+        is_active: activeOnly ? true : undefined,
         limit: 20,
       })
       setOptions(data.data)
@@ -35,6 +37,20 @@ export function ProductAutocomplete({
   useEffect(() => {
     void search()
   }, [])
+
+  useEffect(() => {
+    if (!value) {
+      return
+    }
+    void referencesApi.getProduct(value).then(({ data }) => {
+      setOptions((prev) => {
+        if (prev.some((item) => item.code === data.data.code)) {
+          return prev
+        }
+        return [data.data, ...prev]
+      })
+    })
+  }, [value])
 
   return (
     <Select

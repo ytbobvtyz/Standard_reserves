@@ -1,25 +1,35 @@
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi.responses import Response
 from sqlalchemy import Select, String, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_current_user, get_db, require_roles
 from app.core.exceptions import APIError
 from app.models.object import Object
 from app.models.product import Product
 from app.models.user import User
-from app.schemas.common import PaginatedResponse, PaginationMeta, SuccessResponse
+from app.schemas.common import (
+    MessageResponse,
+    PaginatedResponse,
+    PaginationMeta,
+    SuccessResponse,
+)
 from app.schemas.reference import (
     ObjectListItem,
     ProductDetail,
     ProductListItem,
+    ProductUpdate,
+    ProductUploadResult,
     UserReference,
 )
+from app.services import products_admin
 from app.services.references import to_product_detail, to_product_list_item
 
 router = APIRouter(prefix="/references", tags=["Справочники"])
+PRODUCT_MANAGERS = require_roles("pp", "economist", "logistics")
 
 
 def _paginate(stmt: Select, page: int, limit: int) -> Select:
@@ -71,6 +81,78 @@ async def list_products(
     )
 
 
+@router.get("/products/template")
+async def download_products_template(
+    _user: User = Depends(PRODUCT_MANAGERS),
+) -> Response:
+    content = products_admin.build_template_xlsx()
+    return Response(
+        content=content,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        headers={
+            "Content-Disposition": 'attachment; filename="products_template.xlsx"'
+        },
+    )
+
+
+@router.post(
+    "/products/upload",
+    response_model=SuccessResponse[ProductUploadResult],
+)
+async def upload_products(
+    file: UploadFile = File(...),
+    current_user: User = Depends(PRODUCT_MANAGERS),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[ProductUploadResult]:
+    content = await file.read()
+    data = await products_admin.upload_products(
+        db,
+        current_user,
+        content,
+        file.filename or "products.xlsx",
+    )
+    return SuccessResponse(data=data)
+
+
+@router.get(
+    "/products/{code}/edit",
+    response_model=SuccessResponse[ProductDetail],
+)
+async def get_product_for_edit(
+    code: int,
+    _user: User = Depends(PRODUCT_MANAGERS),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[ProductDetail]:
+    data = await products_admin.get_product_for_edit(db, code)
+    return SuccessResponse(data=data)
+
+
+@router.put(
+    "/products/{code}",
+    response_model=SuccessResponse[ProductDetail],
+)
+async def update_product(
+    code: int,
+    body: ProductUpdate,
+    current_user: User = Depends(PRODUCT_MANAGERS),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[ProductDetail]:
+    data = await products_admin.update_product(db, code, body, current_user)
+    return SuccessResponse(data=data)
+
+
+@router.delete("/products/{code}", response_model=MessageResponse)
+async def delete_product(
+    code: int,
+    current_user: User = Depends(PRODUCT_MANAGERS),
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponse:
+    await products_admin.delete_product(db, code, current_user)
+    return MessageResponse(message="Продукт удален")
+
+
 @router.get("/products/{code}", response_model=SuccessResponse[ProductDetail])
 async def get_product(
     code: int,
@@ -79,7 +161,10 @@ async def get_product(
 ) -> SuccessResponse[ProductDetail]:
     result = await db.execute(
         select(Product)
-        .options(selectinload(Product.plant))
+        .options(
+            selectinload(Product.plant),
+            selectinload(Product.modified_by_user),
+        )
         .where(Product.code == code, Product.deleted_at.is_(None))
     )
     product = result.scalar_one_or_none()
