@@ -135,12 +135,39 @@ describe('NormativesPage', () => {
     expect(getOnDate).toHaveBeenCalledWith({
       date: dayjs().format('YYYY-MM-DD'),
       warehouse_code: undefined,
+      search: undefined,
     })
     expect(screen.getByText('Корпус чугунный')).toBeTruthy()
     expect(screen.getAllByText("ООО 'Ромашка'").length).toBeGreaterThan(0)
     expect(screen.getByText(/Склад Ростов: 1\s?000 шт/)).toBeTruthy()
     expect(screen.getByText(/Склад Владивосток: 500 шт/)).toBeTruthy()
     expect(screen.getByLabelText('Срез на дату')).toBeTruthy()
+  })
+
+  it('sends product search after debounce', async () => {
+    render(
+      <MemoryRouter>
+        <NormativesPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByText('Подшипник 6204ZZ')).toBeTruthy()
+    })
+    getOnDate.mockClear()
+
+    fireEvent.change(screen.getByLabelText('Поиск по артикулу или названию'), {
+      target: { value: 'подшипник' },
+    })
+    expect(getOnDate).not.toHaveBeenCalled()
+
+    await waitFor(
+      () => {
+        expect(getOnDate).toHaveBeenCalledWith(
+          expect.objectContaining({ search: 'подшипник' }),
+        )
+      },
+      { timeout: 1000 },
+    )
   })
 
   it('refetches when the slice date changes', async () => {

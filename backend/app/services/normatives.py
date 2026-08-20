@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from typing import Literal
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, String, cast, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -38,6 +38,21 @@ def _end_of_day(value: date) -> datetime:
     return datetime.combine(value, time.max, tzinfo=UTC)
 
 
+def _product_search_condition(search: str | None):
+    if not search or not search.strip():
+        return None
+    term = f"%{search.strip()}%"
+    return exists(
+        select(1).where(
+            Product.code == Normative.product_code,
+            or_(
+                cast(Product.code, String).ilike(term),
+                Product.name.ilike(term),
+            ),
+        )
+    )
+
+
 def to_list_item(normative: Normative) -> NormativeListItem:
     return NormativeListItem(
         id=normative.id,
@@ -61,6 +76,7 @@ async def list_current_normatives(
     product_code: int | None,
     client_name: str | None,
     category: CategoryFilter | None,
+    search: str | None,
     page: int,
     limit: int,
 ) -> tuple[list[NormativeListItem], PaginationMeta]:
@@ -76,6 +92,9 @@ async def list_current_normatives(
         conditions.append(Normative.client_name.ilike(f"%{client_name.strip()}%"))
     if category:
         conditions.append(Normative.category == category)
+    search_condition = _product_search_condition(search)
+    if search_condition is not None:
+        conditions.append(search_condition)
 
     total = await db.scalar(
         select(func.count()).select_from(Normative).where(*conditions)
@@ -107,6 +126,7 @@ async def list_normatives_on_date(
     on_date: date,
     warehouse_code: int | None,
     product_code: int | None,
+    search: str | None = None,
 ) -> list[NormativeOnDateItem]:
     conditions = [
         Normative.created_at <= _end_of_day(on_date),
@@ -116,6 +136,9 @@ async def list_normatives_on_date(
         conditions.append(Normative.warehouse_code == warehouse_code)
     if product_code is not None:
         conditions.append(Normative.product_code == product_code)
+    search_condition = _product_search_condition(search)
+    if search_condition is not None:
+        conditions.append(search_condition)
 
     result = await db.execute(
         select(Normative)

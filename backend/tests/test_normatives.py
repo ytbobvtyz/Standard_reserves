@@ -229,6 +229,26 @@ async def test_list_current_normatives_filters(
     codes = {item["product_code"] for item in data}
     assert TEST_PRODUCT_C not in codes
 
+    by_name = await client.get(
+        "/api/v1/normatives",
+        headers=auth_header(token),
+        params={"search": "подшипник", "client_name": "Тест нормативы"},
+    )
+    assert by_name.status_code == 200, by_name.text
+    name_codes = {item["product_code"] for item in by_name.json()["data"]}
+    assert TEST_PRODUCT_A in name_codes
+    assert TEST_PRODUCT_B not in name_codes
+
+    by_code = await client.get(
+        "/api/v1/normatives",
+        headers=auth_header(token),
+        params={"search": str(TEST_PRODUCT_A), "client_name": "Тест нормативы"},
+    )
+    assert by_code.status_code == 200, by_code.text
+    code_matches = by_code.json()["data"]
+    assert code_matches
+    assert all(item["product_code"] == TEST_PRODUCT_A for item in code_matches)
+
     await delete_request(seeded["request_id"])
     await delete_request(seeded["expired_request_id"])
     await delete_request(seeded["future_request_id"])

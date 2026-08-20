@@ -55,14 +55,25 @@ function formatQty(quantity: number, unit: Unit): string {
   return `${quantity.toLocaleString('ru-RU')} ${unit}`
 }
 
+const SEARCH_DEBOUNCE_MS = 400
+
 export function NormativesPage() {
   const [sliceDate, setSliceDate] = useState<Dayjs>(() => dayjs())
   const [warehouseCode, setWarehouseCode] = useState<number | undefined>()
   const [category, setCategory] = useState<'A' | 'B' | 'C' | undefined>()
   const [clientName, setClientName] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch] = useState('')
   const [warehouses, setWarehouses] = useState<ObjectListItem[]>([])
   const [items, setItems] = useState<NormativeOnDateItem[]>([])
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearch(searchInput.trim())
+    }, SEARCH_DEBOUNCE_MS)
+    return () => window.clearTimeout(timer)
+  }, [searchInput])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -70,6 +81,7 @@ export function NormativesPage() {
       const { data } = await normativesApi.getOnDate({
         date: sliceDate.format('YYYY-MM-DD'),
         warehouse_code: warehouseCode,
+        search: search || undefined,
       })
       setItems(data.data)
     } catch (error) {
@@ -77,7 +89,7 @@ export function NormativesPage() {
     } finally {
       setLoading(false)
     }
-  }, [sliceDate, warehouseCode])
+  }, [sliceDate, warehouseCode, search])
 
   useEffect(() => {
     void load()
@@ -129,6 +141,14 @@ export function NormativesPage() {
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
       <Typography.Title level={3}>Нормативы</Typography.Title>
       <Space wrap>
+        <Input
+          allowClear
+          placeholder="Поиск по артикулу или названию"
+          style={{ width: 280 }}
+          value={searchInput}
+          onChange={(event) => setSearchInput(event.target.value)}
+          aria-label="Поиск по артикулу или названию"
+        />
         <DatePicker
           allowClear={false}
           value={sliceDate}

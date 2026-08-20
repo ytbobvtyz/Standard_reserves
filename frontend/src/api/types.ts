@@ -381,6 +381,7 @@ export interface NormativeListParams {
   product_code?: number
   client_name?: string
   category?: 'A' | 'B' | 'C'
+  search?: string
   page?: number
   limit?: number
 }
@@ -403,6 +404,7 @@ export interface NormativeOnDateParams {
   date: string
   warehouse_code?: number
   product_code?: number
+  search?: string
 }
 
 export interface NormativeOnDateDetail {
