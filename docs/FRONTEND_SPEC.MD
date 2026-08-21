@@ -523,12 +523,13 @@ text
 - Drag-and-Drop зона или кнопка «Выбрать файл» (.xlsx / .xls)
 - Индикатор прогресса во время запроса
 - После ответа: отчёт «Загружено X, ошибок Y» и список ошибок по строкам
+- Один GTIN может быть у нескольких артикулов; parent_code / children_code не обязаны существовать в справочнике
 
 **Модалка «Редактировать продукт»:**
 - `code` — только чтение
-- Поля: name, category (A/B/C), is_active, weight_kg, gtin (13 цифр), mark_control
+- Поля: name, category (A/B/C), is_active, weight_kg, gtin (13 цифр, не уникален), mark_control
 - Select заводов: plant_id, second_plant_id, third_plant_id (objects type=plant)
-- parent_code, children_code — автокомплит по справочнику продуктов
+- parent_code, children_code — автокомплит по справочнику; Excel-загрузка допускает коды, которых ещё нет в БД
 - Блок «Последнее изменение»: ФИО + дата (только чтение)
 - Кнопки: Сохранить, Удалить (Popconfirm). Удаление блокируется на бэке при связях
 

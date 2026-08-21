@@ -15,6 +15,9 @@ UPDATE_CODE = 18202
 DELETE_OK_CODE = 18203
 DELETE_BLOCKED_CODE = 18204
 DUP_GTIN_CODE = 18205
+DUP_GTIN_SECOND = 18206
+DANGLING_PARENT = 18999
+DANGLING_CHILD = 18998
 
 
 def _xlsx(rows: list[list[object | None]]) -> bytes:
@@ -28,7 +31,16 @@ def _xlsx(rows: list[list[object | None]]) -> bytes:
 
 
 async def _cleanup_admin_products() -> None:
-    codes = [NEW_CODE, UPDATE_CODE, DELETE_OK_CODE, DELETE_BLOCKED_CODE, DUP_GTIN_CODE]
+    codes = [
+        NEW_CODE,
+        UPDATE_CODE,
+        DELETE_OK_CODE,
+        DELETE_BLOCKED_CODE,
+        DUP_GTIN_CODE,
+        DUP_GTIN_SECOND,
+        DANGLING_PARENT,
+        DANGLING_CHILD,
+    ]
     async with AsyncSessionLocal() as session:
         await session.execute(
             delete(AvailableBalance).where(AvailableBalance.product_code.in_(codes))
@@ -210,6 +222,147 @@ async def test_upload_creates_and_updates(
         await _cleanup_admin_products()
 
 
+async def test_upload_allows_duplicate_gtin(
+    client: AsyncClient, pp_user: AuthUser, catalog: dict[str, int]
+) -> None:
+    await _cleanup_admin_products()
+    token = await login_token(client, pp_user)
+    shared_gtin = "4605555555555"
+    content = _xlsx(
+        [
+            [
+                "code",
+                "name",
+                "status",
+                "children_code",
+                "parent_code",
+                "category",
+                "mark_control",
+                "gtin",
+                "plant_id",
+                "weight_kg",
+            ],
+            [
+                NEW_CODE,
+                "Родительский артикул",
+                "Активный",
+                None,
+                None,
+                "A",
+                "нет",
+                shared_gtin,
+                catalog["plant_code"],
+                0.25,
+            ],
+            [
+                DUP_GTIN_SECOND,
+                "Дочерний артикул",
+                "Активный",
+                None,
+                None,
+                "B",
+                "нет",
+                shared_gtin,
+                catalog["plant_code"],
+                0.5,
+            ],
+        ]
+    )
+    try:
+        response = await client.post(
+            "/api/v1/references/products/upload",
+            headers=auth_header(token),
+            files={
+                "file": (
+                    "products.xlsx",
+                    content,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()["data"]
+        assert data["created"] == 2
+        assert data["errors"] == 0
+
+        first = await client.get(
+            f"/api/v1/references/products/{NEW_CODE}/edit",
+            headers=auth_header(token),
+        )
+        second = await client.get(
+            f"/api/v1/references/products/{DUP_GTIN_SECOND}/edit",
+            headers=auth_header(token),
+        )
+        assert first.json()["data"]["gtin"] == shared_gtin
+        assert second.json()["data"]["gtin"] == shared_gtin
+    finally:
+        await _cleanup_admin_products()
+
+
+async def test_upload_allows_missing_parent_and_children(
+    client: AsyncClient, pp_user: AuthUser, catalog: dict[str, int]
+) -> None:
+    await _cleanup_admin_products()
+    token = await login_token(client, pp_user)
+    content = _xlsx(
+        [
+            [
+                "code",
+                "name",
+                "status",
+                "children_code",
+                "parent_code",
+                "category",
+                "mark_control",
+                "gtin",
+                "plant_id",
+                "weight_kg",
+            ],
+            [
+                NEW_CODE,
+                "Артикул без связей в БД",
+                "Активный",
+                DANGLING_CHILD,
+                DANGLING_PARENT,
+                "C",
+                "нет",
+                "4606666666666",
+                catalog["plant_code"],
+                1.0,
+            ],
+        ]
+    )
+    try:
+        response = await client.post(
+            "/api/v1/references/products/upload",
+            headers=auth_header(token),
+            files={
+                "file": (
+                    "products.xlsx",
+                    content,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()["data"]
+        assert data["created"] == 1
+        assert data["errors"] == 0
+
+        created = await client.get(
+            f"/api/v1/references/products/{NEW_CODE}/edit",
+            headers=auth_header(token),
+        )
+        assert created.status_code == 200
+        created_data = created.json()["data"]
+        assert created_data["parent_code"] == DANGLING_PARENT
+        assert created_data["children_code"] == DANGLING_CHILD
+        assert created_data["gtin"] == "4606666666666"
+        assert created_data["category"] == "C"
+    finally:
+        await _cleanup_admin_products()
+
+
 async def test_edit_update_delete_and_gtin_validation(
     client: AsyncClient, pp_user: AuthUser, catalog: dict[str, int]
 ) -> None:
@@ -288,7 +441,8 @@ async def test_edit_update_delete_and_gtin_validation(
                 "gtin": "4603333333333",
             },
         )
-        assert duplicate.status_code == 400
+        assert duplicate.status_code == 200, duplicate.text
+        assert duplicate.json()["data"]["gtin"] == "4603333333333"
 
         updated = await client.put(
             f"/api/v1/references/products/{DELETE_OK_CODE}",

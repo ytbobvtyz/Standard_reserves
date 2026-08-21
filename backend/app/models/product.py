@@ -53,7 +53,6 @@ class Product(TimestampMixin, SoftDeleteMixin, Base):
         Index(
             "idx_products_gtin",
             "gtin",
-            unique=True,
             postgresql_where=text("gtin IS NOT NULL"),
         ),
         Index("idx_products_last_modified_at", "last_modified_at"),
@@ -82,8 +81,8 @@ class Product(TimestampMixin, SoftDeleteMixin, Base):
         default=True,
         server_default=text("true"),
     )
-    parent_code: Mapped[int | None] = mapped_column(ForeignKey("products.code"))
-    children_code: Mapped[int | None] = mapped_column(ForeignKey("products.code"))
+    parent_code: Mapped[int | None] = mapped_column(Integer)
+    children_code: Mapped[int | None] = mapped_column(Integer)
     gtin: Mapped[str | None] = mapped_column(String(13))
     mark_control: Mapped[bool] = mapped_column(
         Boolean,
@@ -112,13 +111,17 @@ class Product(TimestampMixin, SoftDeleteMixin, Base):
     )
     parent: Mapped["Product | None"] = relationship(
         "Product",
+        primaryjoin="foreign(Product.parent_code)==remote(Product.code)",
         foreign_keys=[parent_code],
         remote_side=[code],
+        uselist=False,
     )
     child: Mapped["Product | None"] = relationship(
         "Product",
+        primaryjoin="foreign(Product.children_code)==remote(Product.code)",
         foreign_keys=[children_code],
         remote_side=[code],
+        uselist=False,
     )
     request_items: Mapped[list["RequestItem"]] = relationship(
         "RequestItem",

@@ -44,9 +44,9 @@ erDiagram
         decimal weight_kg "вес 1 шт в кг нетто"
         decimal monthly_consumption "потребление в месяц"
         boolean is_active "активный"
-        int parent_code FK "ссылка на старый артикул"
-        int children_code FK "ссылка на новый артикул"
-        varchar gtin "GTIN-13 (уникальный)"
+        int parent_code "ссылка на старый артикул (без FK)"
+        int children_code "ссылка на новый артикул (без FK)"
+        varchar gtin "GTIN-13 (может повторяться)"
         boolean mark_control "Честный знак"
         uuid last_modified_by FK "кто изменил"
         timestamp last_modified_at "когда изменили"
@@ -216,7 +216,7 @@ erDiagram
     %% СВЯЗИ
     %% ============================================
 
-    %% Самосвязь products (иерархия артикулов)
+    %% Логическая самосвязь products (без FK: коды могут появиться позже)
     products ||--o{ products : "parent_code / children_code"
 
     %% Products → Objects (заводы)
@@ -277,9 +277,9 @@ CREATE TABLE products (
     weight_kg DECIMAL(12,4) NOT NULL,
     monthly_consumption DECIMAL(12,2),
     is_active BOOLEAN DEFAULT true,
-    parent_code INTEGER REFERENCES products(code),
-    children_code INTEGER REFERENCES products(code),
-    gtin VARCHAR(13) UNIQUE,
+    parent_code INTEGER,
+    children_code INTEGER,
+    gtin VARCHAR(13),
     mark_control BOOLEAN DEFAULT false,
     last_modified_by UUID REFERENCES users(id),
     last_modified_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -294,7 +294,7 @@ CREATE INDEX idx_products_plant_id ON products(plant_id);
 CREATE INDEX idx_products_is_active ON products(is_active) WHERE is_active = true;
 CREATE INDEX idx_products_parent_code ON products(parent_code) WHERE parent_code IS NOT NULL;
 CREATE INDEX idx_products_children_code ON products(children_code) WHERE children_code IS NOT NULL;
-CREATE UNIQUE INDEX idx_products_gtin ON products(gtin) WHERE gtin IS NOT NULL;
+CREATE INDEX idx_products_gtin ON products(gtin) WHERE gtin IS NOT NULL;
 CREATE INDEX idx_products_last_modified_at ON products(last_modified_at);
 CREATE INDEX idx_products_last_modified_by ON products(last_modified_by);
 Поля:
@@ -310,9 +310,9 @@ third_plant_id	INTEGER	❌	Третий завод → objects.code
 weight_kg	DECIMAL(12,4)	✅	Вес 1 шт в кг нетто
 monthly_consumption	DECIMAL(12,2)	❌	Потребление в месяц
 is_active	BOOLEAN	✅	Активный (по умолчанию true)
-parent_code	INTEGER	❌	Ссылка на старый артикул
-children_code	INTEGER	❌	Ссылка на новый артикул
-gtin	VARCHAR(13)	❌	GTIN-13, уникален если заполнен
+parent_code	INTEGER	❌	Ссылка на старый артикул (логическая, без FK; код может ещё не существовать)
+children_code	INTEGER	❌	Ссылка на новый артикул (логическая, без FK; код может ещё не существовать)
+gtin	VARCHAR(13)	❌	GTIN-13, 13 цифр если заполнен; может повторяться у родителя и потомка
 mark_control	BOOLEAN	✅	Честный знак (по умолчанию false)
 last_modified_by	UUID	❌	Кто изменил → users.id
 last_modified_at	TIMESTAMP	✅	Когда изменили
@@ -1016,6 +1016,8 @@ EXECUTE FUNCTION trigger_create_normative();
 14	014_object_admin.sql	objects (last_modified_by, last_modified_at)
 15	015_object_erp.sql	objects (erp_plant_code, erp_warehouse_code, loading_point)
 16	016_balances_available_plan.sql	available_balances (quantity → available, +plan)
+17	017_balance_unit_kg.sql	available_balances.unit: шт, т, ШТ, КГ
+18	018_product_gtin_parent_relax.sql	products: снять UNIQUE с gtin, снять FK parent/children
 10	010_functions.sql	Все функции
 11	011_views.sql	Все представления
 12	012_triggers.sql	Все триггеры

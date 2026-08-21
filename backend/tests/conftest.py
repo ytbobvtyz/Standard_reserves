@@ -88,9 +88,29 @@ async def db_ready() -> AsyncGenerator[None, None]:
             text("UPDATE products SET mark_control = false WHERE mark_control IS NULL")
         )
         await connection.execute(
+            text("DROP INDEX IF EXISTS idx_products_gtin")
+        )
+        await connection.execute(
             text(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_products_gtin "
+                "CREATE INDEX IF NOT EXISTS idx_products_gtin "
                 "ON products(gtin) WHERE gtin IS NOT NULL"
+            )
+        )
+        await connection.execute(
+            text(
+                "ALTER TABLE products "
+                "DROP CONSTRAINT IF EXISTS products_parent_code_fkey"
+            )
+        )
+        await connection.execute(
+            text(
+                "ALTER TABLE products "
+                "DROP CONSTRAINT IF EXISTS products_children_code_fkey"
+            )
+        )
+        await connection.execute(
+            text(
+                "ALTER TABLE products DROP CONSTRAINT IF EXISTS products_gtin_key"
             )
         )
         await connection.execute(

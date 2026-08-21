@@ -150,36 +150,6 @@ async def _ensure_plant(db: AsyncSession, code: int | None, field: str) -> None:
         raise ValueError(f"{field}: завод {code} не найден")
 
 
-async def _ensure_related_product(
-    db: AsyncSession, code: int | None, field: str, self_code: int
-) -> None:
-    if code is None:
-        return
-    if code == self_code:
-        raise ValueError(f"{field} не может совпадать с артикулом")
-    product = await db.scalar(
-        select(Product.code).where(Product.code == code, Product.deleted_at.is_(None))
-    )
-    if product is None:
-        raise ValueError(f"{field}: продукт {code} не найден")
-
-
-async def _ensure_unique_gtin(
-    db: AsyncSession, gtin: str | None, self_code: int
-) -> None:
-    if gtin is None:
-        return
-    other = await db.scalar(
-        select(Product.code).where(
-            Product.gtin == gtin,
-            Product.code != self_code,
-            Product.deleted_at.is_(None),
-        )
-    )
-    if other is not None:
-        raise ValueError(f"GTIN {gtin} уже используется у артикула {other}")
-
-
 def _touch(product: Product, user: User) -> None:
     product.last_modified_by = user.id
     product.last_modified_at = datetime.now(UTC)
@@ -222,9 +192,6 @@ async def update_product(
         await _ensure_plant(db, body.plant_id, "plant_id")
         await _ensure_plant(db, body.second_plant_id, "second_plant_id")
         await _ensure_plant(db, body.third_plant_id, "third_plant_id")
-        await _ensure_related_product(db, body.parent_code, "parent_code", code)
-        await _ensure_related_product(db, body.children_code, "children_code", code)
-        await _ensure_unique_gtin(db, gtin, code)
     except ValueError as exc:
         raise APIError(400, "VALIDATION_ERROR", str(exc)) from exc
 
@@ -308,11 +275,6 @@ async def _upsert_row(
 ) -> str:
     code = values["code"]
     gtin = values.get("gtin")
-    await _ensure_unique_gtin(db, gtin, code)
-    await _ensure_related_product(db, values.get("parent_code"), "parent_code", code)
-    await _ensure_related_product(
-        db, values.get("children_code"), "children_code", code
-    )
     product = await db.scalar(
         select(Product).where(Product.code == code, Product.deleted_at.is_(None))
     )
