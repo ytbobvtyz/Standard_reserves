@@ -171,7 +171,11 @@ export function LogisticsDashboardPage() {
         <DeficitIndicator deficit={value} status={record.status} unit={record.unit} />
       ),
     },
-    { title: 'Ед', dataIndex: 'unit', width: 70 },
+    {
+      title: 'Ед',
+      width: 80,
+      render: (_, record) => record.stock_unit || record.unit,
+    },
     { title: 'Клиент', dataIndex: 'client_name' },
   ]
 

@@ -292,6 +292,7 @@ export interface DeficitItem {
   client_name: string
   expiry_date: string | null
   status: DeficitStatus
+  stock_unit?: string
 }
 
 export interface WarehouseDeficit {

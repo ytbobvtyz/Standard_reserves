@@ -158,25 +158,21 @@ async def db_ready() -> AsyncGenerator[None, None]:
                 "ADD COLUMN IF NOT EXISTS plan DECIMAL(12,2) NOT NULL DEFAULT 0"
             )
         )
-        await connection.execute(
-            text(
-                "ALTER TABLE available_balances "
-                "DROP CONSTRAINT IF EXISTS available_balances_unit_check"
-            )
-        )
-        await connection.execute(
-            text(
-                "ALTER TABLE available_balances "
-                "DROP CONSTRAINT IF EXISTS ck_available_balances_unit"
-            )
-        )
-        await connection.execute(
-            text(
-                "ALTER TABLE available_balances "
-                "ADD CONSTRAINT ck_available_balances_unit "
-                "CHECK (unit IN ('шт', 'т', 'ШТ', 'КГ'))"
-            )
-        )
+        await connection.execute(text("""
+                DO $$
+                BEGIN
+                    ALTER TABLE available_balances
+                        DROP CONSTRAINT IF EXISTS available_balances_unit_check;
+                    ALTER TABLE available_balances
+                        DROP CONSTRAINT IF EXISTS ck_available_balances_unit;
+                    ALTER TABLE available_balances
+                        ADD CONSTRAINT ck_available_balances_unit
+                        CHECK (unit IN ('шт', 'т', 'ШТ', 'КГ'));
+                EXCEPTION
+                    WHEN duplicate_object THEN NULL;
+                    WHEN undefined_table THEN NULL;
+                END $$;
+                """))
     yield
 
 

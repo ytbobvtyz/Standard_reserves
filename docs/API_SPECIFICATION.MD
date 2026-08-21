@@ -712,6 +712,7 @@ file	file	Excel-файл (.xlsx / .xls)
 1	product_code	Артикул (ID продукта → products.code)
 3	erp_plant_code	Завод ERP → objects.erp_plant_code → objects.code
 5	erp_warehouse_code	Склад ERP → objects.erp_warehouse_code → objects.code
+17	unit	Единица измерения: `ШТ` или `КГ` (пусто → `ШТ`)
 19	available	Доступно (факт − заказы клиентов)
 20	plan	Запланировано (available + разнарядки)
 

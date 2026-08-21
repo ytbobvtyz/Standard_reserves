@@ -136,6 +136,7 @@ def _convert_row(
         client_name=client_name,
         expiry_date=expiry_date,
         status=status,
+        stock_unit=stock_unit,
     )
 
 
@@ -297,6 +298,9 @@ async def collect_deficit_rows(
             unit=unit,
             client_name=", ".join(bucket["clients"]),
             expiry_date=bucket["expiry_date"],
+            stock_unit=(
+                _normalize_stock_unit(balance.unit) if balance is not None else "ШТ"
+            ),
         )
         if filter_mode == "deficit_only" and row.deficit <= 0:
             continue
@@ -319,6 +323,7 @@ def _to_deficit_item(row: DeficitRow) -> DeficitItem:
         client_name=row.client_name,
         expiry_date=row.expiry_date,
         status=row.status,
+        stock_unit=row.stock_unit,
     )
 
 
@@ -521,6 +526,7 @@ async def export_excel(
 EXCEL_COL_PRODUCT = 1
 EXCEL_COL_PLANT = 3
 EXCEL_COL_WAREHOUSE = 5
+EXCEL_COL_UNIT = 17
 EXCEL_COL_AVAILABLE = 19
 EXCEL_COL_PLAN = 20
 HEADER_MARKERS = {
@@ -587,6 +593,17 @@ def _parse_warehouse_code(value: Any) -> str:
     if len(text) > 4:
         raise ValueError("erp_warehouse_code должен содержать до 4 символов")
     return text
+
+
+def _parse_balance_unit(value: Any) -> str:
+    if _is_blank(value):
+        return "ШТ"
+    text = str(value).strip().upper().replace(" ", "")
+    if text in {"ШТ", "ШТ."}:
+        return "ШТ"
+    if text in {"КГ", "КГ."}:
+        return "КГ"
+    raise ValueError("Единица измерения должна быть ШТ или КГ")
 
 
 def _parse_non_negative(value: Any, field: str) -> Decimal:
@@ -657,6 +674,7 @@ async def _upsert_balance(
     product_code: int,
     available: Decimal,
     plan: Decimal,
+    unit: str,
 ) -> str:
     current = await db.get(AvailableBalance, (warehouse_code, product_code))
     now = datetime.now(UTC)
@@ -667,7 +685,7 @@ async def _upsert_balance(
                 product_code=product_code,
                 available=available,
                 plan=plan,
-                unit="шт",
+                unit=unit,
                 last_sync_at=now,
                 source="excel",
             )
@@ -675,7 +693,7 @@ async def _upsert_balance(
         return "created"
     current.available = available
     current.plan = plan
-    current.unit = "шт"
+    current.unit = unit
     current.last_sync_at = now
     current.source = "excel"
     return "updated"
@@ -723,6 +741,7 @@ async def upload_balances(
                 _cell(row, EXCEL_COL_AVAILABLE), "available"
             )
             plan = _parse_non_negative(_cell(row, EXCEL_COL_PLAN), "plan")
+            unit = _parse_balance_unit(_cell(row, EXCEL_COL_UNIT))
             await _find_plant(db, erp_plant_code)
             warehouse = await _find_warehouse(db, erp_warehouse_code)
             await _find_product(db, product_code)
@@ -733,6 +752,7 @@ async def upload_balances(
                     product_code=product_code,
                     available=available,
                     plan=plan,
+                    unit=unit,
                 )
             if result == "created":
                 created += 1

@@ -32,6 +32,7 @@ class DeficitItem(BaseModel):
     client_name: str
     expiry_date: date | None = None
     status: Literal["warning", "ok"]
+    stock_unit: str = "ШТ"
 
 
 class BalanceUploadError(BaseModel):

@@ -16,8 +16,14 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.execute("ALTER TABLE available_balances DROP CONSTRAINT IF EXISTS available_balances_unit_check;")
-    op.execute("ALTER TABLE available_balances DROP CONSTRAINT IF EXISTS ck_available_balances_unit;")
+    op.execute(
+        "ALTER TABLE available_balances "
+        "DROP CONSTRAINT IF EXISTS available_balances_unit_check;"
+    )
+    op.execute(
+        "ALTER TABLE available_balances "
+        "DROP CONSTRAINT IF EXISTS ck_available_balances_unit;"
+    )
     op.execute("""
         ALTER TABLE available_balances
             ADD CONSTRAINT ck_available_balances_unit
@@ -26,7 +32,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("ALTER TABLE available_balances DROP CONSTRAINT IF EXISTS ck_available_balances_unit;")
+    op.execute(
+        "ALTER TABLE available_balances "
+        "DROP CONSTRAINT IF EXISTS ck_available_balances_unit;"
+    )
     op.execute("""
         ALTER TABLE available_balances
             ADD CONSTRAINT available_balances_unit_check

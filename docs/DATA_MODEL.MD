@@ -656,7 +656,7 @@ CREATE TABLE available_balances (
     product_code INTEGER NOT NULL REFERENCES products(code),
     available DECIMAL(12,2) NOT NULL DEFAULT 0,
     plan DECIMAL(12,2) NOT NULL DEFAULT 0,
-    unit VARCHAR(10) NOT NULL DEFAULT 'шт' CHECK (unit IN ('шт', 'т')),
+    unit VARCHAR(10) NOT NULL DEFAULT 'шт' CHECK (unit IN ('шт', 'т', 'ШТ', 'КГ')),
     last_sync_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     source VARCHAR(50) DEFAULT 'manual',
 
@@ -674,7 +674,7 @@ warehouse_code	INTEGER	✅	Склад → objects.code (PK)
 product_code	INTEGER	✅	Артикул → products.code (PK)
 available	DECIMAL(12,2)	✅	Доступно: факт − заказы клиентов (по умолчанию 0)
 plan	DECIMAL(12,2)	✅	Запланировано: available + разнарядки (по умолчанию 0)
-unit	VARCHAR(10)	✅	шт или т (по умолчанию шт)
+unit	VARCHAR(10)	✅	шт / т / ШТ / КГ (по умолчанию шт; Excel ERP: ШТ или КГ)
 last_sync_at	TIMESTAMP	✅	Дата последней синхронизации
 source	VARCHAR(50)	❌	manual / csv / excel / erp_api (по умолчанию manual)
 6. ТАБЛИЦА ДЛЯ БУДУЩЕГО АГЕНТА
