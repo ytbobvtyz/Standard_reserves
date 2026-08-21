@@ -12,6 +12,7 @@ import {
   message,
 } from 'antd'
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons'
+import { type Dayjs } from 'dayjs'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getApiErrorMessage } from '../api/client'
@@ -20,6 +21,13 @@ import { requestsApi } from '../api/requests'
 import type { ObjectListItem, RequestCreatePayload, RequestType } from '../api/types'
 import { ProductAutocomplete } from '../components/requests/ProductAutocomplete'
 import { useAuthStore } from '../stores/auth'
+import {
+  EXPIRY_ERROR,
+  EXPIRY_HINT,
+  defaultExpiryDate,
+  isExpiryTooFar,
+  maxExpiryDate,
+} from '../utils/expiryDate'
 
 interface ItemFormValue {
   product_code?: number
@@ -31,7 +39,7 @@ interface ItemFormValue {
 interface FormValues {
   request_type: RequestType
   client_name: string
-  expiry_date?: { format: (value: string) => string }
+  expiry_date?: Dayjs
   comment?: string
   items: ItemFormValue[]
 }
@@ -102,6 +110,7 @@ export function CreateRequestPage() {
           layout="vertical"
           initialValues={{
             request_type: isLogistics ? 'one_time' : 'normative',
+            expiry_date: defaultExpiryDate(),
             items: [{}],
           }}
         >
@@ -126,9 +135,24 @@ export function CreateRequestPage() {
             <Form.Item
               name="expiry_date"
               label="Срок действия"
-              rules={[{ required: true, message: 'Укажите срок действия' }]}
+              extra={EXPIRY_HINT}
+              rules={[
+                { required: true, message: 'Укажите срок действия' },
+                {
+                  validator: async (_, value: Dayjs | undefined) => {
+                    if (isExpiryTooFar(value)) {
+                      return Promise.reject(new Error(EXPIRY_ERROR))
+                    }
+                  },
+                },
+              ]}
             >
-              <DatePicker style={{ width: '100%' }} />
+              <DatePicker
+                style={{ width: '100%' }}
+                disabledDate={(current) =>
+                  Boolean(current && current.isAfter(maxExpiryDate(), 'day'))
+                }
+              />
             </Form.Item>
           ) : null}
           <Typography.Title level={5}>Позиции</Typography.Title>

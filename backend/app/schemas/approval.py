@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
@@ -18,6 +18,10 @@ class ApprovalActionRequest(BaseModel):
     action: Literal["approve", "edit", "reject"]
     items: list[ApprovalItemChange] | None = None
     comment: str | None = None
+    expiry_date: date | None = Field(
+        default=None,
+        description="Не позже 6 месяцев от даты создания запроса",
+    )
 
 
 class ApprovalPendingItem(BaseModel):
@@ -36,6 +40,7 @@ class ApprovalPendingRequest(BaseModel):
     client_name: str
     initiator: UserBrief
     items: list[ApprovalPendingItem]
+    expiry_date: date | None = None
     created_at: datetime
 
 

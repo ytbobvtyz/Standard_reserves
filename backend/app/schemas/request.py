@@ -1,11 +1,29 @@
-from datetime import date, datetime
-from typing import Literal
+from datetime import UTC, date, datetime
+from typing import Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.core.exceptions import APIError
+from app.models.request import Request as RequestModel
 from app.schemas.common import DecimalNumber
 from app.schemas.user import UserBrief
+
+INVALID_EXPIRY_DATE_CODE = "INVALID_EXPIRY_DATE"
+INVALID_EXPIRY_DATE_MESSAGE = (
+    "Срок не может превышать 6 месяцев от даты создания"
+)
+
+
+def validate_expiry_date_limit(
+    expiry_date: date | None,
+    created_at: datetime | None = None,
+) -> None:
+    if expiry_date is None:
+        return
+    reference = created_at or datetime.now(UTC)
+    if not RequestModel.validate_expiry_date(expiry_date, reference):
+        raise APIError(400, INVALID_EXPIRY_DATE_CODE, INVALID_EXPIRY_DATE_MESSAGE)
 
 
 class RequestItemCreate(BaseModel):
@@ -19,14 +37,31 @@ class RequestItemCreate(BaseModel):
 class RequestCreate(BaseModel):
     request_type: Literal["normative", "one_time"]
     client_name: str = Field(min_length=1, max_length=500)
-    expiry_date: date | None = None
+    expiry_date: date | None = Field(
+        default=None,
+        description="Не позже 6 месяцев от даты создания",
+    )
     items: list[RequestItemCreate] = Field(min_length=1)
     comment: str | None = None
+
+    @model_validator(mode="after")
+    def expiry_within_six_months(self) -> Self:
+        if self.expiry_date is None:
+            return self
+        # 400 INVALID_EXPIRY_DATE выбрасывается в сервисе, а не через 422 Pydantic.
+        if not RequestModel.validate_expiry_date(
+            self.expiry_date, datetime.now(UTC)
+        ):
+            return self
+        return self
 
 
 class RequestUpdate(BaseModel):
     client_name: str | None = Field(default=None, min_length=1, max_length=500)
-    expiry_date: date | None = None
+    expiry_date: date | None = Field(
+        default=None,
+        description="Не позже 6 месяцев от даты создания запроса",
+    )
     items: list[RequestItemCreate] | None = Field(default=None, min_length=1)
     comment: str | None = None
 

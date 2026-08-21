@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Literal
 from uuid import UUID
@@ -20,6 +20,7 @@ from app.schemas.approval import (
     ApprovalPendingItem,
     ApprovalPendingRequest,
 )
+from app.schemas.request import validate_expiry_date_limit
 from app.schemas.user import UserBrief
 from app.services.requests import load_request
 
@@ -60,6 +61,7 @@ def to_pending(request: Request) -> ApprovalPendingRequest:
             )
             for item in request.items
         ],
+        expiry_date=request.expiry_date,
         created_at=request.created_at,
     )
 
@@ -159,6 +161,25 @@ async def _apply_edits(
         )
 
 
+def _apply_expiry_update(
+    request: Request,
+    expiry_date: date | None,
+    comment: str | None,
+) -> str | None:
+    if expiry_date is None:
+        return comment
+    validate_expiry_date_limit(expiry_date, request.created_at)
+    if request.expiry_date == expiry_date:
+        return comment
+    old_value = request.expiry_date.isoformat() if request.expiry_date else "—"
+    new_value = expiry_date.isoformat()
+    note = f"Срок действия: {old_value} → {new_value}"
+    request.expiry_date = expiry_date
+    if comment:
+        return f"{comment}\n{note}"
+    return note
+
+
 def _fill_missing_approved_quantities(request: Request) -> None:
     for item in request.items:
         if item.quantity_approved is None:
@@ -245,13 +266,22 @@ async def apply_action(
     now = datetime.now(UTC)
     try:
         if body.action == "edit":
-            await _apply_edits(db, request, body, user, comment)
+            if not body.items and body.expiry_date is None:
+                raise APIError(
+                    400,
+                    "VALIDATION_ERROR",
+                    "Для действия edit укажите позиции с новым объемом или срок действия",
+                )
+            if body.items:
+                await _apply_edits(db, request, body, user, comment)
             if stage == "pp":
                 _fill_missing_approved_quantities(request)
+            comment = _apply_expiry_update(request, body.expiry_date, comment)
         elif body.action == "approve":
             if body.items:
                 await _apply_edits(db, request, body, user, comment)
             _fill_missing_approved_quantities(request)
+            comment = _apply_expiry_update(request, body.expiry_date, comment)
 
         request.status = _next_status(stage, body.action, request)
         if stage == "pp":

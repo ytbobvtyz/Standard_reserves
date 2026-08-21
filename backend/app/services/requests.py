@@ -29,6 +29,7 @@ from app.schemas.request import (
     RequestListItem,
     RequestUpdate,
     WarehouseBrief,
+    validate_expiry_date_limit,
 )
 from app.schemas.user import UserBrief
 
@@ -347,6 +348,7 @@ async def create_request(
             "VALIDATION_ERROR",
             "Для нормативного запроса укажите срок действия",
         )
+    validate_expiry_date_limit(body.expiry_date)
     await validate_items(db, body.items)
 
     request = Request(
@@ -372,6 +374,7 @@ async def update_draft(
     if body.comment is not None:
         request.initiator_comment = body.comment
     if body.expiry_date is not None:
+        validate_expiry_date_limit(body.expiry_date, request.created_at)
         request.expiry_date = body.expiry_date
     if body.items is not None:
         await validate_items(db, body.items)

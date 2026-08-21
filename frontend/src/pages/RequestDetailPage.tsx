@@ -1,6 +1,7 @@
 import {
   Button,
   Card,
+  DatePicker,
   Descriptions,
   Popconfirm,
   Space,
@@ -10,6 +11,7 @@ import {
   Typography,
   message,
 } from 'antd'
+import dayjs from 'dayjs'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getApiErrorMessage } from '../api/client'
@@ -21,6 +23,7 @@ import type {
 } from '../api/types'
 import { StatusBadge } from '../components/common/StatusBadge'
 import { useAuthStore } from '../stores/auth'
+import { EXPIRY_HINT, maxExpiryDate } from '../utils/expiryDate'
 
 const TYPE_LABEL: Record<string, string> = {
   normative: 'Нормативный запас',
@@ -82,6 +85,10 @@ export function RequestDetailPage() {
 
   const isOwner = Boolean(request && user && request.initiator.id === user.id)
   const isDraft = request?.status === 'draft'
+  const canEditExpiry =
+    request?.request_type === 'normative' &&
+    ((user?.role === 'pp' && request?.status === 'pp_approved') ||
+      (user?.role === 'economist' && request?.status === 'economy_check'))
 
   const submit = async () => {
     if (!id) {
@@ -151,9 +158,28 @@ export function RequestDetailPage() {
             {new Date(request.created_at).toLocaleString('ru-RU')}
           </Descriptions.Item>
           <Descriptions.Item label="Срок действия">
-            {request.expiry_date
-              ? new Date(request.expiry_date).toLocaleDateString('ru-RU')
-              : '—'}
+            {request.request_type === 'normative' ? (
+              <Space direction="vertical" size={0}>
+                <DatePicker
+                  value={request.expiry_date ? dayjs(request.expiry_date) : null}
+                  disabled={!canEditExpiry}
+                  disabledDate={(current) =>
+                    Boolean(
+                      current && current.isAfter(maxExpiryDate(request.created_at), 'day'),
+                    )
+                  }
+                  format="DD.MM.YYYY"
+                />
+                <Typography.Text type="secondary">{EXPIRY_HINT}</Typography.Text>
+                {canEditExpiry ? (
+                  <Typography.Text type="secondary">
+                    Изменить срок можно в окне согласования
+                  </Typography.Text>
+                ) : null}
+              </Space>
+            ) : (
+              '—'
+            )}
           </Descriptions.Item>
           <Descriptions.Item label="Комментарий">
             {request.initiator_comment || '—'}

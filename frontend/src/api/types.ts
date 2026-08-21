@@ -204,6 +204,7 @@ export interface ApprovalPendingRequest {
   client_name: string
   initiator: User
   items: ApprovalPendingItem[]
+  expiry_date?: string | null
   created_at: string
 }
 
@@ -215,6 +216,7 @@ export interface ApprovalActionPayload {
     quantity_approved: number
   }>
   comment?: string
+  expiry_date?: string
 }
 
 export interface ApprovalActionResult {

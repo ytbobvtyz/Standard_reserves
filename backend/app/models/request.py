@@ -1,5 +1,6 @@
 import uuid
-from datetime import date, datetime
+from calendar import monthrange
+from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
@@ -16,6 +17,8 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, SoftDeleteMixin, TimestampMixin
+
+MAX_EXPIRY_MONTHS = 6
 
 if TYPE_CHECKING:
     from app.models.event import Event
@@ -137,3 +140,25 @@ class Request(TimestampMixin, SoftDeleteMixin, Base):
         "Event",
         back_populates="request",
     )
+
+    @staticmethod
+    def add_months(value: date, months: int) -> date:
+        month_index = value.month - 1 + months
+        year = value.year + month_index // 12
+        month = month_index % 12 + 1
+        day = min(value.day, monthrange(year, month)[1])
+        return date(year, month, day)
+
+    @staticmethod
+    def _as_utc_date(created_at: datetime) -> date:
+        if created_at.tzinfo is not None:
+            return created_at.astimezone(UTC).date()
+        return created_at.date()
+
+    @classmethod
+    def max_expiry_date(cls, created_at: datetime) -> date:
+        return cls.add_months(cls._as_utc_date(created_at), MAX_EXPIRY_MONTHS)
+
+    @staticmethod
+    def validate_expiry_date(expiry_date: date, created_at: datetime) -> bool:
+        return expiry_date <= Request.max_expiry_date(created_at)

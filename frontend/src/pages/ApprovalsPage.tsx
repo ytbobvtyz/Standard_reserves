@@ -1,8 +1,6 @@
 import {
   Button,
   Input,
-  InputNumber,
-  Modal,
   Pagination,
   Select,
   Space,
@@ -16,20 +14,17 @@ import { useLocation } from 'react-router-dom'
 import { approvalsApi } from '../api/approvals'
 import { getApiErrorMessage } from '../api/client'
 import type {
-  ApprovalAction,
+  ApprovalActionPayload,
   ApprovalPendingItem,
   ApprovalPendingRequest,
   RequestType,
 } from '../api/types'
+import { ApprovalModal } from '../components/approvals/ApprovalModal'
 import { StatusBadge } from '../components/common/StatusBadge'
 
 const TYPE_LABEL: Record<RequestType, string> = {
   normative: 'Норматив',
   one_time: 'Разовое',
-}
-
-interface EditableItem extends ApprovalPendingItem {
-  quantity_approved_input: number
 }
 
 export function ApprovalsPage() {
@@ -45,8 +40,6 @@ export function ApprovalsPage() {
   const [clientName, setClientName] = useState('')
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<ApprovalPendingRequest | null>(null)
-  const [editableItems, setEditableItems] = useState<EditableItem[]>([])
-  const [comment, setComment] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const limit = 10
 
@@ -75,55 +68,17 @@ export function ApprovalsPage() {
     void load()
   }, [load])
 
-  const openModal = (request: ApprovalPendingRequest) => {
-    setSelected(request)
-    setComment('')
-    setEditableItems(
-      request.items.map((item) => ({
-        ...item,
-        quantity_approved_input: item.quantity_approved ?? item.quantity_requested,
-      })),
-    )
-  }
-
   const closeModal = () => {
     setSelected(null)
-    setEditableItems([])
-    setComment('')
   }
 
-  const submitAction = async (action: ApprovalAction) => {
+  const submitAction = async (payload: ApprovalActionPayload) => {
     if (!selected) {
       return
-    }
-    if (action === 'reject' && !comment.trim()) {
-      message.error('Комментарий обязателен при отказе')
-      return
-    }
-    if (action === 'edit' || action === 'approve') {
-      const invalid = editableItems.some((item) => item.quantity_approved_input <= 0)
-      if (invalid) {
-        message.error('Утвержденное количество должно быть больше 0')
-        return
-      }
     }
 
     setSubmitting(true)
     try {
-      const itemsPayload = editableItems.map((item) => ({
-        product_code: item.product_code,
-        warehouse_code: item.warehouse_code,
-        quantity_approved: item.quantity_approved_input,
-      }))
-      const payload =
-        action === 'reject'
-          ? { action, comment: comment.trim() || undefined }
-          : {
-              action,
-              comment: comment.trim() || undefined,
-              items: itemsPayload,
-            }
-
       const request = isEconomy ? approvalsApi.economyAction : approvalsApi.ppAction
       const { data } = await request(selected.id, payload)
       const nextStatus = data.data.status
@@ -184,7 +139,7 @@ export function ApprovalsPage() {
             type="link"
             onClick={(event) => {
               event.stopPropagation()
-              openModal(record)
+              setSelected(record)
             }}
           >
             Открыть
@@ -233,7 +188,7 @@ export function ApprovalsPage() {
         dataSource={items}
         pagination={false}
         onRow={(record) => ({
-          onClick: () => openModal(record),
+          onClick: () => setSelected(record),
           style: { cursor: 'pointer' },
         })}
       />
@@ -244,89 +199,12 @@ export function ApprovalsPage() {
         onChange={setPage}
         hideOnSinglePage
       />
-      <Modal
-        title={
-          selected
-            ? `Согласование запроса №${selected.id.slice(0, 8)}`
-            : 'Согласование запроса'
-        }
-        open={Boolean(selected)}
+      <ApprovalModal
+        request={selected}
+        submitting={submitting}
         onCancel={closeModal}
-        width={860}
-        footer={
-          <Space>
-            <Button
-              danger
-              loading={submitting}
-              onClick={() => void submitAction('reject')}
-            >
-              Отказать
-            </Button>
-            <Button loading={submitting} onClick={() => void submitAction('edit')}>
-              Редактировать
-            </Button>
-            <Button
-              type="primary"
-              loading={submitting}
-              onClick={() => void submitAction('approve')}
-            >
-              Утвердить
-            </Button>
-          </Space>
-        }
-      >
-        {selected ? (
-          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            <Typography.Text>
-              Клиент: <Typography.Text strong>{selected.client_name}</Typography.Text>
-              {' · '}
-              Тип: {TYPE_LABEL[selected.request_type] ?? selected.request_type}
-            </Typography.Text>
-            <Table
-              rowKey={(item) => `${item.product_code}-${item.warehouse_code}`}
-              pagination={false}
-              size="small"
-              dataSource={editableItems}
-              columns={[
-                { title: 'Артикул', dataIndex: 'product_code', width: 100 },
-                { title: 'Название', dataIndex: 'product_name' },
-                { title: 'Склад', dataIndex: 'warehouse_name', width: 140 },
-                { title: 'Запрос', dataIndex: 'quantity_requested', width: 90 },
-                {
-                  title: 'Утверждено',
-                  dataIndex: 'quantity_approved_input',
-                  width: 140,
-                  render: (_value, record, index) => (
-                    <InputNumber
-                      min={0.01}
-                      value={record.quantity_approved_input}
-                      onChange={(value) => {
-                        setEditableItems((current) =>
-                          current.map((item, itemIndex) =>
-                            itemIndex === index
-                              ? {
-                                  ...item,
-                                  quantity_approved_input: Number(value ?? 0),
-                                }
-                              : item,
-                          ),
-                        )
-                      }}
-                    />
-                  ),
-                },
-                { title: 'Ед', dataIndex: 'unit', width: 70 },
-              ]}
-            />
-            <Input.TextArea
-              rows={3}
-              placeholder="Комментарий"
-              value={comment}
-              onChange={(event) => setComment(event.target.value)}
-            />
-          </Space>
-        ) : null}
-      </Modal>
+        onSubmit={submitAction}
+      />
     </Space>
   )
 }

@@ -26,6 +26,7 @@ const pendingRequest: ApprovalPendingRequest = {
       unit: 'шт',
     },
   ],
+  expiry_date: '2026-12-31',
   created_at: '2026-08-18T09:00:00Z',
 }
 
@@ -107,6 +108,10 @@ describe('ApprovalsPage', () => {
     expect(screen.getByText(/Согласование запроса №aaaaaaaa/)).toBeTruthy()
     expect(screen.getByText('Подшипник 6204ZZ')).toBeTruthy()
     expect(screen.getByText('Склад Ростов')).toBeTruthy()
+    expect(screen.getByText('Срок действия')).toBeTruthy()
+    expect(
+      screen.getByText('Максимальный срок — 6 месяцев от даты создания'),
+    ).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Утвердить' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Редактировать' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Отказать' })).toBeTruthy()
@@ -152,6 +157,7 @@ describe('ApprovalsPage', () => {
             quantity_approved: 1000,
           },
         ],
+        expiry_date: '2026-12-31',
       })
     })
     await waitFor(() => {

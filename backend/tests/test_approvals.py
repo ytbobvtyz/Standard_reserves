@@ -1,18 +1,29 @@
+from datetime import date
+
 from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.core.database import AsyncSessionLocal
 from app.models.normative import Normative
+from app.models.request import Request
 from app.models.request_item import RequestItem
 from app.models.request_item_history import RequestItemHistory
 from tests.conftest import AuthUser, auth_header, delete_request, login_token
+
+
+def valid_expiry_date(months: int = 3) -> str:
+    return Request.add_months(date.today(), months).isoformat()
+
+
+def too_far_expiry_date() -> str:
+    return Request.add_months(date.today(), 7).isoformat()
 
 
 def request_payload(**overrides):
     payload = {
         "request_type": "normative",
         "client_name": "ООО Ромашка",
-        "expiry_date": "2026-12-31",
+        "expiry_date": valid_expiry_date(),
         "items": [
             {
                 "product_code": 10001,
@@ -561,4 +572,91 @@ async def test_final_approve_exposes_quantity_approved(
             )
         ).one()
         assert float(normative.quantity) == 800
+    await delete_request(request_id)
+
+
+async def test_pp_edit_expiry_date_success(
+    client: AsyncClient,
+    test_user: AuthUser,
+    pp_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    commercial_token = await login_token(client, test_user)
+    pp_token = await login_token(client, pp_user)
+    request_id = await _create_submitted(client, commercial_token)
+    new_expiry = valid_expiry_date(5)
+
+    response = await client.post(
+        f"/api/v1/approvals/pp/{request_id}/action",
+        headers=auth_header(pp_token),
+        json={
+            "action": "edit",
+            "expiry_date": new_expiry,
+            "comment": "Сдвинули срок",
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert "Срок действия:" in response.json()["data"]["comment_pp"]
+
+    detail = await client.get(
+        f"/api/v1/requests/{request_id}",
+        headers=auth_header(pp_token),
+    )
+    assert detail.json()["data"]["expiry_date"] == new_expiry
+    history_comments = [
+        entry.get("comment") or ""
+        for entry in detail.json()["data"]["history"]
+    ]
+    assert any("Срок действия:" in comment for comment in history_comments)
+    await delete_request(request_id)
+
+
+async def test_pp_edit_expiry_date_too_far_fails(
+    client: AsyncClient,
+    test_user: AuthUser,
+    pp_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    commercial_token = await login_token(client, test_user)
+    pp_token = await login_token(client, pp_user)
+    request_id = await _create_submitted(client, commercial_token)
+
+    response = await client.post(
+        f"/api/v1/approvals/pp/{request_id}/action",
+        headers=auth_header(pp_token),
+        json={
+            "action": "edit",
+            "expiry_date": too_far_expiry_date(),
+            "comment": "Слишком долго",
+        },
+    )
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["code"] == "INVALID_EXPIRY_DATE"
+    await delete_request(request_id)
+
+
+async def test_economy_approve_expiry_date_too_far_fails(
+    client: AsyncClient,
+    test_user: AuthUser,
+    pp_user: AuthUser,
+    economist_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    commercial_token = await login_token(client, test_user)
+    pp_token = await login_token(client, pp_user)
+    economist_token = await login_token(client, economist_user)
+    request_id = await _create_submitted(client, commercial_token)
+    await _pp_approve(client, pp_token, request_id)
+
+    response = await client.post(
+        f"/api/v1/approvals/economy/{request_id}/action",
+        headers=auth_header(economist_token),
+        json={
+            "action": "approve",
+            "expiry_date": too_far_expiry_date(),
+            "comment": "Слишком долго",
+        },
+    )
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["code"] == "INVALID_EXPIRY_DATE"
     await delete_request(request_id)

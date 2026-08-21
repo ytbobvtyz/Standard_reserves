@@ -520,7 +520,7 @@ initiator_id	UUID	✅	Инициатор → users.id
 initiator_comment	TEXT	❌	Комментарий инициатора
 comment_pp	TEXT	❌	Комментарий ПП
 comment_economy	TEXT	❌	Комментарий экономиста
-expiry_date	DATE	❌	Срок действия (только нормативные)
+expiry_date	DATE	❌	Срок действия (только нормативные), не позже created_at + 6 месяцев
 approved_at	TIMESTAMP	❌	Дата утверждения
 executed_at	TIMESTAMP	❌	Дата исполнения (разовые)
 pp_approved_at	TIMESTAMP	❌	Дата согласования ПП

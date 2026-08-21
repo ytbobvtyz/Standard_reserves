@@ -521,6 +521,8 @@ class RequestItemCreate(BaseModel):
 
 Проверка: если request_type == 'normative' → expiry_date обязателен
 
+Проверка: expiry_date ≤ NOW() + 6 месяцев, иначе 400 INVALID_EXPIRY_DATE
+
 Проверка: product_code, warehouse_code существуют
 
 Проверка: unit соответствует product (шт или т)

@@ -256,6 +256,8 @@ Errors:
 
 400 — Невалидные данные
 
+400 INVALID_EXPIRY_DATE — `expiry_date` позже 6 месяцев от даты создания
+
 403 — Недостаточно прав (только commercial для нормативных; commercial/logistics для разовых)
 
 3.2. Получить список запросов (с фильтрацией)
@@ -391,6 +393,12 @@ json
     ],
     "comment": "Уточненный объем"
 }
+Errors:
+
+400 INVALID_EXPIRY_DATE — `expiry_date` позже created_at + 6 месяцев
+
+400 INVALID_STATUS — запрос не в статусе draft
+
 Response (200):
 
 json
@@ -515,6 +523,9 @@ json
     ],
     "comment": "Снижаем объем на 20% из-за ограничений по заводу"
 }
+
+`expiry_date` можно передать в `approve` и `edit`. Срок не может превышать 6 месяцев от `created_at`, иначе 400 INVALID_EXPIRY_DATE. Изменение срока пишется в комментарий истории согласования.
+
 3. Отказать:
 
 json
@@ -584,8 +595,11 @@ json
             "quantity_approved": 600
         }
     ],
-    "comment": "Снижаем до 600 шт. Хранение дороже срочной доставки"
+    "comment": "Снижаем объем",
+    "expiry_date": "2026-12-31"
 }
+
+`expiry_date` можно передать в `approve` и `edit` с той же проверкой 6 месяцев (400 INVALID_EXPIRY_DATE).
 3. Отказать:
 
 json
