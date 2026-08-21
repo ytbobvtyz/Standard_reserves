@@ -10,6 +10,7 @@ from app.models import (
     RequestItem,
     RequestItemHistory,
     Session,
+    SyncMetadata,
     User,
 )
 
@@ -24,6 +25,7 @@ EXPECTED_TABLES = {
     "request_items",
     "requests",
     "sessions",
+    "sync_metadata",
     "users",
 }
 
@@ -40,6 +42,7 @@ def test_models_import() -> None:
     assert Normative.__tablename__ == "normatives"
     assert AvailableBalance.__tablename__ == "available_balances"
     assert Event.__tablename__ == "events"
+    assert SyncMetadata.__tablename__ == "sync_metadata"
 
 
 def test_all_tables_registered() -> None:

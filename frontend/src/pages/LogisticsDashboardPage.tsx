@@ -22,6 +22,7 @@ import { getApiErrorMessage } from '../api/client'
 import { logisticsApi } from '../api/logistics'
 import { referencesApi } from '../api/references'
 import type {
+  BalanceSyncInfo,
   BalanceUploadResult,
   DeficitItem,
   FilterMode,
@@ -63,6 +64,27 @@ function matchesSearch(item: DeficitItem, search: string): boolean {
   )
 }
 
+function formatShortName(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) {
+    return fullName
+  }
+  if (parts.length === 1) {
+    return parts[0]
+  }
+  return `${parts[0]} ${parts[1].charAt(0)}.`
+}
+
+function formatSyncAt(value: string): string {
+  return new Date(value).toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 export function LogisticsDashboardPage() {
   const navigate = useNavigate()
   const user = useAuthStore((state) => state.user)
@@ -89,17 +111,22 @@ export function LogisticsDashboardPage() {
   const [orders, setOrders] = useState<GeneratedOrder[]>([])
   const [confirmedOrders, setConfirmedOrders] = useState<GeneratedOrder[]>([])
   const [selectedWarehouseCodes, setSelectedWarehouseCodes] = useState<number[]>([])
+  const [syncInfo, setSyncInfo] = useState<BalanceSyncInfo | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const { data } = await logisticsApi.getDashboard({
-        unit,
-        filter_mode: filterMode,
-        warehouse_code: warehouseCode,
-      })
+      const [{ data }, syncResponse] = await Promise.all([
+        logisticsApi.getDashboard({
+          unit,
+          filter_mode: filterMode,
+          warehouse_code: warehouseCode,
+        }),
+        logisticsApi.getSyncInfo(),
+      ])
       setItems(data.data)
       setSummary(data.summary)
+      setSyncInfo(syncResponse.data.data)
     } catch (error) {
       message.error(getApiErrorMessage(error, 'Не удалось загрузить дашборд'))
     } finally {
@@ -294,6 +321,26 @@ export function LogisticsDashboardPage() {
           Дефицит: {formatQty(summary.total_deficit, unit)} {unit} · склады:{' '}
           {summary.deficit_warehouses} · позиции: {summary.deficit_products}
         </Typography.Text>
+      </Space>
+      <Space direction="vertical" size={0}>
+        {syncInfo?.last_balances_sync_at ? (
+          <>
+            <Typography.Text>
+              📦 Актуальные остатки обновлены:{' '}
+              {formatSyncAt(syncInfo.last_balances_sync_at)}
+            </Typography.Text>
+            <Typography.Text>
+              👤 Кто:{' '}
+              {syncInfo.last_balances_sync_by
+                ? `${formatShortName(syncInfo.last_balances_sync_by.full_name)} (${syncInfo.last_balances_sync_by.role})`
+                : 'не указан'}
+            </Typography.Text>
+          </>
+        ) : (
+          <Typography.Text type="secondary">
+            Актуальные остатки ещё не загружались
+          </Typography.Text>
+        )}
       </Space>
       <Space direction="vertical" size="small" style={{ width: '100%' }}>
         <UnitToggle value={unit} onChange={setUnit} />

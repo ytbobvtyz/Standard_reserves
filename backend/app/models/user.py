@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from app.models.request import Request
     from app.models.request_item_history import RequestItemHistory
     from app.models.session import Session
+    from app.models.sync_metadata import SyncMetadata
 
 
 class User(TimestampMixin, SoftDeleteMixin, Base):
@@ -102,4 +103,9 @@ class User(TimestampMixin, SoftDeleteMixin, Base):
         "Object",
         back_populates="modified_by_user",
         foreign_keys="Object.last_modified_by",
+    )
+    balances_syncs: Mapped[list["SyncMetadata"]] = relationship(
+        "SyncMetadata",
+        back_populates="synced_by_user",
+        foreign_keys="SyncMetadata.last_balances_sync_by",
     )

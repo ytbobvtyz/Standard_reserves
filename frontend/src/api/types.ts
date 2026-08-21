@@ -448,6 +448,18 @@ export interface BalanceUploadResult {
   error_details: ProductUploadError[]
 }
 
+export interface BalanceSyncUser {
+  id: string
+  username: string
+  full_name: string
+  role: UserRole
+}
+
+export interface BalanceSyncInfo {
+  last_balances_sync_at: string | null
+  last_balances_sync_by: BalanceSyncUser | null
+}
+
 export interface RelatedProduct {
   code: number
   name: string

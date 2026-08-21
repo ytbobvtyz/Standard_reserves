@@ -14,6 +14,7 @@ from app.models.normative import Normative
 from app.models.product import Product
 from app.models.request import Request
 from app.models.request_item import RequestItem
+from app.models.sync_metadata import SyncMetadata
 from tests.conftest import AuthUser, auth_header, delete_request, login_token
 
 TEST_PRODUCT_DEFICIT = 19001
@@ -33,6 +34,7 @@ async def logistics_catalog(catalog: dict[str, int], test_user: AuthUser):
                 AvailableBalance.product_code.in_(product_codes)
             )
         )
+        await session.execute(delete(SyncMetadata))
         await session.execute(
             delete(Normative).where(Normative.product_code.in_(product_codes))
         )
@@ -572,6 +574,164 @@ async def test_upload_balances_upserts_and_reports_errors(
         )
         assert stored is not None
         assert stored.unit == "ШТ"
+        missing = await session.get(
+            AvailableBalance,
+            (logistics_catalog["warehouse_code"], TEST_PRODUCT_OK),
+        )
+        assert missing is None
+
+
+async def test_upload_balances_replaces_warehouse_and_keeps_others(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    logistics_catalog: dict,
+) -> None:
+    token = await login_token(client, logistics_user)
+    other_warehouse = 2002
+    async with AsyncSessionLocal() as session:
+        session.add(
+            AvailableBalance(
+                warehouse_code=other_warehouse,
+                product_code=TEST_PRODUCT_DEFICIT,
+                available=Decimal("90"),
+                plan=Decimal("90"),
+                unit="шт",
+                source="manual",
+            )
+        )
+        await session.commit()
+
+    content = _build_balances_xlsx(
+        [
+            _balance_excel_row(
+                product_code=TEST_PRODUCT_DEFICIT,
+                plant=2401,
+                warehouse="F005",
+                available=111,
+                plan=222,
+            )
+        ]
+    )
+    response = await client.post(
+        "/api/v1/logistics/normative/upload",
+        headers=auth_header(token),
+        files={
+            "file": (
+                "balances.xlsx",
+                content,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["uploaded"] == 1
+    assert data["errors"] == 0
+
+    async with AsyncSessionLocal() as session:
+        rewritten = await session.get(
+            AvailableBalance,
+            (logistics_catalog["warehouse_code"], TEST_PRODUCT_DEFICIT),
+        )
+        gone_ok = await session.get(
+            AvailableBalance,
+            (logistics_catalog["warehouse_code"], TEST_PRODUCT_OK),
+        )
+        gone_stock = await session.get(
+            AvailableBalance,
+            (logistics_catalog["warehouse_code"], TEST_PRODUCT_STOCK_ONLY),
+        )
+        kept_other = await session.get(
+            AvailableBalance,
+            (other_warehouse, TEST_PRODUCT_DEFICIT),
+        )
+        assert rewritten is not None
+        assert rewritten.available == Decimal("111")
+        assert rewritten.plan == Decimal("222")
+        assert rewritten.source == "excel"
+        assert gone_ok is None
+        assert gone_stock is None
+        assert kept_other is not None
+        assert kept_other.available == Decimal("90")
+        await session.execute(
+            delete(AvailableBalance).where(
+                AvailableBalance.warehouse_code == other_warehouse,
+                AvailableBalance.product_code == TEST_PRODUCT_DEFICIT,
+            )
+        )
+        await session.commit()
+
+
+async def test_sync_info_empty_before_upload(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    logistics_catalog: dict,
+) -> None:
+    token = await login_token(client, logistics_user)
+    response = await client.get(
+        "/api/v1/logistics/normative/sync-info",
+        headers=auth_header(token),
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["last_balances_sync_at"] is None
+    assert data["last_balances_sync_by"] is None
+
+
+async def test_sync_info_after_upload(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    logistics_catalog: dict,
+) -> None:
+    token = await login_token(client, logistics_user)
+    content = _build_balances_xlsx(
+        [
+            _balance_excel_row(
+                product_code=TEST_PRODUCT_DEFICIT,
+                plant=2401,
+                warehouse="F005",
+                available=1,
+                plan=1,
+            )
+        ]
+    )
+    uploaded = await client.post(
+        "/api/v1/logistics/normative/upload",
+        headers=auth_header(token),
+        files={
+            "file": (
+                "balances.xlsx",
+                content,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert uploaded.status_code == 200, uploaded.text
+
+    response = await client.get(
+        "/api/v1/logistics/normative/sync-info",
+        headers=auth_header(token),
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["last_balances_sync_at"] is not None
+    assert data["last_balances_sync_by"]["id"] == str(logistics_user.id)
+    assert data["last_balances_sync_by"]["full_name"] == logistics_user.full_name
+    assert data["last_balances_sync_by"]["role"] == "logistics"
+
+
+async def test_sync_info_allowed_for_commercial(
+    client: AsyncClient,
+    test_user: AuthUser,
+    logistics_catalog: dict,
+) -> None:
+    token = await login_token(client, test_user)
+    response = await client.get(
+        "/api/v1/logistics/normative/sync-info",
+        headers=auth_header(token),
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "success"
 
 
 async def test_upload_balances_forbidden_for_commercial(

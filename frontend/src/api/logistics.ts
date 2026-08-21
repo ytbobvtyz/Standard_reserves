@@ -1,6 +1,7 @@
 import api from './client'
 import type {
   ApiSuccess,
+  BalanceSyncInfo,
   BalanceUploadResult,
   ExecuteOneTimeData,
   ExecuteOneTimePayload,
@@ -52,6 +53,9 @@ export const logisticsApi = {
       },
     )
   },
+
+  getSyncInfo: () =>
+    api.get<ApiSuccess<BalanceSyncInfo>>('/logistics/normative/sync-info'),
 
   getOneTimeList: (params?: OneTimeListParams) =>
     api.get<ApiSuccess<OneTimeListItem[]>>('/logistics/one-time/list', { params }),

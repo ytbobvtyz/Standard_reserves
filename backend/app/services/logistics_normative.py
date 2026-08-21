@@ -4,9 +4,10 @@ from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from io import BytesIO
 from typing import Any, Literal
+from uuid import UUID
 
 from openpyxl import Workbook, load_workbook
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -15,7 +16,11 @@ from app.models.available_balance import AvailableBalance
 from app.models.normative import Normative
 from app.models.object import Object
 from app.models.product import Product
+from app.models.sync_metadata import SyncMetadata
+from app.models.user import User
 from app.schemas.logistics import (
+    BalanceSyncInfo,
+    BalanceSyncUser,
     BalanceUploadError,
     BalanceUploadResult,
     DashboardResponse,
@@ -629,6 +634,15 @@ def _row_empty(row: tuple[Any, ...]) -> bool:
     return all(_is_blank(_cell(row, column)) for column in tracked)
 
 
+@dataclass
+class ParsedBalanceRow:
+    warehouse_code: int
+    product_code: int
+    available: Decimal
+    plan: Decimal
+    unit: str
+
+
 async def _find_plant(db: AsyncSession, erp_plant_code: int) -> Object:
     plant = await db.scalar(
         select(Object).where(
@@ -667,40 +681,55 @@ async def _find_product(db: AsyncSession, product_code: int) -> Product:
     return product
 
 
-async def _upsert_balance(
-    db: AsyncSession,
-    *,
-    warehouse_code: int,
-    product_code: int,
-    available: Decimal,
-    plan: Decimal,
-    unit: str,
-) -> str:
-    current = await db.get(AvailableBalance, (warehouse_code, product_code))
-    now = datetime.now(UTC)
-    if current is None:
+async def _touch_sync_metadata(
+    db: AsyncSession, *, user_id: UUID, synced_at: datetime
+) -> None:
+    row = await db.get(SyncMetadata, 1)
+    if row is None:
         db.add(
-            AvailableBalance(
-                warehouse_code=warehouse_code,
-                product_code=product_code,
-                available=available,
-                plan=plan,
-                unit=unit,
-                last_sync_at=now,
-                source="excel",
+            SyncMetadata(
+                id=1,
+                last_balances_sync_at=synced_at,
+                last_balances_sync_by=user_id,
+                updated_at=synced_at,
             )
         )
-        return "created"
-    current.available = available
-    current.plan = plan
-    current.unit = unit
-    current.last_sync_at = now
-    current.source = "excel"
-    return "updated"
+        return
+    row.last_balances_sync_at = synced_at
+    row.last_balances_sync_by = user_id
+    row.updated_at = synced_at
+
+
+def _sync_user_brief(user: User | None) -> BalanceSyncUser | None:
+    if user is None:
+        return None
+    return BalanceSyncUser(
+        id=user.id,
+        username=user.username,
+        full_name=user.full_name,
+        role=user.role,
+    )
+
+
+async def get_sync_info(db: AsyncSession) -> BalanceSyncInfo:
+    result = await db.execute(select(SyncMetadata).where(SyncMetadata.id == 1))
+    row = result.scalar_one_or_none()
+    if row is None or row.last_balances_sync_by is None:
+        user = None
+    else:
+        user = await db.get(User, row.last_balances_sync_by)
+    return BalanceSyncInfo(
+        last_balances_sync_at=row.last_balances_sync_at if row else None,
+        last_balances_sync_by=_sync_user_brief(user),
+    )
 
 
 async def upload_balances(
-    db: AsyncSession, content: bytes, filename: str
+    db: AsyncSession,
+    content: bytes,
+    filename: str,
+    *,
+    user_id: UUID,
 ) -> BalanceUploadResult:
     lowered = filename.lower()
     if not lowered.endswith((".xlsx", ".xls")):
@@ -719,9 +748,8 @@ async def upload_balances(
     if not rows:
         raise APIError(400, "INVALID_FILE", "Файл пуст")
 
-    created = 0
-    updated = 0
     error_details: list[BalanceUploadError] = []
+    parsed_rows: list[ParsedBalanceRow] = []
     start_index = 1
     if rows and _looks_like_header(_cell(rows[0], EXCEL_COL_PRODUCT)):
         start_index = 2
@@ -745,23 +773,61 @@ async def upload_balances(
             await _find_plant(db, erp_plant_code)
             warehouse = await _find_warehouse(db, erp_warehouse_code)
             await _find_product(db, product_code)
-            async with db.begin_nested():
-                result = await _upsert_balance(
-                    db,
+            parsed_rows.append(
+                ParsedBalanceRow(
                     warehouse_code=warehouse.code,
                     product_code=product_code,
                     available=available,
                     plan=plan,
                     unit=unit,
                 )
-            if result == "created":
-                created += 1
-            else:
-                updated += 1
+            )
         except (ValueError, APIError) as exc:
             message = exc.message if isinstance(exc, APIError) else str(exc)
             error_details.append(BalanceUploadError(row=excel_row, message=message))
 
+    unique_rows: dict[tuple[int, int], ParsedBalanceRow] = {}
+    for parsed in parsed_rows:
+        unique_rows[(parsed.warehouse_code, parsed.product_code)] = parsed
+
+    warehouse_codes = {item.warehouse_code for item in unique_rows.values()}
+    existing_keys: set[tuple[int, int]] = set()
+    if warehouse_codes:
+        existing = await db.execute(
+            select(
+                AvailableBalance.warehouse_code,
+                AvailableBalance.product_code,
+            ).where(AvailableBalance.warehouse_code.in_(warehouse_codes))
+        )
+        existing_keys = {(row[0], row[1]) for row in existing.all()}
+        await db.execute(
+            delete(AvailableBalance).where(
+                AvailableBalance.warehouse_code.in_(warehouse_codes)
+            )
+        )
+        await db.flush()
+
+    now = datetime.now(UTC)
+    created = 0
+    updated = 0
+    for key, parsed in unique_rows.items():
+        db.add(
+            AvailableBalance(
+                warehouse_code=parsed.warehouse_code,
+                product_code=parsed.product_code,
+                available=parsed.available,
+                plan=parsed.plan,
+                unit=parsed.unit,
+                last_sync_at=now,
+                source="excel",
+            )
+        )
+        if key in existing_keys:
+            updated += 1
+        else:
+            created += 1
+
+    await _touch_sync_metadata(db, user_id=user_id, synced_at=now)
     await db.commit()
     loaded = created + updated
     return BalanceUploadResult(

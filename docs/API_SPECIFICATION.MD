@@ -716,7 +716,14 @@ file	file	Excel-файл (.xlsx / .xls)
 19	available	Доступно (факт − заказы клиентов)
 20	plan	Запланировано (available + разнарядки)
 
-Логика: поиск завода, склада и продукта; upsert в `available_balances` по `(warehouse_code, product_code)`. `source` = `excel`, `last_sync_at` = NOW(). Неизвестные коды и невалидные числа — ошибка по строке, остальные строки сохраняются.
+Логика загрузки (перезапись по складам из файла):
+1. Разобрать строки Excel: поиск завода, склада и продукта.
+2. Определить все `warehouse_code`, которые есть в валидных строках файла.
+3. Удалить все записи `available_balances` для этих складов.
+4. Вставить только новые записи из файла (`source` = `excel`, `last_sync_at` = NOW()). Позиция, которой больше нет в файле, исчезает из БД.
+5. Обновить `sync_metadata`: `last_balances_sync_at` = NOW(), `last_balances_sync_by` = текущий пользователь.
+
+Склады, которых нет в файле, не затрагиваются. Неизвестные коды и невалидные числа — ошибка по строке, остальные строки сохраняются.
 
 Response (200):
 
@@ -739,6 +746,33 @@ Errors:
 400 INVALID_FILE — не Excel или пустой файл
 
 403 FORBIDDEN — не роль logistics
+
+6.2.1. Дата и автор последней загрузки остатков
+text
+GET /logistics/normative/sync-info
+Headers:
+
+text
+Authorization: Bearer <token>
+Права: все авторизованные (как дашборд). Данные читаются из `sync_metadata`.
+
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": {
+        "last_balances_sync_at": "2026-08-22T14:30:00Z",
+        "last_balances_sync_by": {
+            "id": "44444444-4444-4444-4444-444444444444",
+            "username": "ivanov",
+            "full_name": "Иванов Иван",
+            "role": "logistics"
+        }
+    }
+}
+
+Если загрузки ещё не было, `last_balances_sync_at` и `last_balances_sync_by` равны `null`.
 
 6.3. Сформировать заказы на пополнение
 text
@@ -1564,13 +1598,13 @@ json
 Запросы	/requests/*	6
 Согласование (ПП)	/approvals/pp/*	2
 Согласование (экономист)	/approvals/economy/*	2
-Логистика	/logistics/*	6
+Логистика	/logistics/*	7
 Нормативы	/normatives/*	4
 Справочники	/references/*	8
 Остатки	/inventory/*	2
 Тарифы (задел)	/tariffs/*	1
 Агент (задел)	/agent/*	2
-ИТОГО		33
+ИТОГО		34
 13.2. Ролевой доступ
 Роль	Доступные эндпоинты
 guest	Просмотр справочников, нормативов и дашборда логистики (только чтение)
@@ -1601,6 +1635,6 @@ text
 6. Экономист: POST /approvals/economy/{id}/action (approve) → утверждает → статус approved
 7. Логист: GET /logistics/one-time/list → видит запрос
 8. Логист: POST /logistics/one-time/{id}/execute → отмечает исполненным
-Версия: 1.0
-Дата: 18.08.2026
+Версия: 1.1
+Дата: 22.08.2026
 Статус: На согласовании

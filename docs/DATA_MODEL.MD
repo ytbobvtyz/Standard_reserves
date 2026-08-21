@@ -198,6 +198,13 @@ erDiagram
         varchar source "manual / csv / excel / erp_api"
     }
 
+    sync_metadata {
+        int id PK "всегда 1 (singleton)"
+        timestamp last_balances_sync_at "дата последней загрузки остатков"
+        uuid last_balances_sync_by FK "кто загрузил"
+        timestamp updated_at "дата обновления записи"
+    }
+
     %% ============================================
     %% БУДУЩИЙ АГЕНТ
     %% ============================================
@@ -257,6 +264,9 @@ erDiagram
     %% Available Balances → Products / Objects
     available_balances }o--|| products : "product_code"
     available_balances }o--|| objects : "warehouse_code"
+
+    %% Sync metadata → Users
+    users ||--o| sync_metadata : "last_balances_sync_by"
 
     %% Events → Requests
     events }o--|| requests : "request_id"
@@ -677,6 +687,28 @@ plan	DECIMAL(12,2)	✅	Запланировано: available + разнаряд�
 unit	VARCHAR(10)	✅	шт / т / ШТ / КГ (по умолчанию шт; Excel ERP: ШТ или КГ)
 last_sync_at	TIMESTAMP	✅	Дата последней синхронизации
 source	VARCHAR(50)	❌	manual / csv / excel / erp_api (по умолчанию manual)
+5.3. sync_metadata — Метаданные синхронизации
+Singleton-таблица (ровно одна строка, `id = 1`). Хранит дату и автора последней загрузки остатков Excel (`POST /logistics/normative/upload`).
+
+sql
+CREATE TABLE sync_metadata (
+    id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    last_balances_sync_at TIMESTAMP WITH TIME ZONE,
+    last_balances_sync_by UUID REFERENCES users(id),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_sync_metadata_last_balances_sync_by ON sync_metadata(last_balances_sync_by);
+
+INSERT INTO sync_metadata (id) VALUES (1);
+Поля:
+
+Поле	Тип	Обязательное	Описание
+id	INTEGER	✅	Всегда 1 (PK, CHECK id = 1)
+last_balances_sync_at	TIMESTAMP	❌	Дата и время последней загрузки остатков
+last_balances_sync_by	UUID	❌	Кто загрузил → users.id
+updated_at	TIMESTAMP	✅	Дата обновления записи (по умолчанию NOW())
+При загрузке Excel: для складов из файла старые строки `available_balances` удаляются, затем вставляются только строки из файла. После этого обновляются `last_balances_sync_at` и `last_balances_sync_by`.
 6. ТАБЛИЦА ДЛЯ БУДУЩЕГО АГЕНТА
 6.1. events — События для агента логиста
 sql
@@ -1018,6 +1050,7 @@ EXECUTE FUNCTION trigger_create_normative();
 16	016_balances_available_plan.sql	available_balances (quantity → available, +plan)
 17	017_balance_unit_kg.sql	available_balances.unit: шт, т, ШТ, КГ
 18	018_product_gtin_parent_relax.sql	products: снять UNIQUE с gtin, снять FK parent/children
+19	019_sync_metadata.sql	sync_metadata (дата и автор последней загрузки остатков)
 10	010_functions.sql	Все функции
 11	011_views.sql	Все представления
 12	012_triggers.sql	Все триггеры
@@ -1097,6 +1130,6 @@ GROUP BY warehouse_code, product_code;
 Коэффициент удаленности	✅ Зафиксирован = 1 (в будущем Яндекс API)
 
 
-Версия: 2.0
-Дата: 18.08.2026
+Версия: 2.1
+Дата: 22.08.2026
 Статус: Утверждена

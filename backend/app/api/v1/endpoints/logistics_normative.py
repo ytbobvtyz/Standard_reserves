@@ -8,6 +8,7 @@ from app.api.deps import get_current_user, get_db, require_roles
 from app.models.user import User
 from app.schemas.common import SuccessResponse
 from app.schemas.logistics import (
+    BalanceSyncInfo,
     BalanceUploadResult,
     DashboardResponse,
     GenerateOrdersBulkRequest,
@@ -54,7 +55,7 @@ async def get_dashboard(
 @router.post("/upload", response_model=SuccessResponse[BalanceUploadResult])
 async def upload_balances(
     file: UploadFile = File(...),
-    _current_user: User = Depends(LOGISTICS_ONLY),
+    current_user: User = Depends(LOGISTICS_ONLY),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[BalanceUploadResult]:
     content = await file.read()
@@ -62,7 +63,17 @@ async def upload_balances(
         db,
         content,
         file.filename or "balances.xlsx",
+        user_id=current_user.id,
     )
+    return SuccessResponse(data=data)
+
+
+@router.get("/sync-info", response_model=SuccessResponse[BalanceSyncInfo])
+async def get_sync_info(
+    _current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[BalanceSyncInfo]:
+    data = await service.get_sync_info(db)
     return SuccessResponse(data=data)
 
 

@@ -10,6 +10,7 @@ from app.models.request import Request
 from app.models.request_item import RequestItem
 from app.models.request_item_history import RequestItemHistory
 from app.models.session import Session
+from app.models.sync_metadata import SyncMetadata
 from app.models.user import User
 
 __all__ = [
@@ -25,5 +26,6 @@ __all__ = [
     "RequestItem",
     "RequestItemHistory",
     "Session",
+    "SyncMetadata",
     "User",
 ]

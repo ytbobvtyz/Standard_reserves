@@ -23,6 +23,7 @@ from app.models import (
     RequestItem,
     RequestItemHistory,
     Session,
+    SyncMetadata,
     User,
 )
 
@@ -87,9 +88,7 @@ async def db_ready() -> AsyncGenerator[None, None]:
         await connection.execute(
             text("UPDATE products SET mark_control = false WHERE mark_control IS NULL")
         )
-        await connection.execute(
-            text("DROP INDEX IF EXISTS idx_products_gtin")
-        )
+        await connection.execute(text("DROP INDEX IF EXISTS idx_products_gtin"))
         await connection.execute(
             text(
                 "CREATE INDEX IF NOT EXISTS idx_products_gtin "
@@ -109,9 +108,7 @@ async def db_ready() -> AsyncGenerator[None, None]:
             )
         )
         await connection.execute(
-            text(
-                "ALTER TABLE products DROP CONSTRAINT IF EXISTS products_gtin_key"
-            )
+            text("ALTER TABLE products DROP CONSTRAINT IF EXISTS products_gtin_key")
         )
         await connection.execute(
             text(
@@ -275,6 +272,11 @@ async def _delete_user(user_id: uuid.UUID) -> None:
             delete(RequestItemHistory).where(RequestItemHistory.changed_by == user_id)
         )
         await session.execute(delete(AuditLog).where(AuditLog.changed_by == user_id))
+        await session.execute(
+            update(SyncMetadata)
+            .where(SyncMetadata.last_balances_sync_by == user_id)
+            .values(last_balances_sync_by=None)
+        )
         await session.execute(
             update(Product)
             .where(Product.last_modified_by == user_id)

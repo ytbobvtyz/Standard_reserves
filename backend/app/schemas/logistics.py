@@ -49,6 +49,18 @@ class BalanceUploadResult(BaseModel):
     error_details: list[BalanceUploadError]
 
 
+class BalanceSyncUser(BaseModel):
+    id: UUID
+    username: str
+    full_name: str
+    role: str
+
+
+class BalanceSyncInfo(BaseModel):
+    last_balances_sync_at: datetime | None = None
+    last_balances_sync_by: BalanceSyncUser | None = None
+
+
 class WarehouseDeficit(BaseModel):
     warehouse_code: int
     warehouse_name: str

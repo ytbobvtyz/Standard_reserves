@@ -65,6 +65,7 @@ const generateOrders = vi.fn()
 const generateOrdersBulk = vi.fn()
 const exportOrders = vi.fn()
 const uploadBalances = vi.fn()
+const getSyncInfo = vi.fn()
 const getObjects = vi.fn()
 
 vi.mock('../api/logistics', () => ({
@@ -74,6 +75,7 @@ vi.mock('../api/logistics', () => ({
     generateOrdersBulk: (...args: unknown[]) => generateOrdersBulk(...args),
     exportOrders: (...args: unknown[]) => exportOrders(...args),
     uploadBalances: (...args: unknown[]) => uploadBalances(...args),
+    getSyncInfo: (...args: unknown[]) => getSyncInfo(...args),
   },
 }))
 
@@ -104,8 +106,23 @@ describe('LogisticsDashboardPage', () => {
     generateOrdersBulk.mockReset()
     exportOrders.mockReset()
     uploadBalances.mockReset()
+    getSyncInfo.mockReset()
     getObjects.mockReset()
     getDashboard.mockResolvedValue({ data: dashboard })
+    getSyncInfo.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: {
+          last_balances_sync_at: '2026-08-22T14:30:00+05:00',
+          last_balances_sync_by: {
+            id: '44444444-4444-4444-4444-444444444444',
+            username: 'ivanov',
+            full_name: 'Иванов Иван',
+            role: 'logistics',
+          },
+        },
+      },
+    })
     getObjects.mockResolvedValue({
       data: {
         status: 'success',
@@ -155,6 +172,8 @@ describe('LogisticsDashboardPage', () => {
     expect(screen.getByText('Дашборд логиста')).toBeTruthy()
     await waitFor(() => {
       expect(screen.getByText('Склад Ростов')).toBeTruthy()
+      expect(screen.getByText(/Актуальные остатки обновлены/)).toBeTruthy()
+      expect(screen.getByText(/Иванов И\. \(logistics\)/)).toBeTruthy()
     })
     expect(screen.getByText('Подшипник 6204ZZ')).toBeTruthy()
     expect(screen.getAllByText('Доступно').length).toBeGreaterThan(0)
@@ -162,6 +181,7 @@ describe('LogisticsDashboardPage', () => {
     expect(screen.getByRole('button', { name: /Загрузить актуальные остатки/ })).toBeTruthy()
     expect(screen.getAllByText("ООО 'Ромашка'").length).toBeGreaterThan(0)
     expect(getDashboard).toHaveBeenCalled()
+    expect(getSyncInfo).toHaveBeenCalled()
   })
 
   it('refetches dashboard when unit toggle changes', async () => {
@@ -297,6 +317,28 @@ describe('LogisticsDashboardPage', () => {
       screen.queryByRole('button', { name: /Загрузить актуальные остатки/ }),
     ).toBeNull()
     expect(screen.queryByRole('checkbox', { name: 'Выбрать все склады' })).toBeNull()
+    expect(screen.getByText(/Актуальные остатки обновлены/)).toBeTruthy()
+    expect(screen.getByText(/Иванов И\. \(logistics\)/)).toBeTruthy()
+  })
+
+  it('shows empty sync message when balances were never uploaded', async () => {
+    getSyncInfo.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: {
+          last_balances_sync_at: null,
+          last_balances_sync_by: null,
+        },
+      },
+    })
+    render(
+      <MemoryRouter>
+        <LogisticsDashboardPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByText('Актуальные остатки ещё не загружались')).toBeTruthy()
+    })
   })
 
   it('opens upload modal and shows report', async () => {
