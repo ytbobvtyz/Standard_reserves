@@ -24,13 +24,16 @@ if TYPE_CHECKING:
 class AvailableBalance(Base):
     __tablename__ = "available_balances"
     __table_args__ = (
-        CheckConstraint("unit IN ('шт', 'т')", name="ck_available_balances_unit"),
+        CheckConstraint(
+            "unit IN ('шт', 'т', 'ШТ', 'КГ')",
+            name="ck_available_balances_unit",
+        ),
         Index("idx_available_balances_warehouse", "warehouse_code"),
         Index("idx_available_balances_product", "product_code"),
         Index(
-            "idx_available_balances_quantity",
-            "quantity",
-            postgresql_where=text("quantity > 0"),
+            "idx_available_balances_available",
+            "available",
+            postgresql_where=text("available > 0"),
         ),
     )
 
@@ -44,7 +47,13 @@ class AvailableBalance(Base):
         ForeignKey("products.code"),
         primary_key=True,
     )
-    quantity: Mapped[Decimal] = mapped_column(
+    available: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+        default=Decimal("0"),
+        server_default=text("0"),
+    )
+    plan: Mapped[Decimal] = mapped_column(
         Numeric(12, 2),
         nullable=False,
         default=Decimal("0"),

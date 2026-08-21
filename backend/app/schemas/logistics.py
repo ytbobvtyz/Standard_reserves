@@ -25,12 +25,27 @@ class DeficitItem(BaseModel):
     product_name: str
     category: str
     normative_quantity: DecimalNumber
-    fact_quantity: DecimalNumber
+    available: DecimalNumber
+    plan: DecimalNumber
     unit: str
     deficit: DecimalNumber
     client_name: str
     expiry_date: date | None = None
     status: Literal["warning", "ok"]
+
+
+class BalanceUploadError(BaseModel):
+    row: int
+    message: str
+
+
+class BalanceUploadResult(BaseModel):
+    uploaded: int
+    created: int
+    updated: int
+    errors: int
+    message: str
+    error_details: list[BalanceUploadError]
 
 
 class WarehouseDeficit(BaseModel):

@@ -1,6 +1,6 @@
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Query, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,6 +8,7 @@ from app.api.deps import get_current_user, get_db, require_roles
 from app.models.user import User
 from app.schemas.common import SuccessResponse
 from app.schemas.logistics import (
+    BalanceUploadResult,
     DashboardResponse,
     GenerateOrdersBulkRequest,
     GenerateOrdersData,
@@ -48,6 +49,21 @@ async def get_dashboard(
         filter_mode=filter_mode,
         unit=unit,
     )
+
+
+@router.post("/upload", response_model=SuccessResponse[BalanceUploadResult])
+async def upload_balances(
+    file: UploadFile = File(...),
+    _current_user: User = Depends(LOGISTICS_ONLY),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[BalanceUploadResult]:
+    content = await file.read()
+    data = await service.upload_balances(
+        db,
+        content,
+        file.filename or "balances.xlsx",
+    )
+    return SuccessResponse(data=data)
 
 
 @router.get("/export")

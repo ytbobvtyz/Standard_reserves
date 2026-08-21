@@ -647,11 +647,13 @@ Headers:
 
 text
 Authorization: Bearer <token>
-Права: все авторизованные (просмотр). Кнопки формирования заказов и Excel — только logistics.
+Права: все авторизованные (просмотр). Кнопки формирования заказов, Excel и загрузки остатков — только logistics.
 Query параметры:
 
 Параметр	Тип	Описание
 warehouse_code	integer	Фильтр по складу
+filter_mode	string	all / with_normatives / deficit_only
+unit	string	шт / т
 Response (200):
 
 json
@@ -667,7 +669,8 @@ json
                     "product_name": "Подшипник 6204ZZ",
                     "category": "A",
                     "normative_quantity": 1000,
-                    "fact_quantity": 600,
+                    "available": 600,
+                    "plan": 600,
                     "unit": "шт",
                     "deficit": 400,
                     "client_name": "ООО 'Ромашка'",
@@ -685,7 +688,58 @@ json
         "deficit_products": 1
     }
 }
-6.2. Сформировать заказы на пополнение
+
+`available` — доступно (факт − заказы клиентов). `plan` — запланировано (`available` + разнарядки). `deficit` = норматив − `plan`.
+
+6.2. Загрузить остатки из Excel (ERP)
+text
+POST /logistics/normative/upload
+Headers:
+
+text
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+Права: только logistics. Остальные роли получают 403 FORBIDDEN.
+
+Form-data:
+
+Поле	Тип	Описание
+file	file	Excel-файл (.xlsx / .xls)
+
+Формат Excel (колонки по номеру, 1-based; первая строка — заголовок):
+
+Колонка	Поле	Описание
+1	product_code	Артикул (ID продукта → products.code)
+3	erp_plant_code	Завод ERP → objects.erp_plant_code → objects.code
+5	erp_warehouse_code	Склад ERP → objects.erp_warehouse_code → objects.code
+19	available	Доступно (факт − заказы клиентов)
+20	plan	Запланировано (available + разнарядки)
+
+Логика: поиск завода, склада и продукта; upsert в `available_balances` по `(warehouse_code, product_code)`. `source` = `excel`, `last_sync_at` = NOW(). Неизвестные коды и невалидные числа — ошибка по строке, остальные строки сохраняются.
+
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": {
+        "uploaded": 2,
+        "created": 1,
+        "updated": 1,
+        "errors": 1,
+        "message": "Загружено 2, ошибок 1",
+        "error_details": [
+            {"row": 4, "message": "Склад ERP X999 не найден"}
+        ]
+    }
+}
+Errors:
+
+400 INVALID_FILE — не Excel или пустой файл
+
+403 FORBIDDEN — не роль logistics
+
+6.3. Сформировать заказы на пополнение
 text
 POST /logistics/normative/{warehouse_code}/generate-orders
 Headers:
@@ -727,7 +781,7 @@ json
         "total_quantity": 400
     }
 }
-6.3. Выгрузить заказы в Excel
+6.4. Выгрузить заказы в Excel
 text
 GET /logistics/normative/export
 Headers:
@@ -742,7 +796,7 @@ warehouse_code	integer	Склад
 product_codes	array	Артикулы (через запятую)
 Response: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
 
-6.4. Разовые перемещения — список
+6.5. Разовые перемещения — список
 text
 GET /logistics/one-time/list
 Headers:
@@ -786,7 +840,7 @@ json
         "total": 3
     }
 }
-6.5. Отметить разовое перемещение как исполненное
+6.6. Отметить разовое перемещение как исполненное
 text
 POST /logistics/one-time/{request_id}/execute
 Headers:
@@ -1353,39 +1407,9 @@ json
     "message": "Объект удален"
 }
 9. УПРАВЛЕНИЕ ОСТАТКАМИ
-9.1. Загрузить остатки (CSV)
-text
-POST /inventory/upload
-Headers:
+На MVP загрузка остатков выполняется через `POST /logistics/normative/upload` (Excel ERP, поля `available` и `plan`). Исторический CSV-эндпоинт `/inventory/upload` не используется.
 
-text
-Authorization: Bearer <token>
-Права: Только логисты (и экономисты в будущем)
-
-Content-Type: multipart/form-data
-
-Form-data:
-
-Поле	Тип	Описание
-file	file	CSV-файл с остатками
-Формат CSV:
-
-csv
-warehouse_code,product_code,quantity,unit
-2001,10001,600,шт
-2002,10002,200,шт
-Response (200):
-
-json
-{
-    "status": "success",
-    "data": {
-        "uploaded": 2,
-        "errors": 0,
-        "message": "Остатки успешно загружены"
-    }
-}
-9.2. Получить остаток по складу
+9.1. Получить остаток по складу
 text
 GET /inventory/balances
 Headers:
@@ -1409,7 +1433,8 @@ json
             {
                 "product_code": 10001,
                 "product_name": "Подшипник 6204ZZ",
-                "quantity": 600,
+                "available": 600,
+                "plan": 600,
                 "unit": "шт",
                 "last_sync_at": "2026-08-18T08:00:00Z"
             }
@@ -1507,7 +1532,8 @@ json
                 "product_code": 10001,
                 "deficit": 400,
                 "normative_quantity": 1000,
-                "fact_quantity": 600
+                "available": 600,
+                "plan": 600
             },
             "processed": false,
             "created_at": "2026-08-18T11:00:00Z"
@@ -1535,13 +1561,13 @@ json
 Запросы	/requests/*	6
 Согласование (ПП)	/approvals/pp/*	2
 Согласование (экономист)	/approvals/economy/*	2
-Логистика	/logistics/*	5
+Логистика	/logistics/*	6
 Нормативы	/normatives/*	4
 Справочники	/references/*	8
 Остатки	/inventory/*	2
 Тарифы (задел)	/tariffs/*	1
 Агент (задел)	/agent/*	2
-ИТОГО		32
+ИТОГО		33
 13.2. Ролевой доступ
 Роль	Доступные эндпоинты
 guest	Просмотр справочников, нормативов и дашборда логистики (только чтение)

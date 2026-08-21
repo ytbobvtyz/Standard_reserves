@@ -222,7 +222,8 @@ async def test_edit_update_delete_and_gtin_validation(
             AvailableBalance(
                 warehouse_code=catalog["warehouse_code"],
                 product_code=DELETE_BLOCKED_CODE,
-                quantity=Decimal("10"),
+                available=Decimal("10"),
+                plan=Decimal("10"),
                 unit="шт",
             )
         )

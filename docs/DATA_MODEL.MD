@@ -191,10 +191,11 @@ erDiagram
     available_balances {
         int warehouse_code PK "склад"
         int product_code PK "артикул"
-        decimal quantity "фактический остаток"
+        decimal available "доступно (факт - заказы клиентов)"
+        decimal plan "запланировано (available + разнарядки)"
         varchar unit "шт / т"
         timestamp last_sync_at "дата последней синхронизации"
-        varchar source "manual / csv / erp_api"
+        varchar source "manual / csv / excel / erp_api"
     }
 
     %% ============================================
@@ -646,14 +647,15 @@ category	CHAR(1)	✅	A/B/C
 created_at	TIMESTAMP	✅	Дата создания
 updated_at	TIMESTAMP	✅	Дата обновления
 deleted_at	TIMESTAMP	❌	Дата удаления (soft delete)
-5.2. available_balances — Фактические остатки
-Загружается из ERP вручную (CSV) на MVP. В будущем — автоматическая синхронизация.
+5.2. available_balances — Остатки ERP
+Загружается из ERP вручную (Excel) на MVP. `available` — доступно к отгрузке (факт минус заказы клиентов). `plan` — запланировано (`available` плюс разнарядки). Дефицит на дашборде: норматив − plan. В будущем — автоматическая синхронизация.
 
 sql
 CREATE TABLE available_balances (
     warehouse_code INTEGER NOT NULL REFERENCES objects(code),
     product_code INTEGER NOT NULL REFERENCES products(code),
-    quantity DECIMAL(12,2) NOT NULL DEFAULT 0,
+    available DECIMAL(12,2) NOT NULL DEFAULT 0,
+    plan DECIMAL(12,2) NOT NULL DEFAULT 0,
     unit VARCHAR(10) NOT NULL DEFAULT 'шт' CHECK (unit IN ('шт', 'т')),
     last_sync_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     source VARCHAR(50) DEFAULT 'manual',
@@ -664,16 +666,17 @@ CREATE TABLE available_balances (
 -- Индексы
 CREATE INDEX idx_available_balances_warehouse ON available_balances(warehouse_code);
 CREATE INDEX idx_available_balances_product ON available_balances(product_code);
-CREATE INDEX idx_available_balances_quantity ON available_balances(quantity) WHERE quantity > 0;
+CREATE INDEX idx_available_balances_available ON available_balances(available) WHERE available > 0;
 Поля:
 
 Поле	Тип	Обязательное	Описание
 warehouse_code	INTEGER	✅	Склад → objects.code (PK)
 product_code	INTEGER	✅	Артикул → products.code (PK)
-quantity	DECIMAL(12,2)	✅	Фактический остаток (по умолчанию 0)
+available	DECIMAL(12,2)	✅	Доступно: факт − заказы клиентов (по умолчанию 0)
+plan	DECIMAL(12,2)	✅	Запланировано: available + разнарядки (по умолчанию 0)
 unit	VARCHAR(10)	✅	шт или т (по умолчанию шт)
 last_sync_at	TIMESTAMP	✅	Дата последней синхронизации
-source	VARCHAR(50)	❌	manual / csv / erp_api (по умолчанию manual)
+source	VARCHAR(50)	❌	manual / csv / excel / erp_api (по умолчанию manual)
 6. ТАБЛИЦА ДЛЯ БУДУЩЕГО АГЕНТА
 6.1. events — События для агента логиста
 sql
@@ -858,22 +861,23 @@ SELECT
     p.category,
     n.quantity AS normative_quantity,
     n.unit AS normative_unit,
-    COALESCE(ab.quantity, 0) AS fact_quantity,
-    COALESCE(ab.unit, 'шт') AS fact_unit,
-    (n.quantity - COALESCE(ab.quantity, 0)) AS deficit,
-    n.expiry_date,
-    n.client_name,
-    CASE
-        WHEN (n.quantity - COALESCE(ab.quantity, 0)) > 0 THEN 'warning'
-        ELSE 'ok'
-    END AS status
+            COALESCE(ab.available, 0) AS available,
+            COALESCE(ab.plan, 0) AS plan,
+            COALESCE(ab.unit, 'шт') AS fact_unit,
+            (n.quantity - COALESCE(ab.plan, 0)) AS deficit,
+            n.expiry_date,
+            n.client_name,
+            CASE
+                WHEN (n.quantity - COALESCE(ab.plan, 0)) > 0 THEN 'warning'
+                ELSE 'ok'
+            END AS status
 FROM normatives n
 JOIN objects o ON n.warehouse_code = o.code
 JOIN products p ON n.product_code = p.code
 LEFT JOIN available_balances ab ON n.warehouse_code = ab.warehouse_code AND n.product_code = ab.product_code
 WHERE n.deleted_at IS NULL
   AND n.expiry_date >= CURRENT_DATE
-  AND (n.quantity - COALESCE(ab.quantity, 0)) > 0;
+  AND (n.quantity - COALESCE(ab.plan, 0)) > 0;
 8.2. Нормативы на дату
 sql
 CREATE OR REPLACE VIEW normatives_on_date AS
@@ -1011,6 +1015,7 @@ EXECUTE FUNCTION trigger_create_normative();
 11	011_product_admin.sql	products (gtin, mark_control, audit) + audit_log
 14	014_object_admin.sql	objects (last_modified_by, last_modified_at)
 15	015_object_erp.sql	objects (erp_plant_code, erp_warehouse_code, loading_point)
+16	016_balances_available_plan.sql	available_balances (quantity → available, +plan)
 10	010_functions.sql	Все функции
 11	011_views.sql	Все представления
 12	012_triggers.sql	Все триггеры
@@ -1046,9 +1051,9 @@ INSERT INTO request_items (request_id, product_code, warehouse_code, quantity_re
 ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 10002, 2002, 500, 'шт');
 
 -- Остатки
-INSERT INTO available_balances (warehouse_code, product_code, quantity, source) VALUES
-(2001, 10001, 600, 'manual'),
-(2002, 10002, 200, 'manual');
+INSERT INTO available_balances (warehouse_code, product_code, available, plan, source) VALUES
+(2001, 10001, 600, 600, 'manual'),
+(2002, 10002, 200, 200, 'manual');
 12. КЛЮЧЕВЫЕ ЗАПРОСЫ
 12.1. Расчет норматива для продукта
 sql
@@ -1082,7 +1087,7 @@ GROUP BY warehouse_code, product_code;
 13. ПРИМЕЧАНИЯ ПО MVP
 Элемент	Статус в MVP
 Таблица tariffs	❌ Удалена. Будет замена через API (не MVP)
-Таблица available_balances	✅ Заполняется вручную через CSV
+Таблица available_balances	✅ Заполняется вручную через Excel (ERP: available + plan)
 Таблица events	✅ Создана (задел под агента)
 Таблица request_item_history	✅ История изменений
 Функция expire_normatives()	✅ Нужна с первого дня

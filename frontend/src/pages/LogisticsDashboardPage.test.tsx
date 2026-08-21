@@ -19,7 +19,8 @@ const dashboard: LogisticsDashboardData = {
           product_name: 'Подшипник 6204ZZ',
           category: 'A',
           normative_quantity: 1000,
-          fact_quantity: 600,
+          available: 600,
+          plan: 600,
           unit: 'шт',
           deficit: 400,
           client_name: "ООО 'Ромашка'",
@@ -39,7 +40,8 @@ const dashboard: LogisticsDashboardData = {
           product_name: 'Вал приводной 500мм',
           category: 'C',
           normative_quantity: 120,
-          fact_quantity: 40,
+          available: 40,
+          plan: 40,
           unit: 'шт',
           deficit: 80,
           client_name: "ООО 'Ромашка'",
@@ -60,6 +62,7 @@ const getDashboard = vi.fn()
 const generateOrders = vi.fn()
 const generateOrdersBulk = vi.fn()
 const exportOrders = vi.fn()
+const uploadBalances = vi.fn()
 const getObjects = vi.fn()
 
 vi.mock('../api/logistics', () => ({
@@ -68,6 +71,7 @@ vi.mock('../api/logistics', () => ({
     generateOrders: (...args: unknown[]) => generateOrders(...args),
     generateOrdersBulk: (...args: unknown[]) => generateOrdersBulk(...args),
     exportOrders: (...args: unknown[]) => exportOrders(...args),
+    uploadBalances: (...args: unknown[]) => uploadBalances(...args),
   },
 }))
 
@@ -97,6 +101,7 @@ describe('LogisticsDashboardPage', () => {
     generateOrders.mockReset()
     generateOrdersBulk.mockReset()
     exportOrders.mockReset()
+    uploadBalances.mockReset()
     getObjects.mockReset()
     getDashboard.mockResolvedValue({ data: dashboard })
     getObjects.mockResolvedValue({
@@ -150,6 +155,9 @@ describe('LogisticsDashboardPage', () => {
       expect(screen.getByText('Склад Ростов')).toBeTruthy()
     })
     expect(screen.getByText('Подшипник 6204ZZ')).toBeTruthy()
+    expect(screen.getAllByText('Доступно').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Запланировано').length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: /Загрузить актуальные остатки/ })).toBeTruthy()
     expect(screen.getAllByText("ООО 'Ромашка'").length).toBeGreaterThan(0)
     expect(getDashboard).toHaveBeenCalled()
   })
@@ -283,6 +291,49 @@ describe('LogisticsDashboardPage', () => {
       screen.queryByRole('button', { name: /Сформировать заказы/ }),
     ).toBeNull()
     expect(screen.queryByRole('button', { name: /Скачать Excel/ })).toBeNull()
+    expect(
+      screen.queryByRole('button', { name: /Загрузить актуальные остатки/ }),
+    ).toBeNull()
     expect(screen.queryByRole('checkbox', { name: 'Выбрать все склады' })).toBeNull()
   })
+
+  it('opens upload modal and shows report', async () => {
+    uploadBalances.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: {
+          uploaded: 1,
+          created: 0,
+          updated: 1,
+          errors: 1,
+          message: 'Загружено 1, ошибок 1',
+          error_details: [{ row: 3, message: 'Склад ERP X999 не найден' }],
+        },
+      },
+    })
+    render(
+      <MemoryRouter>
+        <LogisticsDashboardPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByText('Склад Ростов')).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Загрузить актуальные остатки/ }))
+    expect(screen.getByText(/Перетащите Excel-файл/)).toBeTruthy()
+
+    const file = new File(['data'], 'balances.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [file] } })
+
+    await waitFor(() => {
+      expect(uploadBalances).toHaveBeenCalled()
+    })
+    await waitFor(() => {
+      expect(screen.getByText('Загружено 1, ошибок 1')).toBeTruthy()
+    })
+    expect(screen.getByText(/Строка 3/)).toBeTruthy()
+  }, 15000)
 })

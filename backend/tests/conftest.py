@@ -107,8 +107,7 @@ async def db_ready() -> AsyncGenerator[None, None]:
         )
         await connection.execute(
             text(
-                "ALTER TABLE objects "
-                "ADD COLUMN IF NOT EXISTS erp_plant_code INTEGER"
+                "ALTER TABLE objects " "ADD COLUMN IF NOT EXISTS erp_plant_code INTEGER"
             )
         )
         await connection.execute(
@@ -132,6 +131,50 @@ async def db_ready() -> AsyncGenerator[None, None]:
             text(
                 "CREATE UNIQUE INDEX IF NOT EXISTS uq_objects_erp_warehouse_code "
                 "ON objects(erp_warehouse_code)"
+            )
+        )
+        await connection.execute(text("""
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'available_balances'
+                          AND column_name = 'quantity'
+                    ) AND NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'available_balances'
+                          AND column_name = 'available'
+                    ) THEN
+                        ALTER TABLE available_balances
+                            RENAME COLUMN quantity TO available;
+                    END IF;
+                END $$;
+                """))
+        await connection.execute(
+            text(
+                "ALTER TABLE available_balances "
+                "ADD COLUMN IF NOT EXISTS plan DECIMAL(12,2) NOT NULL DEFAULT 0"
+            )
+        )
+        await connection.execute(
+            text(
+                "ALTER TABLE available_balances "
+                "DROP CONSTRAINT IF EXISTS available_balances_unit_check"
+            )
+        )
+        await connection.execute(
+            text(
+                "ALTER TABLE available_balances "
+                "DROP CONSTRAINT IF EXISTS ck_available_balances_unit"
+            )
+        )
+        await connection.execute(
+            text(
+                "ALTER TABLE available_balances "
+                "ADD CONSTRAINT ck_available_balances_unit "
+                "CHECK (unit IN ('шт', 'т', 'ШТ', 'КГ'))"
             )
         )
     yield
@@ -291,6 +334,7 @@ async def catalog(db_ready: None) -> dict[str, int]:
                 city="Москва",
                 region="Московская область",
                 type="plant",
+                erp_plant_code=2401,
                 is_active=True,
             ),
             Object(
@@ -299,6 +343,7 @@ async def catalog(db_ready: None) -> dict[str, int]:
                 city="Екатеринбург",
                 region="Свердловская область",
                 type="plant",
+                erp_plant_code=2402,
                 is_active=True,
             ),
         ]
@@ -309,6 +354,7 @@ async def catalog(db_ready: None) -> dict[str, int]:
                 city="Ростов-на-Дону",
                 region="Ростовская область",
                 type="warehouse",
+                erp_warehouse_code="F005",
                 is_active=True,
             ),
             Object(
@@ -317,12 +363,19 @@ async def catalog(db_ready: None) -> dict[str, int]:
                 city="Владивосток",
                 region="Приморский край",
                 type="warehouse",
+                erp_warehouse_code="F006",
                 is_active=True,
             ),
         ]
         for item in plants + warehouses:
-            if await session.get(Object, item.code) is None:
+            existing = await session.get(Object, item.code)
+            if existing is None:
                 session.add(item)
+                continue
+            if item.type == "plant" and existing.erp_plant_code is None:
+                existing.erp_plant_code = item.erp_plant_code
+            if item.type == "warehouse" and existing.erp_warehouse_code is None:
+                existing.erp_warehouse_code = item.erp_warehouse_code
         await session.flush()
 
         products = [
@@ -355,6 +408,8 @@ async def catalog(db_ready: None) -> dict[str, int]:
         "warehouse_code": 2001,
         "warehouse_code_2": 2002,
         "plant_code": 1001,
+        "erp_plant_code": 2401,
+        "erp_warehouse_code": "F005",
     }
 
 

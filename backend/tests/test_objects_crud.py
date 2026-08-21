@@ -380,7 +380,8 @@ async def test_delete_blocked_by_relations(
             AvailableBalance(
                 warehouse_code=DELETE_BLOCKED_WAREHOUSE,
                 product_code=catalog["product_code"],
-                quantity=Decimal("10"),
+                available=Decimal("10"),
+                plan=Decimal("10"),
                 unit="шт",
             )
         )

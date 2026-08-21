@@ -285,7 +285,8 @@ export interface DeficitItem {
   product_name: string
   category: string
   normative_quantity: number
-  fact_quantity: number
+  available: number
+  plan: number
   unit: Unit
   deficit: number
   client_name: string
@@ -430,6 +431,15 @@ export interface ProductUploadError {
 }
 
 export interface ProductUploadResult {
+  created: number
+  updated: number
+  errors: number
+  message: string
+  error_details: ProductUploadError[]
+}
+
+export interface BalanceUploadResult {
+  uploaded: number
   created: number
   updated: number
   errors: number

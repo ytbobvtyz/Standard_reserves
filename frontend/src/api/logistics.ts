@@ -1,6 +1,7 @@
 import api from './client'
 import type {
   ApiSuccess,
+  BalanceUploadResult,
   ExecuteOneTimeData,
   ExecuteOneTimePayload,
   GenerateOrdersBulkPayload,
@@ -34,6 +35,23 @@ export const logisticsApi = {
       params,
       responseType: 'blob',
     }),
+
+  uploadBalances: (file: File, onProgress?: (percent: number) => void) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post<ApiSuccess<BalanceUploadResult>>(
+      '/logistics/normative/upload',
+      form,
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (event) => {
+          if (event.total) {
+            onProgress?.(Math.round((event.loaded / event.total) * 100))
+          }
+        },
+      },
+    )
+  },
 
   getOneTimeList: (params?: OneTimeListParams) =>
     api.get<ApiSuccess<OneTimeListItem[]>>('/logistics/one-time/list', { params }),

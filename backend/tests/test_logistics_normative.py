@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 from sqlalchemy import delete, select
 
 from app.core.database import AsyncSessionLocal
@@ -122,7 +122,8 @@ async def logistics_catalog(catalog: dict[str, int], test_user: AuthUser):
             AvailableBalance(
                 warehouse_code=warehouse_code,
                 product_code=TEST_PRODUCT_DEFICIT,
-                quantity=Decimal("600"),
+                available=Decimal("600"),
+                plan=Decimal("600"),
                 unit="шт",
                 source="manual",
             )
@@ -131,7 +132,8 @@ async def logistics_catalog(catalog: dict[str, int], test_user: AuthUser):
             AvailableBalance(
                 warehouse_code=warehouse_code,
                 product_code=TEST_PRODUCT_OK,
-                quantity=Decimal("500"),
+                available=Decimal("500"),
+                plan=Decimal("500"),
                 unit="шт",
                 source="manual",
             )
@@ -140,7 +142,8 @@ async def logistics_catalog(catalog: dict[str, int], test_user: AuthUser):
             AvailableBalance(
                 warehouse_code=warehouse_code,
                 product_code=TEST_PRODUCT_STOCK_ONLY,
-                quantity=Decimal("80"),
+                available=Decimal("80"),
+                plan=Decimal("80"),
                 unit="шт",
                 source="manual",
             )
@@ -203,7 +206,8 @@ async def test_dashboard_returns_deficit(
     item = _item(warehouse, TEST_PRODUCT_DEFICIT)
     assert item["product_name"] == "Тестовый подшипник логистики"
     assert item["normative_quantity"] == 1000
-    assert item["fact_quantity"] == 600
+    assert item["available"] == 600
+    assert item["plan"] == 600
     assert item["deficit"] == 400
     assert item["unit"] == "шт"
     assert item["status"] == "warning"
@@ -251,7 +255,8 @@ async def test_dashboard_filter_all_includes_stock_without_normative(
     assert TEST_PRODUCT_STOCK_ONLY in codes
     stock_only = _item(warehouse, TEST_PRODUCT_STOCK_ONLY)
     assert stock_only["normative_quantity"] == 0
-    assert stock_only["fact_quantity"] == 80
+    assert stock_only["available"] == 80
+    assert stock_only["plan"] == 80
     assert stock_only["status"] == "ok"
 
 
@@ -271,7 +276,8 @@ async def test_dashboard_unit_conversion(
     item = _item(warehouse, TEST_PRODUCT_DEFICIT)
     assert item["unit"] == "т"
     assert item["normative_quantity"] == pytest.approx(0.25)
-    assert item["fact_quantity"] == pytest.approx(0.15)
+    assert item["available"] == pytest.approx(0.15)
+    assert item["plan"] == pytest.approx(0.15)
     assert item["deficit"] == pytest.approx(0.1)
 
 
@@ -435,7 +441,8 @@ async def test_export_excel_returns_file(
         "Артикул",
         "Название",
         "Норматив",
-        "Факт",
+        "Доступно",
+        "Запланировано",
         "Дефицит",
         "Ед",
         "Клиент",
@@ -449,6 +456,155 @@ async def test_export_excel_returns_file(
     assert matched[2] == "Тестовый подшипник логистики"
     assert matched[3] == 1000
     assert matched[4] == 600
-    assert matched[5] == 400
-    assert matched[6] == "шт"
-    assert matched[7] == CLIENT_NAME
+    assert matched[5] == 600
+    assert matched[6] == 400
+    assert matched[7] == "шт"
+    assert matched[8] == CLIENT_NAME
+
+
+def _balance_excel_row(
+    *,
+    product_code: int | str | None,
+    plant: int | str | None,
+    warehouse: str | None,
+    available: float | str | None,
+    plan: float | str | None,
+) -> list:
+    row: list = [None] * 20
+    row[0] = product_code
+    row[2] = plant
+    row[4] = warehouse
+    row[18] = available
+    row[19] = plan
+    return row
+
+
+def _build_balances_xlsx(data_rows: list[list]) -> bytes:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(
+        _balance_excel_row(
+            product_code="product_code",
+            plant="erp_plant_code",
+            warehouse="erp_warehouse_code",
+            available="available",
+            plan="plan",
+        )
+    )
+    for row in data_rows:
+        sheet.append(row)
+    buffer = BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+async def test_upload_balances_upserts_and_reports_errors(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    logistics_catalog: dict,
+) -> None:
+    token = await login_token(client, logistics_user)
+    content = _build_balances_xlsx(
+        [
+            _balance_excel_row(
+                product_code=TEST_PRODUCT_DEFICIT,
+                plant=2401,
+                warehouse="F005",
+                available=500,
+                plan=700,
+            ),
+            _balance_excel_row(
+                product_code=TEST_PRODUCT_STOCK_ONLY,
+                plant=2401,
+                warehouse="F005",
+                available=10,
+                plan=15,
+            ),
+            _balance_excel_row(
+                product_code=TEST_PRODUCT_OK,
+                plant=2401,
+                warehouse="X999",
+                available=1,
+                plan=1,
+            ),
+        ]
+    )
+    response = await client.post(
+        "/api/v1/logistics/normative/upload",
+        headers=auth_header(token),
+        files={
+            "file": (
+                "balances.xlsx",
+                content,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["uploaded"] == 2
+    assert data["updated"] >= 1
+    assert data["errors"] == 1
+    assert data["message"] == "Загружено 2, ошибок 1"
+    assert any("X999" in item["message"] for item in data["error_details"])
+
+    dashboard = await client.get(
+        "/api/v1/logistics/normative/dashboard",
+        params={"warehouse_code": logistics_catalog["warehouse_code"]},
+        headers=auth_header(token),
+    )
+    assert dashboard.status_code == 200, dashboard.text
+    warehouse = _warehouse(
+        dashboard.json()["data"], logistics_catalog["warehouse_code"]
+    )
+    item = _item(warehouse, TEST_PRODUCT_DEFICIT)
+    assert item["available"] == 500
+    assert item["plan"] == 700
+    assert item["deficit"] == 300
+
+
+async def test_upload_balances_forbidden_for_commercial(
+    client: AsyncClient,
+    test_user: AuthUser,
+    logistics_catalog: dict,
+) -> None:
+    token = await login_token(client, test_user)
+    content = _build_balances_xlsx(
+        [
+            _balance_excel_row(
+                product_code=TEST_PRODUCT_DEFICIT,
+                plant=2401,
+                warehouse="F005",
+                available=1,
+                plan=1,
+            )
+        ]
+    )
+    response = await client.post(
+        "/api/v1/logistics/normative/upload",
+        headers=auth_header(token),
+        files={
+            "file": (
+                "balances.xlsx",
+                content,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "FORBIDDEN"
+
+
+async def test_upload_balances_rejects_non_excel(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    logistics_catalog: dict,
+) -> None:
+    token = await login_token(client, logistics_user)
+    response = await client.post(
+        "/api/v1/logistics/normative/upload",
+        headers=auth_header(token),
+        files={"file": ("balances.csv", b"not-excel", "text/csv")},
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "INVALID_FILE"

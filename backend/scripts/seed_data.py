@@ -260,10 +260,30 @@ SEED_NORMATIVES = [
 ]
 
 SEED_BALANCES = [
-    {"warehouse_code": 2001, "product_code": 10001, "quantity": Decimal("600")},
-    {"warehouse_code": 2002, "product_code": 10002, "quantity": Decimal("200")},
-    {"warehouse_code": 2001, "product_code": 10005, "quantity": Decimal("450")},
-    {"warehouse_code": 2003, "product_code": 10003, "quantity": Decimal("40")},
+    {
+        "warehouse_code": 2001,
+        "product_code": 10001,
+        "available": Decimal("600"),
+        "plan": Decimal("600"),
+    },
+    {
+        "warehouse_code": 2002,
+        "product_code": 10002,
+        "available": Decimal("200"),
+        "plan": Decimal("200"),
+    },
+    {
+        "warehouse_code": 2001,
+        "product_code": 10005,
+        "available": Decimal("450"),
+        "plan": Decimal("450"),
+    },
+    {
+        "warehouse_code": 2003,
+        "product_code": 10003,
+        "available": Decimal("40"),
+        "plan": Decimal("40"),
+    },
 ]
 
 
@@ -388,13 +408,15 @@ async def _upsert_logistics_demo(session: AsyncSession) -> None:
                 AvailableBalance(
                     warehouse_code=item["warehouse_code"],
                     product_code=item["product_code"],
-                    quantity=item["quantity"],
+                    available=item["available"],
+                    plan=item["plan"],
                     unit="шт",
                     source="manual",
                 )
             )
             continue
-        current.quantity = item["quantity"]
+        current.available = item["available"]
+        current.plan = item["plan"]
         current.unit = "шт"
         current.source = "manual"
 

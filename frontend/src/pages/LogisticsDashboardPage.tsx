@@ -5,14 +5,16 @@ import {
   Empty,
   Input,
   Modal,
+  Progress,
   Select,
   Space,
   Table,
   Tabs,
   Typography,
+  Upload,
   message,
 } from 'antd'
-import { DownloadOutlined, SendOutlined } from '@ant-design/icons'
+import { DownloadOutlined, SendOutlined, UploadOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -20,6 +22,7 @@ import { getApiErrorMessage } from '../api/client'
 import { logisticsApi } from '../api/logistics'
 import { referencesApi } from '../api/references'
 import type {
+  BalanceUploadResult,
   DeficitItem,
   FilterMode,
   GeneratedOrder,
@@ -79,6 +82,10 @@ export function LogisticsDashboardPage() {
   const [generating, setGenerating] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
+  const [uploadOpen, setUploadOpen] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
+  const [uploadResult, setUploadResult] = useState<BalanceUploadResult | null>(null)
   const [orders, setOrders] = useState<GeneratedOrder[]>([])
   const [confirmedOrders, setConfirmedOrders] = useState<GeneratedOrder[]>([])
   const [selectedWarehouseCodes, setSelectedWarehouseCodes] = useState<number[]>([])
@@ -145,9 +152,15 @@ export function LogisticsDashboardPage() {
       render: (value: number) => formatQty(value, unit),
     },
     {
-      title: 'Факт',
-      dataIndex: 'fact_quantity',
+      title: 'Доступно',
+      dataIndex: 'available',
       width: 120,
+      render: (value: number) => formatQty(value, unit),
+    },
+    {
+      title: 'Запланировано',
+      dataIndex: 'plan',
+      width: 140,
       render: (value: number) => formatQty(value, unit),
     },
     {
@@ -184,6 +197,23 @@ export function LogisticsDashboardPage() {
     } finally {
       setGenerating(false)
     }
+  }
+
+  const handleUpload = async (file: File) => {
+    setUploading(true)
+    setUploadProgress(0)
+    setUploadResult(null)
+    try {
+      const { data } = await logisticsApi.uploadBalances(file, setUploadProgress)
+      setUploadResult(data.data)
+      setUploadProgress(100)
+      await load()
+    } catch (error) {
+      message.error(getApiErrorMessage(error, 'Не удалось загрузить остатки'))
+    } finally {
+      setUploading(false)
+    }
+    return false
   }
 
   const handleExport = async (codes?: number[]) => {
@@ -239,9 +269,23 @@ export function LogisticsDashboardPage() {
         ]}
       />
       <Space wrap style={{ justifyContent: 'space-between', width: '100%' }}>
-        <Typography.Title level={3} style={{ margin: 0 }}>
-          Дашборд логиста
-        </Typography.Title>
+        <Space wrap>
+          <Typography.Title level={3} style={{ margin: 0 }}>
+            Дашборд логиста
+          </Typography.Title>
+          {canManage ? (
+            <Button
+              icon={<UploadOutlined aria-hidden />}
+              onClick={() => {
+                setUploadResult(null)
+                setUploadProgress(null)
+                setUploadOpen(true)
+              }}
+            >
+              Загрузить актуальные остатки
+            </Button>
+          ) : null}
+        </Space>
         <Typography.Text type="secondary">
           Дефицит: {formatQty(summary.total_deficit, unit)} {unit} · склады:{' '}
           {summary.deficit_warehouses} · позиции: {summary.deficit_products}
@@ -425,6 +469,40 @@ export function LogisticsDashboardPage() {
             </div>
           ))}
         </Space>
+      </Modal>
+      <Modal
+        title="Загрузить актуальные остатки"
+        open={uploadOpen}
+        onCancel={() => setUploadOpen(false)}
+        footer={null}
+        destroyOnHidden
+      >
+        <Upload.Dragger
+          accept=".xlsx,.xls"
+          maxCount={1}
+          showUploadList={false}
+          disabled={uploading}
+          beforeUpload={(file) => {
+            void handleUpload(file)
+            return false
+          }}
+        >
+          <p>Перетащите Excel-файл сюда или нажмите, чтобы выбрать</p>
+          <p>.xlsx или .xls</p>
+        </Upload.Dragger>
+        {uploadProgress !== null ? (
+          <Progress percent={uploadProgress} status={uploading ? 'active' : 'success'} />
+        ) : null}
+        {uploadResult ? (
+          <Space direction="vertical" style={{ marginTop: 16, width: '100%' }}>
+            <Typography.Text strong>{uploadResult.message}</Typography.Text>
+            {uploadResult.error_details.map((item) => (
+              <Typography.Text key={item.row} type="danger">
+                Строка {item.row}: {item.message}
+              </Typography.Text>
+            ))}
+          </Space>
+        ) : null}
       </Modal>
     </Space>
   )
