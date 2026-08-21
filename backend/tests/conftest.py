@@ -105,6 +105,35 @@ async def db_ready() -> AsyncGenerator[None, None]:
                 "TIMESTAMP WITH TIME ZONE"
             )
         )
+        await connection.execute(
+            text(
+                "ALTER TABLE objects "
+                "ADD COLUMN IF NOT EXISTS erp_plant_code INTEGER"
+            )
+        )
+        await connection.execute(
+            text(
+                "ALTER TABLE objects "
+                "ADD COLUMN IF NOT EXISTS erp_warehouse_code VARCHAR(4)"
+            )
+        )
+        await connection.execute(
+            text(
+                "ALTER TABLE objects ADD COLUMN IF NOT EXISTS loading_point VARCHAR(4)"
+            )
+        )
+        await connection.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_objects_erp_plant_code "
+                "ON objects(erp_plant_code)"
+            )
+        )
+        await connection.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_objects_erp_warehouse_code "
+                "ON objects(erp_warehouse_code)"
+            )
+        )
     yield
 
 

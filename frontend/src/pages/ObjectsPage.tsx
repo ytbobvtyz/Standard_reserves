@@ -31,11 +31,85 @@ const TYPE_LABEL: Record<ObjectType, string> = {
   warehouse: 'Склад',
 }
 
+const ERP_TOKEN = /^[A-Za-z0-9]{4}$/
+
 function formatDateTime(value?: string | null): string {
   if (!value) {
     return '—'
   }
   return new Date(value).toLocaleString('ru-RU')
+}
+
+function erpFields(type?: ObjectType) {
+  return (
+    <>
+      <Form.Item
+        name="erp_plant_code"
+        label="Завод"
+        extra="4 цифры, 1000–9999"
+        rules={[
+          {
+            required: type === 'plant',
+            message: 'Укажите код завода',
+          },
+          {
+            type: 'number',
+            min: 1000,
+            max: 9999,
+            message: 'Код завода должен быть 4-значным (1000-9999)',
+          },
+        ]}
+      >
+        <InputNumber min={1000} max={9999} precision={0} style={{ width: '100%' }} />
+      </Form.Item>
+      <Form.Item
+        name="erp_warehouse_code"
+        label="Склад"
+        extra="4 символа (буквы или цифры)"
+        rules={[
+          {
+            required: type === 'warehouse',
+            message: 'Укажите код склада',
+          },
+          {
+            validator: async (_, value?: string) => {
+              if (!value) {
+                return
+              }
+              if (!ERP_TOKEN.test(value)) {
+                return Promise.reject(
+                  new Error('Код склада должен содержать 4 символа (буквы или цифры)'),
+                )
+              }
+            },
+          },
+        ]}
+      >
+        <Input maxLength={4} />
+      </Form.Item>
+      <Form.Item
+        name="loading_point"
+        label="Пункт отгрузки"
+        extra="4 символа, опционально"
+        rules={[
+          {
+            validator: async (_, value?: string) => {
+              if (!value) {
+                return
+              }
+              if (!ERP_TOKEN.test(value)) {
+                return Promise.reject(
+                  new Error('Пункт отгрузки должен содержать 4 символа (буквы или цифры)'),
+                )
+              }
+            },
+          },
+        ]}
+      >
+        <Input maxLength={4} />
+      </Form.Item>
+    </>
+  )
 }
 
 export function ObjectsPage() {
@@ -53,13 +127,15 @@ export function ObjectsPage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [createForm] = Form.useForm<ObjectCreatePayload>()
+  const [editForm] = Form.useForm<ObjectUpdatePayload>()
+  const createType = Form.useWatch('type', createForm)
+  const editType = Form.useWatch('type', editForm)
 
   const [editOpen, setEditOpen] = useState(false)
   const [editLoading, setEditLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [editing, setEditing] = useState<ObjectDetail | null>(null)
-  const [editForm] = Form.useForm<ObjectUpdatePayload>()
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -93,6 +169,9 @@ export function ObjectsPage() {
         ...values,
         region: values.region || null,
         address: values.address || null,
+        erp_plant_code: values.erp_plant_code ?? null,
+        erp_warehouse_code: values.erp_warehouse_code || null,
+        loading_point: values.loading_point || null,
         is_active: values.is_active ?? true,
       })
       message.success('Объект создан')
@@ -118,6 +197,9 @@ export function ObjectsPage() {
         region: data.data.region,
         address: data.data.address,
         type: data.data.type,
+        erp_plant_code: data.data.erp_plant_code,
+        erp_warehouse_code: data.data.erp_warehouse_code,
+        loading_point: data.data.loading_point,
         is_active: data.data.is_active,
       })
     } catch (err) {
@@ -141,6 +223,9 @@ export function ObjectsPage() {
         region: values.region || null,
         address: values.address || null,
         type: values.type,
+        erp_plant_code: values.erp_plant_code ?? null,
+        erp_warehouse_code: values.erp_warehouse_code || null,
+        loading_point: values.loading_point || null,
         is_active: values.is_active,
       })
       message.success('Объект сохранён')
@@ -179,6 +264,24 @@ export function ObjectsPage() {
       render: (value: ObjectType) => TYPE_LABEL[value] ?? value,
     },
     { title: 'Город', dataIndex: 'city' },
+    {
+      title: 'Завод',
+      dataIndex: 'erp_plant_code',
+      width: 100,
+      render: (value?: number | null) => value ?? '—',
+    },
+    {
+      title: 'Склад',
+      dataIndex: 'erp_warehouse_code',
+      width: 100,
+      render: (value?: string | null) => value || '—',
+    },
+    {
+      title: 'Пункт отгрузки',
+      dataIndex: 'loading_point',
+      width: 140,
+      render: (value?: string | null) => value || '—',
+    },
     { title: 'Регион', dataIndex: 'region' },
     {
       title: 'Дата изменения',
@@ -266,12 +369,13 @@ export function ObjectsPage() {
         confirmLoading={creating}
         onOk={() => void createObject()}
         okText="Создать"
+        width={560}
         destroyOnHidden
       >
         <Form form={createForm} layout="vertical">
           <Form.Item
             name="code"
-            label="Код"
+            label="Внутренний код"
             rules={[{ required: true, message: 'Укажите код' }]}
           >
             <InputNumber min={1} precision={0} style={{ width: '100%' }} />
@@ -308,6 +412,7 @@ export function ObjectsPage() {
               ]}
             />
           </Form.Item>
+          {erpFields(createType ?? 'warehouse')}
           <Form.Item name="is_active" valuePropName="checked">
             <Checkbox>Активен</Checkbox>
           </Form.Item>
@@ -321,6 +426,7 @@ export function ObjectsPage() {
         confirmLoading={saving}
         onOk={() => void saveObject()}
         okText="Сохранить"
+        width={560}
         footer={(_, { OkBtn, CancelBtn }) => (
           <Space style={{ width: '100%', justifyContent: 'space-between' }}>
             <Popconfirm
@@ -382,6 +488,7 @@ export function ObjectsPage() {
               ]}
             />
           </Form.Item>
+          {erpFields(editType ?? editing?.type)}
           <Form.Item name="is_active" valuePropName="checked">
             <Checkbox>Активен</Checkbox>
           </Form.Item>

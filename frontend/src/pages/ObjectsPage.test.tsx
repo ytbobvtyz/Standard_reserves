@@ -11,6 +11,9 @@ const warehouse: ObjectListItem = {
   city: 'Ростов-на-Дону',
   region: 'Ростовская область',
   type: 'warehouse',
+  erp_plant_code: null,
+  erp_warehouse_code: 'F005',
+  loading_point: '2R05',
   is_active: true,
   last_modified_at: '2026-08-20T12:00:00Z',
 }
@@ -96,6 +99,11 @@ describe('ObjectsPage', () => {
     })
     expect(screen.getByRole('button', { name: /Создать объект/ })).toBeTruthy()
     expect(screen.getByText('Дата изменения')).toBeTruthy()
+    expect(screen.getByRole('columnheader', { name: 'Завод' })).toBeTruthy()
+    expect(screen.getByRole('columnheader', { name: 'Склад' })).toBeTruthy()
+    expect(screen.getByRole('columnheader', { name: 'Пункт отгрузки' })).toBeTruthy()
+    expect(screen.getByText('F005')).toBeTruthy()
+    expect(screen.getByText('2R05')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Редактировать' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Удалить' })).toBeTruthy()
   })
@@ -127,6 +135,9 @@ describe('ObjectsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /Создать объект/ }))
     expect(screen.getByRole('dialog', { name: 'Создать объект' })).toBeTruthy()
     expect(screen.getByText('Наименование')).toBeTruthy()
+    expect(screen.getByLabelText('Завод')).toBeTruthy()
+    expect(screen.getByLabelText('Склад')).toBeTruthy()
+    expect(screen.getByLabelText('Пункт отгрузки')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Создать' })).toBeTruthy()
   })
 
@@ -145,6 +156,11 @@ describe('ObjectsPage', () => {
     })
     expect(screen.getByText('Редактировать объект')).toBeTruthy()
     expect(screen.getByDisplayValue('Склад Ростов')).toBeTruthy()
+    expect(screen.getByLabelText('Завод')).toBeTruthy()
+    expect(screen.getByLabelText('Склад')).toBeTruthy()
+    expect(screen.getByLabelText('Пункт отгрузки')).toBeTruthy()
+    expect(screen.getByDisplayValue('F005')).toBeTruthy()
+    expect(screen.getByDisplayValue('2R05')).toBeTruthy()
     expect(screen.getByText('Последнее изменение')).toBeTruthy()
 
     const modalDelete = screen.getAllByRole('button', { name: 'Удалить' }).find(

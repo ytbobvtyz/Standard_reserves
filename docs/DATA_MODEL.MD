@@ -72,6 +72,9 @@ erDiagram
         text region "регион"
         text address "адрес"
         varchar type "plant / warehouse"
+        int erp_plant_code "ERP завод, 4 цифры"
+        varchar erp_warehouse_code "ERP склад, 4 символа"
+        varchar loading_point "пункт погрузки, 4 символа"
         boolean is_active "активный"
         uuid last_modified_by FK "кто изменил"
         timestamp last_modified_at "когда изменили"
@@ -341,6 +344,9 @@ CREATE TABLE objects (
     region TEXT,
     address TEXT,
     type VARCHAR(20) NOT NULL CHECK (type IN ('plant', 'warehouse')),
+    erp_plant_code INTEGER UNIQUE,
+    erp_warehouse_code VARCHAR(4) UNIQUE,
+    loading_point VARCHAR(4),
     is_active BOOLEAN DEFAULT true,
     last_modified_by UUID REFERENCES users(id),
     last_modified_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -353,6 +359,8 @@ CREATE INDEX idx_objects_type ON objects(type);
 CREATE INDEX idx_objects_city ON objects(city);
 CREATE INDEX idx_objects_last_modified_at ON objects(last_modified_at);
 CREATE INDEX idx_objects_last_modified_by ON objects(last_modified_by);
+CREATE INDEX idx_objects_erp_plant_code ON objects(erp_plant_code) WHERE erp_plant_code IS NOT NULL;
+CREATE INDEX idx_objects_erp_warehouse_code ON objects(erp_warehouse_code) WHERE erp_warehouse_code IS NOT NULL;
 Поля:
 
 Поле	Тип	Обязательное	Описание
@@ -362,6 +370,9 @@ city	TEXT	✅	Город
 region	TEXT	❌	Регион
 address	TEXT	❌	Адрес
 type	VARCHAR(20)	✅	plant или warehouse
+erp_plant_code	INTEGER	❌	Номер завода в ERP (4 цифры, уникальный; обязателен для plant)
+erp_warehouse_code	VARCHAR(4)	❌	Номер склада в ERP (4 символа, уникальный; обязателен для warehouse)
+loading_point	VARCHAR(4)	❌	Пункт погрузки ERP (4 символа)
 is_active	BOOLEAN	✅	Активный (по умолчанию true)
 last_modified_by	UUID	❌	Кто изменил → users.id
 last_modified_at	TIMESTAMP	❌	Когда изменили
@@ -999,6 +1010,7 @@ EXECUTE FUNCTION trigger_create_normative();
 9	009_events.sql	events
 11	011_product_admin.sql	products (gtin, mark_control, audit) + audit_log
 14	014_object_admin.sql	objects (last_modified_by, last_modified_at)
+15	015_object_erp.sql	objects (erp_plant_code, erp_warehouse_code, loading_point)
 10	010_functions.sql	Все функции
 11	011_views.sql	Все представления
 12	012_triggers.sql	Все триггеры
@@ -1006,11 +1018,11 @@ EXECUTE FUNCTION trigger_create_normative();
 11. ТЕСТОВЫЕ ДАННЫЕ (ПРИМЕР)
 sql
 -- Объекты (заводы и склады)
-INSERT INTO objects (code, name, city, type) VALUES
-(1001, 'Завод Московский', 'Москва', 'plant'),
-(1002, 'Завод Екатеринбургский', 'Екатеринбург', 'plant'),
-(2001, 'Склад Ростов', 'Ростов-на-Дону', 'warehouse'),
-(2002, 'Склад Владивосток', 'Владивосток', 'warehouse');
+INSERT INTO objects (code, name, city, type, erp_plant_code, erp_warehouse_code, loading_point) VALUES
+(1001, 'Завод Московский', 'Москва', 'plant', 2401, NULL, NULL),
+(1002, 'Завод Екатеринбургский', 'Екатеринбург', 'plant', 2402, NULL, NULL),
+(2001, 'Склад Ростов', 'Ростов-на-Дону', 'warehouse', NULL, 'F005', '2R05'),
+(2002, 'Склад Владивосток', 'Владивосток', 'warehouse', NULL, 'F006', '2V05');
 
 -- Продукты
 INSERT INTO products (code, name, category, plant_id, weight_kg, monthly_consumption) VALUES

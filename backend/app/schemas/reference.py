@@ -88,6 +88,9 @@ class ObjectListItem(BaseModel):
     region: str | None = None
     address: str | None = None
     type: str
+    erp_plant_code: int | None = None
+    erp_warehouse_code: str | None = None
+    loading_point: str | None = None
     is_active: bool
     last_modified_at: datetime | None = None
 
@@ -103,6 +106,9 @@ class ObjectCreate(BaseModel):
     region: str | None = None
     address: str | None = None
     type: Literal["plant", "warehouse"]
+    erp_plant_code: int | None = None
+    erp_warehouse_code: str | None = None
+    loading_point: str | None = None
     is_active: bool = True
 
     @field_validator("name", "city")
@@ -113,7 +119,7 @@ class ObjectCreate(BaseModel):
             raise ValueError("не может быть пустым")
         return text
 
-    @field_validator("region", "address")
+    @field_validator("region", "address", "erp_warehouse_code", "loading_point")
     @classmethod
     def empty_to_none(cls, value: str | None) -> str | None:
         if value is None:
@@ -128,6 +134,9 @@ class ObjectUpdate(BaseModel):
     region: str | None = None
     address: str | None = None
     type: Literal["plant", "warehouse"] | None = None
+    erp_plant_code: int | None = None
+    erp_warehouse_code: str | None = None
+    loading_point: str | None = None
     is_active: bool | None = None
 
     @field_validator("name", "city")
@@ -140,7 +149,7 @@ class ObjectUpdate(BaseModel):
             raise ValueError("не может быть пустым")
         return text
 
-    @field_validator("region", "address")
+    @field_validator("region", "address", "erp_warehouse_code", "loading_point")
     @classmethod
     def empty_to_none(cls, value: str | None) -> str | None:
         if value is None:

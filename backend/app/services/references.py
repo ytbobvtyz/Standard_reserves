@@ -54,6 +54,9 @@ def to_object_list_item(obj: Object) -> ObjectListItem:
         region=obj.region,
         address=obj.address,
         type=obj.type,
+        erp_plant_code=obj.erp_plant_code,
+        erp_warehouse_code=obj.erp_warehouse_code,
+        loading_point=obj.loading_point,
         is_active=obj.is_active,
         last_modified_at=obj.last_modified_at,
     )

@@ -81,6 +81,9 @@ export interface ObjectListItem {
   region?: string | null
   address?: string | null
   type: ObjectType
+  erp_plant_code?: number | null
+  erp_warehouse_code?: string | null
+  loading_point?: string | null
   is_active: boolean
   last_modified_at?: string | null
 }
@@ -99,6 +102,9 @@ export interface ObjectCreatePayload {
   region?: string | null
   address?: string | null
   type: ObjectType
+  erp_plant_code?: number | null
+  erp_warehouse_code?: string | null
+  loading_point?: string | null
   is_active: boolean
 }
 
@@ -108,6 +114,9 @@ export interface ObjectUpdatePayload {
   region?: string | null
   address?: string | null
   type?: ObjectType
+  erp_plant_code?: number | null
+  erp_warehouse_code?: string | null
+  loading_point?: string | null
   is_active?: boolean
 }
 

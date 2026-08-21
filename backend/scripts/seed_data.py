@@ -30,6 +30,7 @@ PLANTS = [
         "city": "Москва",
         "region": "Московская область",
         "type": "plant",
+        "erp_plant_code": 2401,
     },
     {
         "code": 1002,
@@ -37,6 +38,7 @@ PLANTS = [
         "city": "Екатеринбург",
         "region": "Свердловская область",
         "type": "plant",
+        "erp_plant_code": 2402,
     },
     {
         "code": 1003,
@@ -44,6 +46,7 @@ PLANTS = [
         "city": "Новосибирск",
         "region": "Новосибирская область",
         "type": "plant",
+        "erp_plant_code": 2403,
     },
 ]
 
@@ -54,6 +57,8 @@ WAREHOUSES = [
         "city": "Ростов-на-Дону",
         "region": "Ростовская область",
         "type": "warehouse",
+        "erp_warehouse_code": "F005",
+        "loading_point": "2R05",
     },
     {
         "code": 2002,
@@ -61,6 +66,8 @@ WAREHOUSES = [
         "city": "Владивосток",
         "region": "Приморский край",
         "type": "warehouse",
+        "erp_warehouse_code": "F006",
+        "loading_point": "2V05",
     },
     {
         "code": 2003,
@@ -68,6 +75,8 @@ WAREHOUSES = [
         "city": "Казань",
         "region": "Республика Татарстан",
         "type": "warehouse",
+        "erp_warehouse_code": "F007",
+        "loading_point": "2K05",
     },
     {
         "code": 2004,
@@ -75,6 +84,8 @@ WAREHOUSES = [
         "city": "Краснодар",
         "region": "Краснодарский край",
         "type": "warehouse",
+        "erp_warehouse_code": "F008",
+        "loading_point": "2C05",
     },
     {
         "code": 2005,
@@ -82,6 +93,8 @@ WAREHOUSES = [
         "city": "Санкт-Петербург",
         "region": "Санкт-Петербург",
         "type": "warehouse",
+        "erp_warehouse_code": "F009",
+        "loading_point": "2S05",
     },
 ]
 
@@ -270,6 +283,9 @@ async def _upsert_object(session: AsyncSession, payload: dict) -> None:
     if existing.last_modified_by is None:
         existing.last_modified_by = SEED_LOGISTICS_ID
         existing.last_modified_at = now
+    for field in ("erp_plant_code", "erp_warehouse_code", "loading_point"):
+        if field in payload:
+            setattr(existing, field, payload[field])
 
 
 async def _upsert_product(session: AsyncSession, payload: dict) -> None:

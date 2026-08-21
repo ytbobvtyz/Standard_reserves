@@ -1044,6 +1044,9 @@ json
             "region": "Московская область",
             "address": null,
             "type": "plant",
+            "erp_plant_code": 2401,
+            "erp_warehouse_code": null,
+            "loading_point": null,
             "is_active": true,
             "last_modified_at": "2026-08-20T12:00:00Z"
         },
@@ -1054,8 +1057,11 @@ json
             "region": "Ростовская область",
             "address": null,
             "type": "warehouse",
+            "erp_plant_code": null,
+            "erp_warehouse_code": "F005",
+            "loading_point": "2R05",
             "is_active": true,
-            "last_modified_at": "2026-08-20T12:00:00Z"
+            "last_modified_at": "2026-08-18T09:00:00Z"
         }
     ]
 }
@@ -1244,13 +1250,20 @@ json
     "region": null,
     "address": null,
     "type": "warehouse",
+    "erp_warehouse_code": "T001",
+    "loading_point": "2T01",
     "is_active": true
 }
 Правила:
 - `code` — целое число > 0, уникален (иначе 409 ALREADY_EXISTS)
 - `name`, `city` — не пустые
 - `type` — `plant` или `warehouse`
+- для `plant`: `erp_plant_code` обязателен, 4 цифры (1000-9999); `erp_warehouse_code` = null
+- для `warehouse`: `erp_warehouse_code` обязателен, 4 символа (буквы/цифры); `erp_plant_code` = null
+- `loading_point` — опционально, если заполнен: 4 символа (буквы/цифры)
+- `erp_plant_code` и `erp_warehouse_code` уникальны в таблице (иначе 409 CONFLICT)
 - `is_active` по умолчанию true
+- невалидные ERP-поля → 400 VALIDATION_ERROR
 - `last_modified_by` / `last_modified_at` заполняются автоматически
 
 Response (200): тот же объект, что GET .../edit.
@@ -1276,6 +1289,9 @@ json
         "region": null,
         "address": null,
         "type": "warehouse",
+        "erp_plant_code": null,
+        "erp_warehouse_code": "T001",
+        "loading_point": "2T01",
         "is_active": true,
         "last_modified_by": {
             "id": "44444444-4444-4444-4444-444444444444",
@@ -1302,9 +1318,11 @@ json
     "region": "Санкт-Петербург",
     "address": null,
     "type": "warehouse",
+    "erp_warehouse_code": "T009",
+    "loading_point": "2T09",
     "is_active": true
 }
-Валидация: name/city не пустые, type = plant|warehouse.
+Валидация: name/city не пустые, type = plant|warehouse, те же правила ERP что при создании. ERP-коды можно менять.
 
 Response (200): тот же объект, что GET .../edit. last_modified_by/at обновляются.
 
