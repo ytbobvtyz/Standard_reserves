@@ -138,6 +138,7 @@ class OneTimeListItem(BaseModel):
     created_at: datetime
     order_number: str | None = None
     executed_at: datetime | None = None
+    executed_comment: str | None = None
 
 
 class OneTimeInitiator(BaseModel):

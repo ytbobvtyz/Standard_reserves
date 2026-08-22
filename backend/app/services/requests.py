@@ -162,6 +162,15 @@ def to_list_item(request: Request) -> RequestListItem:
     )
 
 
+def _execution_history_comment(request: Request) -> str | None:
+    parts: list[str] = []
+    if request.order_number:
+        parts.append(f"Разнарядка: {request.order_number}")
+    if request.executed_comment:
+        parts.append(request.executed_comment)
+    return ". ".join(parts) or None
+
+
 def _history(request: Request) -> list[RequestHistoryEntry]:
     entries = [
         RequestHistoryEntry(
@@ -203,6 +212,15 @@ def _history(request: Request) -> list[RequestHistoryEntry]:
                 comment=request.comment_economy,
             )
         )
+    if request.executed_at:
+        entries.append(
+            RequestHistoryEntry(
+                timestamp=request.executed_at,
+                action="executed",
+                user_name=request.executor.full_name if request.executor else None,
+                comment=_execution_history_comment(request),
+            )
+        )
     return entries
 
 
@@ -217,6 +235,12 @@ def to_detail(request: Request) -> RequestDetail:
         comment_pp=request.comment_pp,
         comment_economy=request.comment_economy,
         expiry_date=request.expiry_date,
+        order_number=request.order_number,
+        executed_at=request.executed_at,
+        executed_comment=request.executed_comment,
+        executed_by=(
+            UserBrief.model_validate(request.executor) if request.executor else None
+        ),
         items=[
             RequestItemDetail(
                 id=item.id,
@@ -266,6 +290,7 @@ DETAIL_OPTIONS = (
     selectinload(Request.initiator),
     selectinload(Request.pp_approver),
     selectinload(Request.economy_approver),
+    selectinload(Request.executor),
 )
 
 LIST_OPTIONS = (

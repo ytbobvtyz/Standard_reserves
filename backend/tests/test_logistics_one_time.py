@@ -244,7 +244,20 @@ async def test_one_time_execute(
         headers=auth_header(token),
     )
     assert detail.status_code == 200
-    assert detail.json()["data"]["status"] == "executed"
+    detail_data = detail.json()["data"]
+    assert detail_data["status"] == "executed"
+    assert detail_data["order_number"] == "РН-2026-08-20-001"
+    assert detail_data["executed_comment"] == "Отгрузка произведена"
+    assert detail_data["executed_at"]
+    assert detail_data["executed_by"]["id"] == str(logistics_user.id)
+    history_actions = [entry["action"] for entry in detail_data["history"]]
+    assert "executed" in history_actions
+    executed_entry = next(
+        entry for entry in detail_data["history"] if entry["action"] == "executed"
+    )
+    assert executed_entry["user_name"] == logistics_user.full_name
+    assert "РН-2026-08-20-001" in (executed_entry["comment"] or "")
+    assert "Отгрузка произведена" in (executed_entry["comment"] or "")
 
     listing = await client.get(
         "/api/v1/logistics/one-time/list",
@@ -255,6 +268,8 @@ async def test_one_time_execute(
         item for item in listing.json()["data"] if item["id"] == str(request_id)
     )
     assert matched["order_number"] == "РН-2026-08-20-001"
+    assert matched["executed_comment"] == "Отгрузка произведена"
+    assert matched["executed_at"]
 
 
 async def test_one_time_cannot_execute_wrong_status(

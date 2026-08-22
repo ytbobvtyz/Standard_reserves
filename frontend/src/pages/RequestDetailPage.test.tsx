@@ -164,4 +164,57 @@ describe('RequestDetailPage', () => {
     expect(screen.getByRole('button', { name: 'Удалить' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Изменить дату' })).toBeNull()
   })
+
+  it('shows execution details and history for executed one-time requests', async () => {
+    getRequest.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: {
+          ...request,
+          request_type: 'one_time',
+          status: 'executed',
+          expiry_date: null,
+          order_number: 'РН-2026-08-20-001',
+          executed_at: '2026-08-20T11:00:00Z',
+          executed_comment: 'Отгрузка произведена',
+          executed_by: {
+            id: '44444444-4444-4444-4444-444444444444',
+            username: 'logistics',
+            full_name: 'Кузнецов Кузьма',
+            role: 'logistics',
+          },
+          history: [
+            {
+              timestamp: '2026-08-18T09:00:00Z',
+              action: 'created',
+              user_name: 'Иванов Иван',
+              comment: null,
+            },
+            {
+              timestamp: '2026-08-20T11:00:00Z',
+              action: 'executed',
+              user_name: 'Кузнецов Кузьма',
+              comment: 'Разнарядка: РН-2026-08-20-001. Отгрузка произведена',
+            },
+          ],
+        },
+      },
+    })
+
+    render(
+      <MemoryRouter initialEntries={[`/requests/${request.id}`]}>
+        <Routes>
+          <Route path="/requests/:id" element={<RequestDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("ООО 'Ромашка'")).toBeTruthy()
+    })
+    expect(screen.getByText('РН-2026-08-20-001')).toBeTruthy()
+    expect(screen.getByText('Отгрузка произведена')).toBeTruthy()
+    expect(screen.getByText(/Исполнен \(Кузнецов Кузьма\)/)).toBeTruthy()
+    expect(screen.getByText('Разнарядка: РН-2026-08-20-001. Отгрузка произведена')).toBeTruthy()
+  })
 })

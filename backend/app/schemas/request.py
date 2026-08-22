@@ -198,6 +198,10 @@ class RequestDetail(BaseModel):
     comment_pp: str | None = None
     comment_economy: str | None = None
     expiry_date: date | None = None
+    order_number: str | None = None
+    executed_at: datetime | None = None
+    executed_comment: str | None = None
+    executed_by: UserBrief | None = None
     items: list[RequestItemDetail]
     approvals: RequestApprovals
     history: list[RequestHistoryEntry]

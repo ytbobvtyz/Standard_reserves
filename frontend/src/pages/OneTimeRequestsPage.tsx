@@ -29,6 +29,7 @@ import type {
 import { StatusBadge } from '../components/common/StatusBadge'
 import { useAuthStore } from '../stores/auth'
 import { downloadBlob } from '../utils/download'
+import { formatDateTime } from '../utils/format'
 
 interface FilterState {
   warehouse_code?: number
@@ -216,6 +217,22 @@ export function OneTimeRequestsPage() {
       dataIndex: 'status',
       width: 140,
       render: (value: RequestStatus) => <StatusBadge status={value} />,
+    },
+    {
+      title: 'Номер разнарядки',
+      dataIndex: 'order_number',
+      render: (value: string | null | undefined) => value || '—',
+    },
+    {
+      title: 'Комментарий логиста',
+      dataIndex: 'executed_comment',
+      render: (value: string | null | undefined) => value || '—',
+    },
+    {
+      title: 'Дата исполнения',
+      dataIndex: 'executed_at',
+      width: 160,
+      render: (value: string | null | undefined) => formatDateTime(value),
     },
     {
       title: 'Позиции',

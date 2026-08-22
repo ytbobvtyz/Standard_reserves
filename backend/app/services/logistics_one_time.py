@@ -51,6 +51,7 @@ def to_list_item(request: Request) -> OneTimeListItem:
         created_at=request.created_at,
         order_number=request.order_number,
         executed_at=request.executed_at,
+        executed_comment=request.executed_comment,
     )
 
 

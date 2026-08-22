@@ -34,6 +34,8 @@ const executedRequest: OneTimeListItem = {
   client_name: 'ООО «Бета»',
   status: 'executed',
   order_number: 'РН-2026-08-18-002',
+  executed_at: '2026-08-18T15:30:00Z',
+  executed_comment: 'Отгрузка по разнарядке',
 }
 
 const getOneTimeList = vi.fn()
@@ -141,6 +143,8 @@ describe('OneTimeRequestsPage', () => {
     })
     expect(screen.getByText('ООО «Бета»')).toBeTruthy()
     expect(screen.getAllByText('Иванов Иван').length).toBeGreaterThan(0)
+    expect(screen.getByText('РН-2026-08-18-002')).toBeTruthy()
+    expect(screen.getByText('Отгрузка по разнарядке')).toBeTruthy()
     expect(getOneTimeList).toHaveBeenCalled()
   })
 
@@ -183,7 +187,13 @@ describe('OneTimeRequestsPage', () => {
         data: {
           status: 'success',
           data: [
-            { ...approvedRequest, status: 'executed', order_number: 'РН-2026-08-20-001' },
+            {
+              ...approvedRequest,
+              status: 'executed',
+              order_number: 'РН-2026-08-20-001',
+              executed_at: '2026-08-20T11:00:00Z',
+              executed_comment: 'Отгрузка произведена',
+            },
             executedRequest,
           ],
           meta: { page: 1, limit: 10, total: 2 },
@@ -201,7 +211,7 @@ describe('OneTimeRequestsPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Исполнить' }))
     expect(screen.getByText(/Исполнить запрос №cccccccc/)).toBeTruthy()
-    expect(screen.getByText('Номер разнарядки')).toBeTruthy()
+    expect(screen.getAllByText('Номер разнарядки').length).toBeGreaterThan(0)
 
     fireEvent.change(screen.getByPlaceholderText('РН-2026-08-20-001'), {
       target: { value: 'РН-2026-08-20-001' },
@@ -220,6 +230,8 @@ describe('OneTimeRequestsPage', () => {
     await waitFor(() => {
       expect(getOneTimeList).toHaveBeenCalledTimes(2)
     })
+    expect(screen.getByText('РН-2026-08-20-001')).toBeTruthy()
+    expect(screen.getAllByText('Отгрузка произведена').length).toBeGreaterThan(0)
   })
 
   it('hides execute and excel buttons for commercial', async () => {

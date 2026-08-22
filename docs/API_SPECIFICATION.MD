@@ -367,9 +367,36 @@ json
             }
         },
         "created_at": "2026-08-18T09:00:00Z",
-        "updated_at": "2026-08-18T09:30:00Z"
+        "updated_at": "2026-08-18T09:30:00Z",
+        "order_number": null,
+        "executed_at": null,
+        "executed_comment": null,
+        "executed_by": null
     }
 }
+Для разового запроса в статусе `executed` дополнительно возвращаются:
+
+json
+{
+    "order_number": "РН-2026-08-18-001",
+    "executed_at": "2026-08-18T11:00:00Z",
+    "executed_comment": "Отгрузка произведена 18.08.2026",
+    "executed_by": {
+        "id": "44444444-4444-4444-4444-444444444444",
+        "full_name": "Кузнецов Кузьма"
+    },
+    "history": [
+        {
+            "timestamp": "2026-08-18T11:00:00Z",
+            "action": "executed",
+            "user_name": "Кузнецов Кузьма",
+            "comment": "Разнарядка: РН-2026-08-18-001. Отгрузка произведена 18.08.2026"
+        }
+    ]
+}
+
+text
+
 3.4. Обновить черновик
 text
 PUT /requests/{request_id}
@@ -928,7 +955,10 @@ json
                     "unit": "шт"
                 }
             ],
-            "created_at": "2026-08-18T09:00:00Z"
+            "created_at": "2026-08-18T09:00:00Z",
+            "order_number": "РН-2026-08-18-001",
+            "executed_at": "2026-08-18T11:00:00Z",
+            "executed_comment": "Отгрузка произведена 18.08.2026"
         }
     ],
     "meta": {

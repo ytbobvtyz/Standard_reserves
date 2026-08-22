@@ -31,6 +31,7 @@ import {
   expiryDecreaseError,
   maxExpiryDate,
 } from '../utils/expiryDate'
+import { formatDateTime } from '../utils/format'
 import { canDeleteByStatus, DELETE_CONFIRM } from '../utils/requestActions'
 
 const TYPE_LABEL: Record<string, string> = {
@@ -46,6 +47,7 @@ const HISTORY_LABEL: Record<string, string> = {
   edit: 'Отредактирован',
   pp_reviewed: 'Рассмотрен ПП',
   economy_reviewed: 'Рассмотрен экономистом',
+  executed: 'Исполнен',
 }
 
 const FIELD_LABEL: Record<string, string> = {
@@ -232,6 +234,19 @@ export function RequestDetailPage() {
           <Descriptions.Item label="Комментарий">
             {request.initiator_comment || '—'}
           </Descriptions.Item>
+          {request.request_type === 'one_time' ? (
+            <>
+              <Descriptions.Item label="Номер разнарядки">
+                {request.order_number || '—'}
+              </Descriptions.Item>
+              <Descriptions.Item label="Комментарий логиста">
+                {request.executed_comment || '—'}
+              </Descriptions.Item>
+              <Descriptions.Item label="Дата исполнения">
+                {formatDateTime(request.executed_at)}
+              </Descriptions.Item>
+            </>
+          ) : null}
         </Descriptions>
       </Card>
       <Card title="Позиции">

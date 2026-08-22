@@ -181,6 +181,10 @@ export interface RequestDetail {
   comment_pp: string | null
   comment_economy: string | null
   expiry_date: string | null
+  order_number?: string | null
+  executed_at?: string | null
+  executed_comment?: string | null
+  executed_by?: User | null
   items: RequestItemDetail[]
   history: RequestHistoryEntry[]
   created_at: string
@@ -376,6 +380,7 @@ export interface OneTimeListItem {
   created_at: string
   order_number?: string | null
   executed_at?: string | null
+  executed_comment?: string | null
 }
 
 export interface OneTimeInitiator {
