@@ -50,6 +50,13 @@ function QuantityCell({ value, unit }: { value: number; unit: Unit }) {
   )
 }
 
+function sumItems(
+  items: DeficitItem[],
+  field: 'normative_quantity' | 'available' | 'plan',
+): number {
+  return items.reduce((total, item) => total + item[field], 0)
+}
+
 function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
@@ -392,46 +399,65 @@ export function LogisticsDashboardPage() {
             defaultActiveKey={visibleWarehouses.map((item) =>
               String(item.warehouse_code),
             )}
-            items={visibleWarehouses.map((warehouse) => ({
-              key: String(warehouse.warehouse_code),
-              label: (
-                <Space>
-                  {canManage ? (
-                    <Checkbox
-                      aria-label={`Выбрать ${warehouse.warehouse_name}`}
-                      checked={selectedWarehouseCodes.includes(warehouse.warehouse_code)}
-                      onClick={(event) => event.stopPropagation()}
-                      onChange={(event) =>
-                        toggleWarehouse(
+            items={visibleWarehouses.map((warehouse) => {
+              const totalNormative = sumItems(
+                warehouse.deficit_items,
+                'normative_quantity',
+              )
+              const totalAvailable = sumItems(warehouse.deficit_items, 'available')
+              const totalPlan = sumItems(warehouse.deficit_items, 'plan')
+              return {
+                key: String(warehouse.warehouse_code),
+                label: (
+                  <Space wrap align="start">
+                    {canManage ? (
+                      <Checkbox
+                        aria-label={`Выбрать ${warehouse.warehouse_name}`}
+                        checked={selectedWarehouseCodes.includes(
                           warehouse.warehouse_code,
-                          event.target.checked,
-                        )
-                      }
+                        )}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={(event) =>
+                          toggleWarehouse(
+                            warehouse.warehouse_code,
+                            event.target.checked,
+                          )
+                        }
+                      />
+                    ) : null}
+                    <DeficitIndicator
+                      deficit={warehouse.total_deficit}
+                      status={warehouse.total_deficit > 0 ? 'warning' : 'ok'}
+                      unit={unit}
                     />
-                  ) : null}
-                  <DeficitIndicator
-                    deficit={warehouse.total_deficit}
-                    status={warehouse.total_deficit > 0 ? 'warning' : 'ok'}
-                    unit={unit}
+                    <Space direction="vertical" size={0}>
+                      <Typography.Text strong>
+                        {warehouse.warehouse_name}
+                      </Typography.Text>
+                      <Typography.Text type="secondary">
+                        дефицит: {warehouse.deficit_count} позиций,{' '}
+                        {formatQty(warehouse.total_deficit, unit)} {unit}
+                        {' · '}норматив: {formatQty(totalNormative, unit)} {unit}
+                        {' · '}доступно:{' '}
+                        <QuantityCell value={totalAvailable} unit={unit} /> {unit}
+                        {' · '}запланировано:{' '}
+                        <QuantityCell value={totalPlan} unit={unit} /> {unit}
+                      </Typography.Text>
+                    </Space>
+                  </Space>
+                ),
+                children: (
+                  <Table
+                    rowKey={(item) => `${item.product_code}-${item.client_name}`}
+                    loading={loading}
+                    pagination={false}
+                    size="small"
+                    columns={columns}
+                    dataSource={warehouse.deficit_items}
                   />
-                  <Typography.Text strong>{warehouse.warehouse_name}</Typography.Text>
-                  <Typography.Text type="secondary">
-                    дефицит: {warehouse.deficit_count} позиций,{' '}
-                    {formatQty(warehouse.total_deficit, unit)} {unit}
-                  </Typography.Text>
-                </Space>
-              ),
-              children: (
-                <Table
-                  rowKey={(item) => `${item.product_code}-${item.client_name}`}
-                  loading={loading}
-                  pagination={false}
-                  size="small"
-                  columns={columns}
-                  dataSource={warehouse.deficit_items}
-                />
-              ),
-            }))}
+                ),
+              }
+            })}
           />
         </Space>
       )}
