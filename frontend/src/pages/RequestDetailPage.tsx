@@ -3,6 +3,7 @@ import {
   Card,
   DatePicker,
   Descriptions,
+  Modal,
   Popconfirm,
   Space,
   Table,
@@ -11,6 +12,7 @@ import {
   Typography,
   message,
 } from 'antd'
+import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -23,7 +25,13 @@ import type {
 } from '../api/types'
 import { StatusBadge } from '../components/common/StatusBadge'
 import { useAuthStore } from '../stores/auth'
-import { EXPIRY_HINT, maxExpiryDate } from '../utils/expiryDate'
+import {
+  ACTIVE_EXPIRY_HINT,
+  EXPIRY_HINT,
+  expiryDecreaseError,
+  maxExpiryDate,
+} from '../utils/expiryDate'
+import { canDeleteByStatus, DELETE_CONFIRM } from '../utils/requestActions'
 
 const TYPE_LABEL: Record<string, string> = {
   normative: 'Нормативный запас',
@@ -57,6 +65,9 @@ export function RequestDetailPage() {
   const [request, setRequest] = useState<RequestDetail | null>(null)
   const [itemHistory, setItemHistory] = useState<RequestItemHistoryEntry[]>([])
   const [loading, setLoading] = useState(false)
+  const [expiryModalOpen, setExpiryModalOpen] = useState(false)
+  const [expiryDraft, setExpiryDraft] = useState<Dayjs | null>(null)
+  const [savingExpiry, setSavingExpiry] = useState(false)
 
   const load = useCallback(async () => {
     if (!id) {
@@ -85,6 +96,11 @@ export function RequestDetailPage() {
 
   const isOwner = Boolean(request && user && request.initiator.id === user.id)
   const isDraft = request?.status === 'draft'
+  const canDelete = Boolean(isOwner && request && canDeleteByStatus(request.status))
+  const canChangeActiveExpiry =
+    request?.request_type === 'normative' &&
+    request.status === 'active' &&
+    user?.role !== 'guest'
   const canEditExpiry =
     request?.request_type === 'normative' &&
     ((user?.role === 'pp' && request?.status === 'pp_approved') ||
@@ -109,10 +125,37 @@ export function RequestDetailPage() {
     }
     try {
       await requestsApi.remove(id)
-      message.success('Черновик удален')
+      message.success('Запрос удален')
       navigate('/requests/my')
     } catch (error) {
       message.error(getApiErrorMessage(error, 'Не удалось удалить запрос'))
+    }
+  }
+
+  const openExpiryModal = () => {
+    setExpiryDraft(request?.expiry_date ? dayjs(request.expiry_date) : dayjs())
+    setExpiryModalOpen(true)
+  }
+
+  const saveExpiry = async () => {
+    if (!id || !request || !expiryDraft) {
+      return
+    }
+    const error = expiryDecreaseError(expiryDraft, request.expiry_date)
+    if (error) {
+      message.error(error)
+      return
+    }
+    setSavingExpiry(true)
+    try {
+      await requestsApi.updateExpiry(id, expiryDraft.format('YYYY-MM-DD'))
+      message.success('Срок действия обновлен')
+      setExpiryModalOpen(false)
+      await load()
+    } catch (error) {
+      message.error(getApiErrorMessage(error, 'Не удалось изменить дату'))
+    } finally {
+      setSavingExpiry(false)
     }
   }
 
@@ -133,16 +176,21 @@ export function RequestDetailPage() {
           </Typography.Title>
           <StatusBadge status={request.status} />
         </Space>
-        {isOwner && isDraft ? (
-          <Space>
+        <Space>
+          {isOwner && isDraft ? (
             <Button type="primary" onClick={() => void submit()}>
               Отправить на согласование
             </Button>
-            <Popconfirm title="Удалить черновик?" onConfirm={() => void remove()}>
+          ) : null}
+          {canChangeActiveExpiry ? (
+            <Button onClick={openExpiryModal}>Изменить дату</Button>
+          ) : null}
+          {canDelete ? (
+            <Popconfirm title={DELETE_CONFIRM} onConfirm={() => void remove()}>
               <Button danger>Удалить</Button>
             </Popconfirm>
-          </Space>
-        ) : null}
+          ) : null}
+        </Space>
       </Space>
       <Card loading={loading}>
         <Descriptions column={2} bordered size="small">
@@ -282,6 +330,32 @@ export function RequestDetailPage() {
           },
         ]}
       />
+      <Modal
+        title="Изменить дату"
+        open={expiryModalOpen}
+        onCancel={() => setExpiryModalOpen(false)}
+        onOk={() => void saveExpiry()}
+        okText="Сохранить"
+        confirmLoading={savingExpiry}
+      >
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <DatePicker
+            style={{ width: '100%' }}
+            value={expiryDraft}
+            disabledDate={(current) =>
+              Boolean(
+                current &&
+                  (current.isBefore(dayjs(), 'day') ||
+                    (request.expiry_date &&
+                      current.isAfter(dayjs(request.expiry_date), 'day'))),
+              )
+            }
+            format="DD.MM.YYYY"
+            onChange={(value) => setExpiryDraft(value)}
+          />
+          <Typography.Text type="secondary">{ACTIVE_EXPIRY_HINT}</Typography.Text>
+        </Space>
+      </Modal>
     </Space>
   )
 }

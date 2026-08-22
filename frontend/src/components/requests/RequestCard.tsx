@@ -1,6 +1,7 @@
-import { Card, Space, Typography } from 'antd'
+import { Button, Card, Popconfirm, Space, Typography } from 'antd'
 import { useNavigate } from 'react-router-dom'
 import type { RequestListItem } from '../../api/types'
+import { DELETE_CONFIRM } from '../../utils/requestActions'
 import { StatusBadge } from '../common/StatusBadge'
 
 const TYPE_LABEL: Record<string, string> = {
@@ -8,7 +9,13 @@ const TYPE_LABEL: Record<string, string> = {
   one_time: 'Разовое',
 }
 
-export function RequestCard({ request }: { request: RequestListItem }) {
+interface RequestCardProps {
+  request: RequestListItem
+  canDelete?: boolean
+  onDelete?: () => void
+}
+
+export function RequestCard({ request, canDelete = false, onDelete }: RequestCardProps) {
   const navigate = useNavigate()
 
   return (
@@ -29,9 +36,29 @@ export function RequestCard({ request }: { request: RequestListItem }) {
           {request.items_count === 1 ? 'позиция' : 'позиций'} ·{' '}
           {new Date(request.created_at).toLocaleDateString('ru-RU')}
         </Typography.Text>
-        <Typography.Text type="secondary">
-          Инициатор: {request.initiator.full_name}
-        </Typography.Text>
+        <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+          <Typography.Text type="secondary">
+            Инициатор: {request.initiator.full_name}
+          </Typography.Text>
+          {canDelete && onDelete ? (
+            <Popconfirm
+              title={DELETE_CONFIRM}
+              onConfirm={(event) => {
+                event?.stopPropagation()
+                onDelete()
+              }}
+              onCancel={(event) => event?.stopPropagation()}
+            >
+              <Button
+                danger
+                size="small"
+                onClick={(event) => event.stopPropagation()}
+              >
+                Удалить
+              </Button>
+            </Popconfirm>
+          ) : null}
+        </Space>
       </Space>
     </Card>
   )

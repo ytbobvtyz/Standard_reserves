@@ -117,6 +117,44 @@ describe('ApprovalsPage', () => {
     expect(screen.getByRole('button', { name: 'Отказать' })).toBeTruthy()
   })
 
+  it('shows decrease-only expiry hint for economist', async () => {
+    getEconomyPending.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: [pendingRequest],
+        meta: { page: 1, limit: 50, total: 1 },
+      },
+    })
+    useAuthStore.setState({
+      user: {
+        id: '33333333-3333-3333-3333-333333333333',
+        username: 'economist',
+        full_name: 'Сидоров Сидор',
+        role: 'economist',
+      },
+      token: 'token',
+      isAuthenticated: true,
+      isLoading: false,
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/approvals/economy']}>
+        <ApprovalsPage />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("ООО 'Ромашка'")).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть' }))
+    expect(screen.getByText('Срок действия')).toBeTruthy()
+    expect(
+      screen.getByText(
+        'Срок можно только уменьшить: не раньше сегодня и не позже текущей даты',
+      ),
+    ).toBeTruthy()
+  })
+
   it('approves a request and refreshes the list', async () => {
     getPPPending
       .mockResolvedValueOnce({

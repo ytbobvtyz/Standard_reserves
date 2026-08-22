@@ -13,6 +13,19 @@ INVALID_EXPIRY_DATE_CODE = "INVALID_EXPIRY_DATE"
 INVALID_EXPIRY_DATE_MESSAGE = (
     "Срок не может превышать 6 месяцев от даты создания"
 )
+EXPIRY_DATE_TOO_LATE_CODE = "BAD_REQUEST"
+EXPIRY_DATE_TOO_LATE_MESSAGE = "Дата окончания не может быть позже текущей"
+EXPIRY_DATE_IN_PAST_CODE = "BAD_REQUEST"
+EXPIRY_DATE_IN_PAST_MESSAGE = (
+    "Дата окончания не может быть раньше сегодняшнего дня"
+)
+CANNOT_DELETE_APPROVED_CODE = "BAD_REQUEST"
+CANNOT_DELETE_APPROVED_MESSAGE = (
+    "Невозможно удалить запрос после финального согласования"
+)
+ALLOWED_DELETE_STATUSES = frozenset(
+    {"draft", "pp_approved", "economy_check", "rejected", "expired"}
+)
 
 
 def validate_expiry_date_limit(
@@ -24,6 +37,19 @@ def validate_expiry_date_limit(
     reference = created_at or datetime.now(UTC)
     if not RequestModel.validate_expiry_date(expiry_date, reference):
         raise APIError(400, INVALID_EXPIRY_DATE_CODE, INVALID_EXPIRY_DATE_MESSAGE)
+
+
+def validate_expiry_date_decrease(
+    new_expiry: date,
+    current_expiry: date | None,
+    *,
+    today: date | None = None,
+) -> None:
+    reference_today = today or datetime.now(UTC).date()
+    if new_expiry < reference_today:
+        raise APIError(400, EXPIRY_DATE_IN_PAST_CODE, EXPIRY_DATE_IN_PAST_MESSAGE)
+    if current_expiry is not None and new_expiry > current_expiry:
+        raise APIError(400, EXPIRY_DATE_TOO_LATE_CODE, EXPIRY_DATE_TOO_LATE_MESSAGE)
 
 
 class RequestItemCreate(BaseModel):
@@ -182,4 +208,15 @@ class RequestDetail(BaseModel):
 class RequestStatusData(BaseModel):
     id: UUID
     status: str
+    updated_at: datetime
+
+
+class RequestExpiryUpdate(BaseModel):
+    expiry_date: date
+
+
+class RequestExpiryData(BaseModel):
+    id: UUID
+    status: str
+    expiry_date: date | None = None
     updated_at: datetime

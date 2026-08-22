@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import APIError
+from app.models.normative import Normative
 from app.models.object import Object
 from app.models.product import Product
 from app.models.request import Request
@@ -14,6 +15,9 @@ from app.models.request_item import RequestItem
 from app.models.request_item_history import RequestItemHistory
 from app.models.user import User
 from app.schemas.request import (
+    ALLOWED_DELETE_STATUSES,
+    CANNOT_DELETE_APPROVED_CODE,
+    CANNOT_DELETE_APPROVED_MESSAGE,
     ApprovalActor,
     HistoryChangedBy,
     ProductBrief,
@@ -21,6 +25,7 @@ from app.schemas.request import (
     RequestCreate,
     RequestCreated,
     RequestDetail,
+    RequestExpiryData,
     RequestHistoryEntry,
     RequestItemCreate,
     RequestItemCreated,
@@ -29,6 +34,7 @@ from app.schemas.request import (
     RequestListItem,
     RequestUpdate,
     WarehouseBrief,
+    validate_expiry_date_decrease,
     validate_expiry_date_limit,
 )
 from app.schemas.user import UserBrief
@@ -326,6 +332,11 @@ async def get_request_item_history(
     return entries
 
 
+def ensure_request_owner(request: Request, user: User) -> None:
+    if request.initiator_id != user.id:
+        raise APIError(403, "FORBIDDEN", "Только инициатор может удалить запрос")
+
+
 def ensure_draft_owner(request: Request, user: User) -> None:
     if request.initiator_id != user.id:
         raise APIError(403, "FORBIDDEN", "Недостаточно прав")
@@ -385,9 +396,66 @@ async def update_draft(
     return await load_request(db, request.id, for_detail=False)
 
 
-async def delete_draft(db: AsyncSession, request: Request) -> None:
-    request.deleted_at = datetime.now(UTC)
+async def _soft_delete_related_normatives(
+    db: AsyncSession, request: Request, deleted_at: datetime
+) -> None:
+    result = await db.execute(
+        select(Normative).where(
+            Normative.request_id == request.id,
+            Normative.deleted_at.is_(None),
+        )
+    )
+    for normative in result.scalars().all():
+        normative.deleted_at = deleted_at
+
+
+async def soft_delete_request(db: AsyncSession, request: Request, user: User) -> None:
+    ensure_request_owner(request, user)
+    if request.status not in ALLOWED_DELETE_STATUSES:
+        raise APIError(
+            400,
+            CANNOT_DELETE_APPROVED_CODE,
+            CANNOT_DELETE_APPROVED_MESSAGE,
+        )
+
+    now = datetime.now(UTC)
+    request.deleted_at = now
+    await _soft_delete_related_normatives(db, request, now)
     await db.commit()
+
+
+async def update_active_expiry(
+    db: AsyncSession, request: Request, user: User, expiry_date: date
+) -> Request:
+    if not can_view_request(user, request) or user.role == "guest":
+        raise APIError(403, "FORBIDDEN", "Недостаточно прав")
+    if request.status != "active" or request.request_type != "normative":
+        raise APIError(
+            400,
+            "INVALID_STATUS",
+            "Изменение даты доступно только для активного норматива",
+        )
+    validate_expiry_date_decrease(expiry_date, request.expiry_date)
+    request.expiry_date = expiry_date
+    result = await db.execute(
+        select(Normative).where(
+            Normative.request_id == request.id,
+            Normative.deleted_at.is_(None),
+        )
+    )
+    for normative in result.scalars().all():
+        normative.expiry_date = expiry_date
+    await db.commit()
+    return await load_request(db, request.id, for_detail=False)
+
+
+def to_expiry_data(request: Request) -> RequestExpiryData:
+    return RequestExpiryData(
+        id=request.id,
+        status=request.status,
+        expiry_date=request.expiry_date,
+        updated_at=request.updated_at,
+    )
 
 
 async def submit_draft(db: AsyncSession, request: Request) -> Request:

@@ -9,7 +9,15 @@ import type {
   ApprovalPendingRequest,
   RequestType,
 } from '../../api/types'
-import { EXPIRY_ERROR, EXPIRY_HINT, isExpiryTooFar, maxExpiryDate } from '../../utils/expiryDate'
+import {
+  ECONOMY_EXPIRY_HINT,
+  EXPIRY_ERROR,
+  EXPIRY_HINT,
+  expiryDecreaseError,
+  isExpiryDecreaseInvalid,
+  isExpiryTooFar,
+  maxExpiryDate,
+} from '../../utils/expiryDate'
 
 const TYPE_LABEL: Record<RequestType, string> = {
   normative: 'Норматив',
@@ -23,6 +31,7 @@ interface EditableItem extends ApprovalPendingItem {
 interface ApprovalModalProps {
   request: ApprovalPendingRequest | null
   submitting: boolean
+  stage?: 'pp' | 'economy'
   onCancel: () => void
   onSubmit: (payload: ApprovalActionPayload) => Promise<void> | void
 }
@@ -30,6 +39,7 @@ interface ApprovalModalProps {
 export function ApprovalModal({
   request,
   submitting,
+  stage = 'pp',
   onCancel,
   onSubmit,
 }: ApprovalModalProps) {
@@ -55,7 +65,9 @@ export function ApprovalModal({
   }, [request])
 
   const isNormative = request?.request_type === 'normative'
+  const isEconomy = stage === 'economy'
   const maxDate = maxExpiryDate(request?.created_at)
+  const currentExpiry = request?.expiry_date
 
   const submitAction = async (action: ApprovalAction) => {
     if (!request) {
@@ -71,7 +83,11 @@ export function ApprovalModal({
         message.error('Утвержденное количество должно быть больше 0')
         return
       }
-      if (isNormative && isExpiryTooFar(expiryDate, request.created_at)) {
+      if (isNormative && isEconomy && isExpiryDecreaseInvalid(expiryDate, currentExpiry)) {
+        message.error(expiryDecreaseError(expiryDate, currentExpiry) ?? EXPIRY_ERROR)
+        return
+      }
+      if (isNormative && !isEconomy && isExpiryTooFar(expiryDate, request.created_at)) {
         message.error(EXPIRY_ERROR)
         return
       }
@@ -137,13 +153,31 @@ export function ApprovalModal({
               <DatePicker
                 style={{ width: '100%', marginTop: 8 }}
                 value={expiryDate}
-                disabledDate={(current) =>
-                  Boolean(current && current.isAfter(maxDate, 'day'))
-                }
+                disabledDate={(current) => {
+                  if (!current) {
+                    return false
+                  }
+                  if (isEconomy) {
+                    return (
+                      current.isBefore(dayjs(), 'day') ||
+                      Boolean(
+                        currentExpiry && current.isAfter(dayjs(currentExpiry), 'day'),
+                      )
+                    )
+                  }
+                  return current.isAfter(maxDate, 'day')
+                }}
                 onChange={(value) => setExpiryDate(value)}
               />
-              <Typography.Text type="secondary">{EXPIRY_HINT}</Typography.Text>
-              {isExpiryTooFar(expiryDate, request.created_at) ? (
+              <Typography.Text type="secondary">
+                {isEconomy ? ECONOMY_EXPIRY_HINT : EXPIRY_HINT}
+              </Typography.Text>
+              {isEconomy && isExpiryDecreaseInvalid(expiryDate, currentExpiry) ? (
+                <Typography.Text type="danger" style={{ display: 'block' }}>
+                  {expiryDecreaseError(expiryDate, currentExpiry)}
+                </Typography.Text>
+              ) : null}
+              {!isEconomy && isExpiryTooFar(expiryDate, request.created_at) ? (
                 <Typography.Text type="danger" style={{ display: 'block' }}>
                   {EXPIRY_ERROR}
                 </Typography.Text>

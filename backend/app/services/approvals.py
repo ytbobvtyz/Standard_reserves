@@ -20,7 +20,10 @@ from app.schemas.approval import (
     ApprovalPendingItem,
     ApprovalPendingRequest,
 )
-from app.schemas.request import validate_expiry_date_limit
+from app.schemas.request import (
+    validate_expiry_date_decrease,
+    validate_expiry_date_limit,
+)
 from app.schemas.user import UserBrief
 from app.services.requests import load_request
 
@@ -165,9 +168,13 @@ def _apply_expiry_update(
     request: Request,
     expiry_date: date | None,
     comment: str | None,
+    *,
+    restrict_decrease: bool = False,
 ) -> str | None:
     if expiry_date is None:
         return comment
+    if restrict_decrease:
+        validate_expiry_date_decrease(expiry_date, request.expiry_date)
     validate_expiry_date_limit(expiry_date, request.created_at)
     if request.expiry_date == expiry_date:
         return comment
@@ -270,13 +277,21 @@ async def apply_action(
                 raise APIError(
                     400,
                     "VALIDATION_ERROR",
-                    "Для действия edit укажите позиции с новым объемом или срок действия",
+                    "Для действия edit укажите позиции с новым объемом "
+                    "или срок действия",
                 )
             if body.items:
                 await _apply_edits(db, request, body, user, comment)
             if stage == "pp":
                 _fill_missing_approved_quantities(request)
-            comment = _apply_expiry_update(request, body.expiry_date, comment)
+            comment = _apply_expiry_update(
+                request,
+                body.expiry_date,
+                comment,
+                restrict_decrease=(
+                    stage == "economy" and request.request_type == "normative"
+                ),
+            )
         elif body.action == "approve":
             if body.items:
                 await _apply_edits(db, request, body, user, comment)

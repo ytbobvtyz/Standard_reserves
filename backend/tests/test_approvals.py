@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -659,4 +659,207 @@ async def test_economy_approve_expiry_date_too_far_fails(
     )
     assert response.status_code == 400, response.text
     assert response.json()["error"]["code"] == "INVALID_EXPIRY_DATE"
+    await delete_request(request_id)
+
+
+async def test_economy_edit_can_reduce_expiry_date(
+    client: AsyncClient,
+    test_user: AuthUser,
+    pp_user: AuthUser,
+    economist_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    commercial_token = await login_token(client, test_user)
+    pp_token = await login_token(client, pp_user)
+    economist_token = await login_token(client, economist_user)
+    request_id = await _create_submitted(
+        client, commercial_token, expiry_date=valid_expiry_date(3)
+    )
+    await _pp_approve(client, pp_token, request_id)
+    new_expiry = valid_expiry_date(1)
+
+    response = await client.post(
+        f"/api/v1/approvals/economy/{request_id}/action",
+        headers=auth_header(economist_token),
+        json={
+            "action": "edit",
+            "expiry_date": new_expiry,
+            "comment": "Уменьшаем срок",
+        },
+    )
+    assert response.status_code == 200, response.text
+    detail = await client.get(
+        f"/api/v1/requests/{request_id}",
+        headers=auth_header(economist_token),
+    )
+    assert detail.json()["data"]["expiry_date"] == new_expiry
+    await delete_request(request_id)
+
+
+async def test_economy_edit_cannot_increase_expiry_date(
+    client: AsyncClient,
+    test_user: AuthUser,
+    pp_user: AuthUser,
+    economist_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    commercial_token = await login_token(client, test_user)
+    pp_token = await login_token(client, pp_user)
+    economist_token = await login_token(client, economist_user)
+    request_id = await _create_submitted(
+        client, commercial_token, expiry_date=valid_expiry_date(3)
+    )
+    await _pp_approve(client, pp_token, request_id)
+
+    response = await client.post(
+        f"/api/v1/approvals/economy/{request_id}/action",
+        headers=auth_header(economist_token),
+        json={
+            "action": "edit",
+            "expiry_date": valid_expiry_date(5),
+            "comment": "Пытаемся увеличить",
+        },
+    )
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["code"] == "BAD_REQUEST"
+    assert (
+        response.json()["error"]["message"]
+        == "Дата окончания не может быть позже текущей"
+    )
+    await delete_request(request_id)
+
+
+async def test_economy_edit_cannot_set_expiry_in_the_past(
+    client: AsyncClient,
+    test_user: AuthUser,
+    pp_user: AuthUser,
+    economist_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    commercial_token = await login_token(client, test_user)
+    pp_token = await login_token(client, pp_user)
+    economist_token = await login_token(client, economist_user)
+    request_id = await _create_submitted(client, commercial_token)
+    await _pp_approve(client, pp_token, request_id)
+    past = (date.today() - timedelta(days=1)).isoformat()
+
+    response = await client.post(
+        f"/api/v1/approvals/economy/{request_id}/action",
+        headers=auth_header(economist_token),
+        json={
+            "action": "edit",
+            "expiry_date": past,
+            "comment": "Вчера",
+        },
+    )
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["code"] == "BAD_REQUEST"
+    assert (
+        response.json()["error"]["message"]
+        == "Дата окончания не может быть раньше сегодняшнего дня"
+    )
+    await delete_request(request_id)
+
+
+async def test_active_expiry_can_be_reduced(
+    client: AsyncClient,
+    test_user: AuthUser,
+    pp_user: AuthUser,
+    economist_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    commercial_token = await login_token(client, test_user)
+    pp_token = await login_token(client, pp_user)
+    economist_token = await login_token(client, economist_user)
+    request_id = await _create_submitted(
+        client, commercial_token, expiry_date=valid_expiry_date(3)
+    )
+    await _pp_approve(client, pp_token, request_id)
+    approved = await client.post(
+        f"/api/v1/approvals/economy/{request_id}/action",
+        headers=auth_header(economist_token),
+        json={"action": "approve", "comment": "Экономика приемлема"},
+    )
+    assert approved.status_code == 200, approved.text
+    new_expiry = valid_expiry_date(1)
+    response = await client.patch(
+        f"/api/v1/requests/{request_id}/expiry-date",
+        headers=auth_header(commercial_token),
+        json={"expiry_date": new_expiry},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["expiry_date"] == new_expiry
+    async with AsyncSessionLocal() as session:
+        normative = (
+            await session.scalars(
+                select(Normative).where(Normative.request_id == request_id)
+            )
+        ).one()
+        assert normative.expiry_date.isoformat() == new_expiry
+    await delete_request(request_id)
+
+
+async def test_active_expiry_cannot_be_increased(
+    client: AsyncClient,
+    test_user: AuthUser,
+    pp_user: AuthUser,
+    economist_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    commercial_token = await login_token(client, test_user)
+    pp_token = await login_token(client, pp_user)
+    economist_token = await login_token(client, economist_user)
+    request_id = await _create_submitted(
+        client, commercial_token, expiry_date=valid_expiry_date(3)
+    )
+    await _pp_approve(client, pp_token, request_id)
+    approved = await client.post(
+        f"/api/v1/approvals/economy/{request_id}/action",
+        headers=auth_header(economist_token),
+        json={"action": "approve", "comment": "Экономика приемлема"},
+    )
+    assert approved.status_code == 200, approved.text
+    response = await client.patch(
+        f"/api/v1/requests/{request_id}/expiry-date",
+        headers=auth_header(commercial_token),
+        json={"expiry_date": valid_expiry_date(5)},
+    )
+    assert response.status_code == 400, response.text
+    assert (
+        response.json()["error"]["message"]
+        == "Дата окончания не может быть позже текущей"
+    )
+    await delete_request(request_id)
+
+
+async def test_delete_active_keeps_normatives(
+    client: AsyncClient,
+    test_user: AuthUser,
+    pp_user: AuthUser,
+    economist_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    commercial_token = await login_token(client, test_user)
+    pp_token = await login_token(client, pp_user)
+    economist_token = await login_token(client, economist_user)
+    request_id = await _create_submitted(client, commercial_token)
+    await _pp_approve(client, pp_token, request_id)
+    approved = await client.post(
+        f"/api/v1/approvals/economy/{request_id}/action",
+        headers=auth_header(economist_token),
+        json={"action": "approve", "comment": "Экономика приемлема"},
+    )
+    assert approved.status_code == 200, approved.text
+    response = await client.delete(
+        f"/api/v1/requests/{request_id}",
+        headers=auth_header(commercial_token),
+    )
+    assert response.status_code == 400
+    async with AsyncSessionLocal() as session:
+        normative = (
+            await session.scalars(
+                select(Normative).where(Normative.request_id == request_id)
+            )
+        ).one()
+        assert normative.deleted_at is None
     await delete_request(request_id)

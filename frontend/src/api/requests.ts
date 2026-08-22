@@ -29,4 +29,14 @@ export const requestsApi = {
 
   getHistory: (id: string) =>
     api.get<ApiSuccess<RequestItemHistoryEntry[]>>(`/requests/${id}/history`),
+
+  updateExpiry: (id: string, expiry_date: string) =>
+    api.patch<
+      ApiSuccess<{
+        id: string
+        status: RequestStatusData['status']
+        expiry_date: string | null
+        updated_at: string
+      }>
+    >(`/requests/${id}/expiry-date`, { expiry_date }),
 }

@@ -21,6 +21,8 @@ from app.schemas.request import (
     RequestCreate,
     RequestCreated,
     RequestDetail,
+    RequestExpiryData,
+    RequestExpiryUpdate,
     RequestItemHistoryEntry,
     RequestListItem,
     RequestStatusData,
@@ -29,14 +31,16 @@ from app.schemas.request import (
 from app.services.requests import (
     apply_own_requests_scope,
     create_request,
-    delete_draft,
     ensure_draft_owner,
     get_request_item_history,
     get_visible_request,
     load_request,
+    soft_delete_request,
     submit_draft,
     to_detail,
+    to_expiry_data,
     to_list_item,
+    update_active_expiry,
     update_draft,
 )
 
@@ -180,9 +184,23 @@ async def delete_request(
     db: AsyncSession = Depends(get_db),
 ) -> MessageResponse:
     request = await load_request(db, request_id)
-    ensure_draft_owner(request, current_user)
-    await delete_draft(db, request)
+    await soft_delete_request(db, request, current_user)
     return MessageResponse(message="Запрос удален")
+
+
+@router.patch(
+    "/requests/{request_id}/expiry-date",
+    response_model=SuccessResponse[RequestExpiryData],
+)
+async def patch_request_expiry(
+    request_id: UUID,
+    body: RequestExpiryUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[RequestExpiryData]:
+    request = await load_request(db, request_id)
+    updated = await update_active_expiry(db, request, current_user, body.expiry_date)
+    return SuccessResponse(data=to_expiry_data(updated))
 
 
 @router.post(

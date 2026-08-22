@@ -1,7 +1,11 @@
 from datetime import UTC, date, datetime
+from uuid import UUID
 
 from httpx import AsyncClient
+from sqlalchemy import select
 
+from app.core.database import AsyncSessionLocal
+from app.models.normative import Normative
 from app.models.request import Request
 from tests.conftest import AuthUser, auth_header, delete_request, login_token
 
@@ -282,6 +286,135 @@ async def test_request_item_history(
     assert entry["comment"] == "Снижаем объем на 20%"
     assert "item_id" in entry
     assert "changed_at" in entry
+    await delete_request(request_id)
+
+
+async def _set_status(request_id: str, status: str) -> None:
+    async with AsyncSessionLocal() as session:
+        request = await session.get(Request, UUID(request_id))
+        assert request is not None
+        request.status = status
+        await session.commit()
+
+
+async def test_delete_allowed_statuses(
+    client: AsyncClient, test_user: AuthUser, catalog: dict[str, int]
+) -> None:
+    token = await login_token(client, test_user)
+    for status in ("pp_approved", "economy_check", "rejected", "expired"):
+        _, created = await _create(client, token, client_name=f"Удаление {status}")
+        request_id = created["data"]["id"]
+        await _set_status(request_id, status)
+        response = await client.delete(
+            f"/api/v1/requests/{request_id}",
+            headers=auth_header(token),
+        )
+        assert response.status_code == 200, (status, response.text)
+        assert response.json()["message"] == "Запрос удален"
+        detail = await client.get(
+            f"/api/v1/requests/{request_id}",
+            headers=auth_header(token),
+        )
+        assert detail.status_code == 404
+        await delete_request(request_id)
+
+
+async def test_delete_forbidden_for_final_statuses(
+    client: AsyncClient, test_user: AuthUser, catalog: dict[str, int]
+) -> None:
+    token = await login_token(client, test_user)
+    for status in ("active", "approved", "executed"):
+        _, created = await _create(client, token, client_name=f"Запрет {status}")
+        request_id = created["data"]["id"]
+        await _set_status(request_id, status)
+        response = await client.delete(
+            f"/api/v1/requests/{request_id}",
+            headers=auth_header(token),
+        )
+        assert response.status_code == 400, (status, response.text)
+        assert response.json()["error"]["code"] == "BAD_REQUEST"
+        assert (
+            response.json()["error"]["message"]
+            == "Невозможно удалить запрос после финального согласования"
+        )
+        await delete_request(request_id)
+
+
+async def test_delete_not_owner_forbidden(
+    client: AsyncClient,
+    test_user: AuthUser,
+    other_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    owner_token = await login_token(client, test_user)
+    other_token = await login_token(client, other_user)
+    _, created = await _create(client, owner_token)
+    request_id = created["data"]["id"]
+    response = await client.delete(
+        f"/api/v1/requests/{request_id}",
+        headers=auth_header(other_token),
+    )
+    assert response.status_code == 403
+    assert response.json()["error"]["message"] == (
+        "Только инициатор может удалить запрос"
+    )
+    await delete_request(request_id)
+
+
+async def test_delete_expired_marks_normatives(
+    client: AsyncClient, test_user: AuthUser, catalog: dict[str, int]
+) -> None:
+    token = await login_token(client, test_user)
+    _, created = await _create(client, token)
+    request_id = created["data"]["id"]
+    async with AsyncSessionLocal() as session:
+        session.add(
+            Normative(
+                request_id=UUID(request_id),
+                product_code=catalog["product_code"],
+                warehouse_code=catalog["warehouse_code"],
+                quantity=1000,
+                unit="шт",
+                client_name="ООО Ромашка",
+                expiry_date=date.today(),
+                category="A",
+            )
+        )
+        await session.commit()
+    await _set_status(request_id, "expired")
+    response = await client.delete(
+        f"/api/v1/requests/{request_id}",
+        headers=auth_header(token),
+    )
+    assert response.status_code == 200, response.text
+    async with AsyncSessionLocal() as session:
+        normative = (
+            await session.scalars(
+                select(Normative).where(Normative.request_id == request_id)
+            )
+        ).one()
+        assert normative.deleted_at is not None
+    await delete_request(request_id)
+
+
+async def test_update_draft_expiry_can_increase(
+    client: AsyncClient, test_user: AuthUser, catalog: dict[str, int]
+) -> None:
+    token = await login_token(client, test_user)
+    _, created = await _create(client, token, expiry_date=valid_expiry_date(2))
+    request_id = created["data"]["id"]
+    new_expiry = valid_expiry_date(5)
+    response = await client.put(
+        f"/api/v1/requests/{request_id}",
+        headers=auth_header(token),
+        json={"expiry_date": new_expiry},
+    )
+    assert response.status_code == 200, response.text
+    detail = await client.get(
+        f"/api/v1/requests/{request_id}",
+        headers=auth_header(token),
+    )
+    assert detail.json()["data"]["expiry_date"] == new_expiry
     await delete_request(request_id)
 
 

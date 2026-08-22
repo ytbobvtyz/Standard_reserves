@@ -202,6 +202,7 @@ export function ApprovalsPage() {
       <ApprovalModal
         request={selected}
         submitting={submitting}
+        stage={isEconomy ? 'economy' : 'pp'}
         onCancel={closeModal}
         onSubmit={submitAction}
       />

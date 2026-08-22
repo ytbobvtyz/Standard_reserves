@@ -7,13 +7,16 @@ import type { RequestDetail } from '../api/types'
 
 const getRequest = vi.fn()
 const getHistory = vi.fn()
+const removeRequest = vi.fn()
+const updateExpiry = vi.fn()
 
 vi.mock('../api/requests', () => ({
   requestsApi: {
     get: (...args: unknown[]) => getRequest(...args),
     getHistory: (...args: unknown[]) => getHistory(...args),
     submit: vi.fn(),
-    remove: vi.fn(),
+    remove: (...args: unknown[]) => removeRequest(...args),
+    updateExpiry: (...args: unknown[]) => updateExpiry(...args),
   },
 }))
 
@@ -57,6 +60,8 @@ describe('RequestDetailPage', () => {
   beforeEach(() => {
     getRequest.mockReset()
     getHistory.mockReset()
+    removeRequest.mockReset()
+    updateExpiry.mockReset()
     getRequest.mockResolvedValue({ data: { status: 'success', data: request } })
     getHistory.mockResolvedValue({
       data: {
@@ -119,5 +124,44 @@ describe('RequestDetailPage', () => {
     expect(screen.getByText('Утвержденное количество')).toBeTruthy()
     expect(screen.getByText('Снижаем объем на 20%')).toBeTruthy()
     expect(getHistory).toHaveBeenCalledWith(request.id)
+  })
+
+  it('hides delete and shows change-date for active requests', async () => {
+    render(
+      <MemoryRouter initialEntries={[`/requests/${request.id}`]}>
+        <Routes>
+          <Route path="/requests/:id" element={<RequestDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("ООО 'Ромашка'")).toBeTruthy()
+    })
+    expect(screen.queryByRole('button', { name: 'Удалить' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Изменить дату' }))
+    expect(screen.getByRole('button', { name: 'Сохранить' })).toBeTruthy()
+    expect(
+      screen.getByText('Можно только уменьшить срок: от сегодня до текущей даты окончания'),
+    ).toBeTruthy()
+  })
+
+  it('shows delete for draft requests', async () => {
+    getRequest.mockResolvedValue({
+      data: { status: 'success', data: { ...request, status: 'draft' } },
+    })
+    render(
+      <MemoryRouter initialEntries={[`/requests/${request.id}`]}>
+        <Routes>
+          <Route path="/requests/:id" element={<RequestDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("ООО 'Ромашка'")).toBeTruthy()
+    })
+    expect(screen.getByRole('button', { name: 'Удалить' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Изменить дату' })).toBeNull()
   })
 })

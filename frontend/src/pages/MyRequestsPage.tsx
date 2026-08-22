@@ -7,6 +7,7 @@ import { getApiErrorMessage } from '../api/client'
 import type { RequestListItem, RequestStatus, RequestType } from '../api/types'
 import { RequestCard } from '../components/requests/RequestCard'
 import { useAuthStore } from '../stores/auth'
+import { canDeleteByStatus } from '../utils/requestActions'
 
 const STATUS_OPTIONS: Array<{ value: RequestStatus; label: string }> = [
   { value: 'draft', label: 'Черновик' },
@@ -15,6 +16,7 @@ const STATUS_OPTIONS: Array<{ value: RequestStatus; label: string }> = [
   { value: 'active', label: 'Активен' },
   { value: 'approved', label: 'Согласован' },
   { value: 'rejected', label: 'Отклонен' },
+  { value: 'expired', label: 'Просрочен' },
   { value: 'executed', label: 'Исполнен' },
 ]
 
@@ -58,6 +60,16 @@ export function MyRequestsPage() {
   useEffect(() => {
     void load()
   }, [load])
+
+  const remove = async (id: string) => {
+    try {
+      await requestsApi.remove(id)
+      message.success('Запрос удален')
+      await load()
+    } catch (error) {
+      message.error(getApiErrorMessage(error, 'Не удалось удалить запрос'))
+    }
+  }
 
   return (
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -116,7 +128,14 @@ export function MyRequestsPage() {
         <Typography.Text type="secondary">Запросы не найдены</Typography.Text>
       ) : null}
       {items.map((item) => (
-        <RequestCard key={item.id} request={item} />
+        <RequestCard
+          key={item.id}
+          request={item}
+          canDelete={
+            Boolean(user && user.id === item.initiator.id && canDeleteByStatus(item.status))
+          }
+          onDelete={() => void remove(item.id)}
+        />
       ))}
       <Pagination
         current={page}
