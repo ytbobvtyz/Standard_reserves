@@ -147,7 +147,7 @@ async def test_pp_edit(
         f"/api/v1/approvals/pp/{request_id}/action",
         headers=auth_header(pp_token),
         json={
-            "action": "edit",
+            "action": "approve",
             "items": [
                 {
                     "product_code": catalog["product_code"],
@@ -161,7 +161,7 @@ async def test_pp_edit(
     assert response.status_code == 200, response.text
     data = response.json()["data"]
     assert data["status"] == "economy_check"
-    assert data["pp_action"] == "edit"
+    assert data["pp_action"] == "approve"
     assert data["comment_pp"] == "Снижаем объем на 20% из-за ограничений по заводу"
 
     detail = await client.get(
@@ -226,6 +226,28 @@ async def test_pp_reject(
         response.json()["data"]["comment_pp"]
         == "Нет необходимого сырья для производства"
     )
+    await delete_request(request_id)
+
+
+async def test_edit_action_is_rejected(
+    client: AsyncClient,
+    test_user: AuthUser,
+    pp_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    commercial_token = await login_token(client, test_user)
+    pp_token = await login_token(client, pp_user)
+    request_id = await _create_submitted(client, commercial_token)
+
+    response = await client.post(
+        f"/api/v1/approvals/pp/{request_id}/action",
+        headers=auth_header(pp_token),
+        json={
+            "action": "edit",
+            "comment": "Больше не используется",
+        },
+    )
+    assert response.status_code == 422
     await delete_request(request_id)
 
 
@@ -314,7 +336,7 @@ async def test_economist_approve_one_time(
     await delete_request(request_id)
 
 
-async def test_economist_edit_returns_to_rework(
+async def test_economist_approve_with_quantity_change(
     client: AsyncClient,
     test_user: AuthUser,
     pp_user: AuthUser,
@@ -331,7 +353,7 @@ async def test_economist_edit_returns_to_rework(
         f"/api/v1/approvals/economy/{request_id}/action",
         headers=auth_header(economist_token),
         json={
-            "action": "edit",
+            "action": "approve",
             "items": [
                 {
                     "product_code": catalog["product_code"],
@@ -343,8 +365,8 @@ async def test_economist_edit_returns_to_rework(
         },
     )
     assert response.status_code == 200, response.text
-    assert response.json()["data"]["status"] == "economy_rework"
-    assert response.json()["data"]["economy_action"] == "edit"
+    assert response.json()["data"]["status"] == "active"
+    assert response.json()["data"]["economy_action"] == "approve"
 
     detail = await client.get(
         f"/api/v1/requests/{request_id}",
@@ -464,7 +486,7 @@ async def test_pp_edit_rejects_non_positive_quantity(
         f"/api/v1/approvals/pp/{request_id}/action",
         headers=auth_header(pp_token),
         json={
-            "action": "edit",
+            "action": "approve",
             "items": [
                 {
                     "product_code": catalog["product_code"],
@@ -495,7 +517,7 @@ async def test_pp_edit_visible_to_economist(
         f"/api/v1/approvals/pp/{request_id}/action",
         headers=auth_header(pp_token),
         json={
-            "action": "edit",
+            "action": "approve",
             "items": [
                 {
                     "product_code": catalog["product_code"],
@@ -535,7 +557,7 @@ async def test_final_approve_exposes_quantity_approved(
         f"/api/v1/approvals/pp/{request_id}/action",
         headers=auth_header(pp_token),
         json={
-            "action": "edit",
+            "action": "approve",
             "items": [
                 {
                     "product_code": catalog["product_code"],
@@ -590,7 +612,7 @@ async def test_pp_edit_expiry_date_success(
         f"/api/v1/approvals/pp/{request_id}/action",
         headers=auth_header(pp_token),
         json={
-            "action": "edit",
+            "action": "approve",
             "expiry_date": new_expiry,
             "comment": "Сдвинули срок",
         },
@@ -625,7 +647,7 @@ async def test_pp_edit_expiry_date_too_far_fails(
         f"/api/v1/approvals/pp/{request_id}/action",
         headers=auth_header(pp_token),
         json={
-            "action": "edit",
+            "action": "approve",
             "expiry_date": too_far_expiry_date(),
             "comment": "Слишком долго",
         },
@@ -658,7 +680,11 @@ async def test_economy_approve_expiry_date_too_far_fails(
         },
     )
     assert response.status_code == 400, response.text
-    assert response.json()["error"]["code"] == "INVALID_EXPIRY_DATE"
+    assert response.json()["error"]["code"] == "BAD_REQUEST"
+    assert (
+        response.json()["error"]["message"]
+        == "Дата окончания не может быть позже текущей"
+    )
     await delete_request(request_id)
 
 
@@ -682,7 +708,7 @@ async def test_economy_edit_can_reduce_expiry_date(
         f"/api/v1/approvals/economy/{request_id}/action",
         headers=auth_header(economist_token),
         json={
-            "action": "edit",
+            "action": "approve",
             "expiry_date": new_expiry,
             "comment": "Уменьшаем срок",
         },
@@ -715,7 +741,7 @@ async def test_economy_edit_cannot_increase_expiry_date(
         f"/api/v1/approvals/economy/{request_id}/action",
         headers=auth_header(economist_token),
         json={
-            "action": "edit",
+            "action": "approve",
             "expiry_date": valid_expiry_date(5),
             "comment": "Пытаемся увеличить",
         },
@@ -747,7 +773,7 @@ async def test_economy_edit_cannot_set_expiry_in_the_past(
         f"/api/v1/approvals/economy/{request_id}/action",
         headers=auth_header(economist_token),
         json={
-            "action": "edit",
+            "action": "approve",
             "expiry_date": past,
             "comment": "Вчера",
         },

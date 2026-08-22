@@ -5,8 +5,6 @@ export type RequestStatus =
   | 'draft'
   | 'pp_approved'
   | 'economy_check'
-  | 'pp_rework'
-  | 'economy_rework'
   | 'active'
   | 'approved'
   | 'rejected'
@@ -195,7 +193,7 @@ export interface RequestStatusData {
   updated_at: string
 }
 
-export type ApprovalAction = 'approve' | 'edit' | 'reject'
+export type ApprovalAction = 'approve' | 'reject'
 
 export interface ApprovalPendingItem {
   product_code: number

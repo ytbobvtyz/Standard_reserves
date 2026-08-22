@@ -113,7 +113,7 @@ describe('ApprovalsPage', () => {
       screen.getByText('Максимальный срок — 6 месяцев от даты создания'),
     ).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Утвердить' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Редактировать' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Редактировать' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Отказать' })).toBeTruthy()
   })
 

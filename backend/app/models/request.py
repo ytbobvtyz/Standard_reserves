@@ -36,8 +36,8 @@ class Request(TimestampMixin, SoftDeleteMixin, Base):
         ),
         CheckConstraint(
             "status IN ("
-            "'draft', 'pp_approved', 'economy_check', 'pp_rework', "
-            "'economy_rework', 'active', 'approved', 'rejected', "
+            "'draft', 'pp_approved', 'economy_check', "
+            "'active', 'approved', 'rejected', "
             "'expired', 'executed')",
             name="ck_requests_status",
         ),

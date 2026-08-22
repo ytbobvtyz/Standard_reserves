@@ -132,7 +132,7 @@ async def _apply_edits(
         raise APIError(
             400,
             "VALIDATION_ERROR",
-            "Для действия edit укажите позиции с новым объемом",
+            "Укажите позиции с новым объемом",
         )
 
     items_by_key = {_item_key(item): item for item in request.items}
@@ -238,8 +238,6 @@ def _next_status(stage: Stage, action: str, request: Request) -> str:
         return "rejected"
     if stage == "pp":
         return "economy_check"
-    if action == "edit":
-        return "economy_rework"
     if request.request_type == "normative":
         return "active"
     return "approved"
@@ -272,18 +270,10 @@ async def apply_action(
 
     now = datetime.now(UTC)
     try:
-        if body.action == "edit":
-            if not body.items and body.expiry_date is None:
-                raise APIError(
-                    400,
-                    "VALIDATION_ERROR",
-                    "Для действия edit укажите позиции с новым объемом "
-                    "или срок действия",
-                )
+        if body.action == "approve":
             if body.items:
                 await _apply_edits(db, request, body, user, comment)
-            if stage == "pp":
-                _fill_missing_approved_quantities(request)
+            _fill_missing_approved_quantities(request)
             comment = _apply_expiry_update(
                 request,
                 body.expiry_date,
@@ -292,11 +282,6 @@ async def apply_action(
                     stage == "economy" and request.request_type == "normative"
                 ),
             )
-        elif body.action == "approve":
-            if body.items:
-                await _apply_edits(db, request, body, user, comment)
-            _fill_missing_approved_quantities(request)
-            comment = _apply_expiry_update(request, body.expiry_date, comment)
 
         request.status = _next_status(stage, body.action, request)
         if stage == "pp":

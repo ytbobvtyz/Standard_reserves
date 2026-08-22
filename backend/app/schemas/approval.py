@@ -15,7 +15,7 @@ class ApprovalItemChange(BaseModel):
 
 
 class ApprovalActionRequest(BaseModel):
-    action: Literal["approve", "edit", "reject"]
+    action: Literal["approve", "reject"]
     items: list[ApprovalItemChange] | None = None
     comment: str | None = None
     expiry_date: date | None = Field(

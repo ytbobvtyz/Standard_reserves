@@ -77,7 +77,7 @@ export function ApprovalModal({
       message.error('Комментарий обязателен при отказе')
       return
     }
-    if (action === 'edit' || action === 'approve') {
+    if (action === 'approve') {
       const invalid = editableItems.some((item) => item.quantity_approved_input <= 0)
       if (invalid) {
         message.error('Утвержденное количество должно быть больше 0')
@@ -126,9 +126,6 @@ export function ApprovalModal({
         <Space>
           <Button danger loading={submitting} onClick={() => void submitAction('reject')}>
             Отказать
-          </Button>
-          <Button loading={submitting} onClick={() => void submitAction('edit')}>
-            Редактировать
           </Button>
           <Button
             type="primary"

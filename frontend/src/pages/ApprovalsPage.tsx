@@ -85,9 +85,7 @@ export function ApprovalsPage() {
       const statusLabel =
         nextStatus === 'rejected'
           ? 'отклонен'
-          : nextStatus === 'economy_rework'
-            ? 'отправлен на доработку'
-            : nextStatus === 'active' || nextStatus === 'approved'
+          : nextStatus === 'active' || nextStatus === 'approved'
               ? 'утвержден'
               : 'согласован'
       message.success(`Запрос ${statusLabel}`)

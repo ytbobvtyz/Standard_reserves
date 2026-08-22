@@ -257,7 +257,7 @@ async def test_request_item_history(
         f"/api/v1/approvals/pp/{request_id}/action",
         headers=auth_header(pp_token),
         json={
-            "action": "edit",
+            "action": "approve",
             "items": [
                 {
                     "product_code": catalog["product_code"],

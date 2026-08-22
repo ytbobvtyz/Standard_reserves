@@ -5,8 +5,6 @@ const STATUS_MAP: Record<RequestStatus, { color: string; label: string }> = {
   draft: { color: 'default', label: 'Черновик' },
   pp_approved: { color: 'blue', label: 'Ожидает ПП' },
   economy_check: { color: 'processing', label: 'Ожидает экономиста' },
-  pp_rework: { color: 'gold', label: 'Доработка ПП' },
-  economy_rework: { color: 'gold', label: 'Доработка экономиста' },
   active: { color: 'green', label: 'Активен' },
   approved: { color: 'green', label: 'Согласован' },
   rejected: { color: 'red', label: 'Отклонен' },
