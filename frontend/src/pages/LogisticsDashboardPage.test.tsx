@@ -27,6 +27,22 @@ const dashboard: LogisticsDashboardData = {
           expiry_date: '2026-12-31',
           status: 'warning',
           stock_unit: 'ШТ',
+          weight_kg: 0.25,
+        },
+        {
+          product_code: 10002,
+          product_name: 'Корпус без дефицита',
+          category: 'B',
+          normative_quantity: 500,
+          available: 500,
+          plan: 500,
+          unit: 'шт',
+          deficit: 0,
+          client_name: "ООО 'Ромашка'",
+          expiry_date: '2026-12-31',
+          status: 'ok',
+          stock_unit: 'ШТ',
+          weight_kg: 2.5,
         },
       ],
     },
@@ -49,6 +65,7 @@ const dashboard: LogisticsDashboardData = {
           expiry_date: '2026-12-31',
           status: 'warning',
           stock_unit: 'КГ',
+          weight_kg: 1,
         },
       ],
     },
@@ -96,6 +113,16 @@ function setRole(role: 'logistics' | 'commercial') {
     token: 'token',
     isAuthenticated: true,
     isLoading: false,
+  })
+}
+
+async function expandWarehouse(name: string) {
+  await waitFor(() => {
+    expect(screen.getByText(name)).toBeTruthy()
+  })
+  fireEvent.click(screen.getByText(name))
+  await waitFor(() => {
+    expect(document.querySelector('.ant-collapse-item-active')).toBeTruthy()
   })
 }
 
@@ -175,7 +202,9 @@ describe('LogisticsDashboardPage', () => {
       expect(screen.getByText(/Актуальные остатки обновлены/)).toBeTruthy()
       expect(screen.getByText(/Иванов И\. \(logistics\)/)).toBeTruthy()
     })
+    await expandWarehouse('Склад Ростов')
     expect(screen.getByText('Подшипник 6204ZZ')).toBeTruthy()
+    expect(screen.getByText('Корпус без дефицита')).toBeTruthy()
     expect(screen.getAllByText('Доступно').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Запланировано').length).toBeGreaterThan(0)
     expect(screen.getAllByText(/норматив:/).length).toBeGreaterThan(0)
@@ -186,42 +215,47 @@ describe('LogisticsDashboardPage', () => {
     expect(screen.getByText(/Всего запланировано:/)).toBeTruthy()
     expect(screen.getByRole('button', { name: /Загрузить актуальные остатки/ })).toBeTruthy()
     expect(screen.getAllByText("ООО 'Ромашка'").length).toBeGreaterThan(0)
-    expect(getDashboard).toHaveBeenCalled()
+    expect(getDashboard).toHaveBeenCalledTimes(1)
+    expect(getDashboard).toHaveBeenCalledWith({
+      unit: 'шт',
+      filter_mode: 'all',
+    })
     expect(getSyncInfo).toHaveBeenCalled()
   })
 
-  it('refetches dashboard when unit toggle changes', async () => {
+  it('converts units on the client without refetching', async () => {
     render(
       <MemoryRouter>
         <LogisticsDashboardPage />
       </MemoryRouter>,
     )
-    await waitFor(() => {
-      expect(screen.getByText('Склад Ростов')).toBeTruthy()
-    })
+    await expandWarehouse('Склад Ростов')
+    expect(screen.getByText('Подшипник 6204ZZ')).toBeTruthy()
     fireEvent.click(screen.getByRole('radio', { name: 'тонны' }))
     await waitFor(() => {
-      expect(getDashboard).toHaveBeenCalledWith(
-        expect.objectContaining({ unit: 'т' }),
-      )
+      expect(screen.getByText('0,25')).toBeTruthy()
+    })
+    expect(getDashboard).toHaveBeenCalledTimes(1)
+    expect(getDashboard).toHaveBeenCalledWith({
+      unit: 'шт',
+      filter_mode: 'all',
     })
   })
 
-  it('refetches dashboard when filter changes', async () => {
+  it('filters on the client without refetching', async () => {
     render(
       <MemoryRouter>
         <LogisticsDashboardPage />
       </MemoryRouter>,
     )
-    await waitFor(() => {
-      expect(screen.getByText('Склад Ростов')).toBeTruthy()
-    })
+    await expandWarehouse('Склад Ростов')
+    expect(screen.getByText('Корпус без дефицита')).toBeTruthy()
     fireEvent.click(screen.getByRole('radio', { name: 'Требуют пополнения' }))
     await waitFor(() => {
-      expect(getDashboard).toHaveBeenCalledWith(
-        expect.objectContaining({ filter_mode: 'deficit_only' }),
-      )
+      expect(screen.queryByText('Корпус без дефицита')).toBeNull()
     })
+    expect(screen.getByText('Подшипник 6204ZZ')).toBeTruthy()
+    expect(getDashboard).toHaveBeenCalledTimes(1)
   })
 
   it('opens generate orders modal', async () => {
@@ -311,9 +345,7 @@ describe('LogisticsDashboardPage', () => {
         <LogisticsDashboardPage />
       </MemoryRouter>,
     )
-    await waitFor(() => {
-      expect(screen.getByText('Склад Ростов')).toBeTruthy()
-    })
+    await expandWarehouse('Склад Ростов')
     expect(screen.getByText('Подшипник 6204ZZ')).toBeTruthy()
     expect(
       screen.queryByRole('button', { name: /Сформировать заказы/ }),

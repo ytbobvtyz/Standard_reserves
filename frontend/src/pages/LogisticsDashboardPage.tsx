@@ -8,6 +8,7 @@ import {
   Progress,
   Select,
   Space,
+  Spin,
   Table,
   Tabs,
   Typography,
@@ -16,7 +17,7 @@ import {
 } from 'antd'
 import { DownloadOutlined, SendOutlined, UploadOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getApiErrorMessage } from '../api/client'
 import { logisticsApi } from '../api/logistics'
@@ -55,6 +56,53 @@ function sumItems(
   field: 'normative_quantity' | 'available' | 'plan',
 ): number {
   return items.reduce((total, item) => total + item[field], 0)
+}
+
+const KG_IN_TON = 1000
+
+function quantize(value: number, unit: Unit): number {
+  const factor = unit === 'т' ? 10000 : 100
+  return Math.round(value * factor) / factor
+}
+
+function fromPieces(quantityPcs: number, unit: Unit, weightKg: number): number {
+  if (unit === 'шт') {
+    return quantize(quantityPcs, unit)
+  }
+  if (weightKg <= 0) {
+    return 0
+  }
+  return quantize((quantityPcs * weightKg) / KG_IN_TON, unit)
+}
+
+function convertItem(item: DeficitItem, unit: Unit): DeficitItem {
+  const weightKg = item.weight_kg ?? 0
+  return {
+    ...item,
+    unit,
+    normative_quantity: fromPieces(item.normative_quantity, unit, weightKg),
+    available: fromPieces(item.available, unit, weightKg),
+    plan: fromPieces(item.plan, unit, weightKg),
+    deficit: fromPieces(item.deficit, unit, weightKg),
+  }
+}
+
+function matchesFilter(item: DeficitItem, filterMode: FilterMode): boolean {
+  if (filterMode === 'deficit_only') {
+    return item.deficit > 0
+  }
+  if (filterMode === 'with_normatives') {
+    return item.normative_quantity > 0
+  }
+  return true
+}
+
+function warehouseMetrics(items: DeficitItem[]) {
+  const positive = items.filter((item) => item.deficit > 0)
+  return {
+    total_deficit: positive.reduce((total, item) => total + item.deficit, 0),
+    deficit_count: positive.length,
+  }
 }
 
 function downloadBlob(blob: Blob, filename: string): void {
@@ -110,12 +158,8 @@ export function LogisticsDashboardPage() {
   const [search, setSearch] = useState('')
   const [warehouses, setWarehouses] = useState<ObjectListItem[]>([])
   const [items, setItems] = useState<WarehouseDeficit[]>([])
-  const [summary, setSummary] = useState({
-    total_deficit: 0,
-    deficit_warehouses: 0,
-    deficit_products: 0,
-  })
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [activeKeys, setActiveKeys] = useState<string[]>([])
   const [generating, setGenerating] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
@@ -127,27 +171,29 @@ export function LogisticsDashboardPage() {
   const [confirmedOrders, setConfirmedOrders] = useState<GeneratedOrder[]>([])
   const [selectedWarehouseCodes, setSelectedWarehouseCodes] = useState<number[]>([])
   const [syncInfo, setSyncInfo] = useState<BalanceSyncInfo | null>(null)
+  const hasRowsRef = useRef(false)
 
   const load = useCallback(async () => {
-    setLoading(true)
+    if (!hasRowsRef.current) {
+      setLoading(true)
+    }
     try {
       const [{ data }, syncResponse] = await Promise.all([
         logisticsApi.getDashboard({
-          unit,
-          filter_mode: filterMode,
-          warehouse_code: warehouseCode,
+          unit: 'шт',
+          filter_mode: 'all',
         }),
         logisticsApi.getSyncInfo(),
       ])
       setItems(data.data)
-      setSummary(data.summary)
       setSyncInfo(syncResponse.data.data)
+      hasRowsRef.current = true
     } catch (error) {
       message.error(getApiErrorMessage(error, 'Не удалось загрузить дашборд'))
     } finally {
       setLoading(false)
     }
-  }, [unit, filterMode, warehouseCode])
+  }, [])
 
   useEffect(() => {
     void load()
@@ -164,14 +210,25 @@ export function LogisticsDashboardPage() {
 
   const visibleWarehouses = useMemo(() => {
     return items
-      .map((warehouse) => ({
-        ...warehouse,
-        deficit_items: warehouse.deficit_items.filter((item) =>
-          matchesSearch(item, search),
-        ),
-      }))
+      .filter(
+        (warehouse) =>
+          warehouseCode == null || warehouse.warehouse_code === warehouseCode,
+      )
+      .map((warehouse) => {
+        const deficitItems = warehouse.deficit_items
+          .filter(
+            (item) =>
+              matchesFilter(item, filterMode) && matchesSearch(item, search),
+          )
+          .map((item) => convertItem(item, unit))
+        return {
+          ...warehouse,
+          deficit_items: deficitItems,
+          ...warehouseMetrics(deficitItems),
+        }
+      })
       .filter((warehouse) => warehouse.deficit_items.length > 0)
-  }, [items, search])
+  }, [items, warehouseCode, filterMode, search, unit])
 
   const visibleWarehouseCodes = useMemo(
     () => visibleWarehouses.map((item) => item.warehouse_code),
@@ -180,16 +237,26 @@ export function LogisticsDashboardPage() {
 
   const totals = useMemo(() => {
     const rows = visibleWarehouses.flatMap((warehouse) => warehouse.deficit_items)
+    const positive = rows.filter((item) => item.deficit > 0)
     return {
       normative: sumItems(rows, 'normative_quantity'),
       available: sumItems(rows, 'available'),
       plan: sumItems(rows, 'plan'),
+      deficit: positive.reduce((total, item) => total + item.deficit, 0),
+      deficitWarehouses: visibleWarehouses.filter((item) => item.total_deficit > 0)
+        .length,
+      deficitProducts: new Set(positive.map((item) => item.product_code)).size,
     }
   }, [visibleWarehouses])
 
   useEffect(() => {
     setSelectedWarehouseCodes((current) =>
       current.filter((code) => visibleWarehouseCodes.includes(code)),
+    )
+    setActiveKeys((current) =>
+      current.filter((key) =>
+        visibleWarehouseCodes.includes(Number(key)),
+      ),
     )
   }, [visibleWarehouseCodes])
 
@@ -343,8 +410,8 @@ export function LogisticsDashboardPage() {
         </Space>
         <Space direction="vertical" size={0} align="end">
           <Typography.Text type="secondary">
-            Дефицит: {formatQty(summary.total_deficit, unit)} {unit} · склады:{' '}
-            {summary.deficit_warehouses} · позиции: {summary.deficit_products}
+            Дефицит: {formatQty(totals.deficit, unit)} {unit} · склады:{' '}
+            {totals.deficitWarehouses} · позиции: {totals.deficitProducts}
           </Typography.Text>
           <Typography.Text type="secondary">
             Всего норматив: {formatQty(totals.normative, unit)} {unit}
@@ -398,7 +465,9 @@ export function LogisticsDashboardPage() {
           />
         </Space>
       </Space>
-      {visibleWarehouses.length === 0 && !loading ? (
+      {loading && items.length === 0 ? (
+        <Spin />
+      ) : visibleWarehouses.length === 0 ? (
         <Empty description="Складов с выбранным фильтром не найдено" />
       ) : (
         <Space direction="vertical" size="small" style={{ width: '100%' }}>
@@ -413,11 +482,15 @@ export function LogisticsDashboardPage() {
             </Checkbox>
           ) : null}
           <Collapse
-            key={visibleWarehouses.map((item) => item.warehouse_code).join('-')}
-            defaultActiveKey={visibleWarehouses.map((item) =>
-              String(item.warehouse_code),
-            )}
+            activeKey={activeKeys}
+            onChange={(keys) =>
+              setActiveKeys(
+                Array.isArray(keys) ? keys.map(String) : [String(keys)],
+              )
+            }
             items={visibleWarehouses.map((warehouse) => {
+              const warehouseKey = String(warehouse.warehouse_code)
+              const isOpen = activeKeys.includes(warehouseKey)
               const totalNormative = sumItems(
                 warehouse.deficit_items,
                 'normative_quantity',
@@ -425,7 +498,7 @@ export function LogisticsDashboardPage() {
               const totalAvailable = sumItems(warehouse.deficit_items, 'available')
               const totalPlan = sumItems(warehouse.deficit_items, 'plan')
               return {
-                key: String(warehouse.warehouse_code),
+                key: warehouseKey,
                 label: (
                   <Space wrap align="start">
                     {canManage ? (
@@ -464,16 +537,15 @@ export function LogisticsDashboardPage() {
                     </Space>
                   </Space>
                 ),
-                children: (
+                children: isOpen ? (
                   <Table
                     rowKey={(item) => `${item.product_code}-${item.client_name}`}
-                    loading={loading}
                     pagination={false}
                     size="small"
                     columns={columns}
                     dataSource={warehouse.deficit_items}
                   />
-                ),
+                ) : null,
               }
             })}
           />

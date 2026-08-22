@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
@@ -33,6 +34,7 @@ class DeficitItem(BaseModel):
     expiry_date: date | None = None
     status: Literal["warning", "ok"]
     stock_unit: str = "ШТ"
+    weight_kg: DecimalNumber = Decimal("0")
 
 
 class BalanceUploadError(BaseModel):

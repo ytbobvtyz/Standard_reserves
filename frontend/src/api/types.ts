@@ -293,6 +293,7 @@ export interface DeficitItem {
   expiry_date: string | null
   status: DeficitStatus
   stock_unit?: string
+  weight_kg?: number
 }
 
 export interface WarehouseDeficit {

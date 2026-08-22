@@ -332,6 +332,7 @@ def _to_deficit_item(row: DeficitRow) -> DeficitItem:
         expiry_date=row.expiry_date,
         status=row.status,
         stock_unit=row.stock_unit,
+        weight_kg=row.weight_kg,
     )
 
 
