@@ -15,7 +15,7 @@ help:
 	@echo "  make test     Run backend and frontend tests"
 	@echo "  make lint     Run backend and frontend linters"
 	@echo "  make migrate  Apply Alembic migrations"
-	@echo "  make seed     Seed test data"
+	@echo "  make seed     Seed users and objects"
 	@echo "  make clean    Stop containers and remove volumes"
 	@echo "  make build    Build production images"
 

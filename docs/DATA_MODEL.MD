@@ -1054,44 +1054,46 @@ EXECUTE FUNCTION trigger_create_normative();
 18	018_product_gtin_parent_relax.sql	products: снять UNIQUE с gtin, снять FK parent/children
 19	019_sync_metadata.sql	sync_metadata (дата и автор последней загрузки остатков)
 20	020_object_uniqueness.sql	objects: снять UNIQUE с ERP-кодов, UNIQUE на loading_point
+21	021_seed_users_objects.sql	начальные users + objects (остальные таблицы пустые)
 10	010_functions.sql	Все функции
 11	011_views.sql	Все представления
 12	012_triggers.sql	Все триггеры
 13	013_indexes.sql	Дополнительные индексы
-11. ТЕСТОВЫЕ ДАННЫЕ (ПРИМЕР)
+11. НАЧАЛЬНЫЕ ДАННЫЕ
+После `alembic upgrade head` (миграция `0013_seed_users_objects`) в БД есть только пользователи и объекты. Продукты, запросы, нормативы, остатки и прочие таблицы пустые (`sync_metadata` — служебная строка `id=1`).
+
+Пароль всех пользователей: `password`.
+
 sql
--- Объекты (заводы и склады)
-INSERT INTO objects (code, name, city, type, erp_plant_code, erp_warehouse_code, loading_point) VALUES
-(1001, 'Завод Московский', 'Москва', 'plant', 2401, NULL, NULL),
-(1002, 'Завод Екатеринбургский', 'Екатеринбург', 'plant', 2402, NULL, NULL),
-(2001, 'Склад Ростов', 'Ростов-на-Дону', 'warehouse', NULL, 'F005', '2R05'),
-(2002, 'Склад Владивосток', 'Владивосток', 'warehouse', NULL, 'F006', '2V05');
-
--- Продукты
-INSERT INTO products (code, name, category, plant_id, weight_kg, monthly_consumption) VALUES
-(10001, 'Подшипник 6204ZZ', 'A', 1001, 0.250, 1000),
-(10002, 'Корпус чугунный 200мм', 'B', 1002, 2.500, 500);
-
 -- Пользователи
-INSERT INTO users (id, email, full_name, role) VALUES
-('11111111-1111-1111-1111-111111111111', 'commercial@company.ru', 'Иванов Иван', 'commercial'),
-('22222222-2222-2222-2222-222222222222', 'pp@company.ru', 'Петров Петр', 'pp'),
-('33333333-3333-3333-3333-333333333333', 'economist@company.ru', 'Сидоров Сидор', 'economist'),
-('44444444-4444-4444-4444-444444444444', 'logistics@company.ru', 'Кузнецов Кузьма', 'logistics');
+INSERT INTO users (id, username, email, full_name, role, department) VALUES
+('11111111-1111-1111-1111-111111111111', 'commercial', 'commercial@company.ru', 'Иванов Иван', 'commercial', 'Коммерческий отдел'),
+('22222222-2222-2222-2222-222222222222', 'pp', 'pp@company.ru', 'Петров Петр', 'pp', 'Планирование производства'),
+('33333333-3333-3333-3333-333333333333', 'economist', 'economist@company.ru', 'Сидоров Сидор', 'economist', 'Экономический отдел'),
+('44444444-4444-4444-4444-444444444444', 'logistics', 'logistics@company.ru', 'Кузнецов Кузьма', 'logistics', 'Логистика'),
+('55555555-5555-5555-5555-555555555555', 'guest', 'guest@company.ru', 'Смирнов Гость', 'guest', NULL);
 
--- Запрос
-INSERT INTO requests (id, request_type, status, client_name, initiator_id, expiry_date) VALUES
-('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'normative', 'draft', 'ООО "Ромашка"', '11111111-1111-1111-1111-111111111111', '2026-12-31');
+-- Заводы
+INSERT INTO objects (code, name, city, region, type, erp_plant_code, erp_warehouse_code, loading_point) VALUES
+(2420, 'ТПП Волгоград', 'Волгоград', 'Волгоградская область', 'plant', 2420, 'F001', '2420'),
+(2421, 'ТПП Пермь', 'Пермь', 'Пермский край', 'plant', 2421, 'F001', '2421'),
+(2422, 'ТПП Торжок', 'Торжок', 'Тверская область', 'plant', 2422, 'F001', '2422'),
+(2423, 'Тюменский филиал', 'Богандинский', 'Тюменская область', 'plant', 2423, 'F001', '2423');
 
--- Позиция запроса
-INSERT INTO request_items (request_id, product_code, warehouse_code, quantity_requested, unit) VALUES
-('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 10001, 2001, 1000, 'шт'),
-('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 10002, 2002, 500, 'шт');
+-- Склады
+INSERT INTO objects (code, name, city, region, type, erp_plant_code, erp_warehouse_code, loading_point) VALUES
+(2401002, 'ЛогЛаб Санкт-Петербург', 'Санкт-Петербург', 'Ленинградская область', 'warehouse', 2401, 'F002', '2R02'),
+(2401004, 'ЛогЛаб Нижний Новгород', 'Дзержинск', 'Нижегородская область', 'warehouse', 2401, 'F004', '2R04'),
+(2401005, 'ЛогЛаб Солнечногорск', 'Солнечногорск', 'Московская область', 'warehouse', 2401, 'F005', '2R05'),
+(2401006, 'ЛогЛаб Краснодар', 'Краснодар', 'Краснодарский край', 'warehouse', 2401, 'F006', '2R06'),
+(2401010, 'ЛогЛаб Екатеринбург', 'Екатеринбург', 'Свердловская область', 'warehouse', 2401, 'F010', '2R10'),
+(2401011, 'ЛогЛаб Новосибирск', 'Новосибирск', 'Новосибирская область', 'warehouse', 2401, 'F011', '2R11'),
+(2401015, 'ЛогЛаб Калининград', 'Калининград', 'Калининградская область', 'warehouse', 2401, 'F015', '2R15'),
+(2401016, 'ЛогЛаб Ростов-на-Дону', 'Ростов-на-Дону', 'Ростовская область', 'warehouse', 2401, 'F016', '2R16'),
+(2401017, 'ЛогЛаб Тюмень', 'Тюмень', 'Тюменская область', 'warehouse', 2401, 'F017', '2R17'),
+(2401018, 'ЛогЛаб Иркутск', 'Иркутск', 'Иркутская область', 'warehouse', 2401, 'F018', '2R18'),
+(2401025, 'ЛогЛаб Хабаровск', 'Хабаровск', 'Хабаровский край', 'warehouse', 2401, 'F025', '2R25');
 
--- Остатки
-INSERT INTO available_balances (warehouse_code, product_code, available, plan, source) VALUES
-(2001, 10001, 600, 600, 'manual'),
-(2002, 10002, 200, 200, 'manual');
 12. КЛЮЧЕВЫЕ ЗАПРОСЫ
 12.1. Расчет норматива для продукта
 sql
