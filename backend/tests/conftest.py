@@ -140,14 +140,28 @@ async def db_ready() -> AsyncGenerator[None, None]:
         )
         await connection.execute(
             text(
-                "CREATE UNIQUE INDEX IF NOT EXISTS uq_objects_erp_plant_code "
-                "ON objects(erp_plant_code)"
+                "ALTER TABLE objects "
+                "DROP CONSTRAINT IF EXISTS objects_erp_plant_code_key"
             )
         )
         await connection.execute(
             text(
-                "CREATE UNIQUE INDEX IF NOT EXISTS uq_objects_erp_warehouse_code "
-                "ON objects(erp_warehouse_code)"
+                "ALTER TABLE objects "
+                "DROP CONSTRAINT IF EXISTS objects_erp_warehouse_code_key"
+            )
+        )
+        await connection.execute(text("DROP INDEX IF EXISTS objects_erp_plant_code_key"))
+        await connection.execute(
+            text("DROP INDEX IF EXISTS objects_erp_warehouse_code_key")
+        )
+        await connection.execute(text("DROP INDEX IF EXISTS uq_objects_erp_plant_code"))
+        await connection.execute(text("DROP INDEX IF EXISTS uq_objects_erp_warehouse_code"))
+        await connection.execute(text("DROP INDEX IF EXISTS uq_objects_loading_point"))
+        await connection.execute(
+            text(
+                "CREATE UNIQUE INDEX uq_objects_loading_point "
+                "ON objects(loading_point) "
+                "WHERE loading_point IS NOT NULL AND deleted_at IS NULL"
             )
         )
         await connection.execute(text("""
@@ -390,9 +404,15 @@ async def catalog(db_ready: None) -> dict[str, int]:
             if existing is None:
                 session.add(item)
                 continue
-            if item.type == "plant" and existing.erp_plant_code is None:
+            existing.deleted_at = None
+            existing.name = item.name
+            existing.city = item.city
+            existing.region = item.region
+            existing.type = item.type
+            existing.is_active = True
+            if item.erp_plant_code is not None:
                 existing.erp_plant_code = item.erp_plant_code
-            if item.type == "warehouse" and existing.erp_warehouse_code is None:
+            if item.erp_warehouse_code is not None:
                 existing.erp_warehouse_code = item.erp_warehouse_code
         await session.flush()
 
@@ -417,8 +437,17 @@ async def catalog(db_ready: None) -> dict[str, int]:
             ),
         ]
         for item in products:
-            if await session.get(Product, item.code) is None:
+            existing = await session.get(Product, item.code)
+            if existing is None:
                 session.add(item)
+                continue
+            existing.deleted_at = None
+            existing.name = item.name
+            existing.category = item.category
+            existing.plant_id = item.plant_id
+            existing.weight_kg = item.weight_kg
+            existing.monthly_consumption = item.monthly_consumption
+            existing.is_active = True
         await session.commit()
     return {
         "product_code": 10001,

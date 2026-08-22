@@ -74,7 +74,7 @@ erDiagram
         varchar type "plant / warehouse"
         int erp_plant_code "ERP завод, 4 цифры"
         varchar erp_warehouse_code "ERP склад, 4 символа"
-        varchar loading_point "пункт погрузки, 4 символа"
+        varchar loading_point "пункт отгрузки, уникальный"
         boolean is_active "активный"
         uuid last_modified_by FK "кто изменил"
         timestamp last_modified_at "когда изменили"
@@ -355,8 +355,8 @@ CREATE TABLE objects (
     region TEXT,
     address TEXT,
     type VARCHAR(20) NOT NULL CHECK (type IN ('plant', 'warehouse')),
-    erp_plant_code INTEGER UNIQUE,
-    erp_warehouse_code VARCHAR(4) UNIQUE,
+    erp_plant_code INTEGER,
+    erp_warehouse_code VARCHAR(4),
     loading_point VARCHAR(4),
     is_active BOOLEAN DEFAULT true,
     last_modified_by UUID REFERENCES users(id),
@@ -372,6 +372,8 @@ CREATE INDEX idx_objects_last_modified_at ON objects(last_modified_at);
 CREATE INDEX idx_objects_last_modified_by ON objects(last_modified_by);
 CREATE INDEX idx_objects_erp_plant_code ON objects(erp_plant_code) WHERE erp_plant_code IS NOT NULL;
 CREATE INDEX idx_objects_erp_warehouse_code ON objects(erp_warehouse_code) WHERE erp_warehouse_code IS NOT NULL;
+CREATE UNIQUE INDEX uq_objects_loading_point ON objects(loading_point)
+    WHERE loading_point IS NOT NULL AND deleted_at IS NULL;
 Поля:
 
 Поле	Тип	Обязательное	Описание
@@ -381,9 +383,9 @@ city	TEXT	✅	Город
 region	TEXT	❌	Регион
 address	TEXT	❌	Адрес
 type	VARCHAR(20)	✅	plant или warehouse
-erp_plant_code	INTEGER	❌	Номер завода в ERP (4 цифры, уникальный; обязателен для plant)
-erp_warehouse_code	VARCHAR(4)	❌	Номер склада в ERP (4 символа, уникальный; обязателен для warehouse)
-loading_point	VARCHAR(4)	❌	Пункт погрузки ERP (4 символа)
+erp_plant_code	INTEGER	❌	Номер завода в ERP (4 цифры; обязателен для plant; не уникален)
+erp_warehouse_code	VARCHAR(4)	❌	Номер склада в ERP (4 символа; обязателен для warehouse; не уникален)
+loading_point	VARCHAR(4)	❌	Пункт отгрузки ERP (4 символа; уникален среди неудалённых, если заполнен)
 is_active	BOOLEAN	✅	Активный (по умолчанию true)
 last_modified_by	UUID	❌	Кто изменил → users.id
 last_modified_at	TIMESTAMP	❌	Когда изменили
@@ -1051,6 +1053,7 @@ EXECUTE FUNCTION trigger_create_normative();
 17	017_balance_unit_kg.sql	available_balances.unit: шт, т, ШТ, КГ
 18	018_product_gtin_parent_relax.sql	products: снять UNIQUE с gtin, снять FK parent/children
 19	019_sync_metadata.sql	sync_metadata (дата и автор последней загрузки остатков)
+20	020_object_uniqueness.sql	objects: снять UNIQUE с ERP-кодов, UNIQUE на loading_point
 10	010_functions.sql	Все функции
 11	011_views.sql	Все представления
 12	012_triggers.sql	Все триггеры

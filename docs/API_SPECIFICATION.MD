@@ -777,8 +777,8 @@ file	file	Excel-файл (.xlsx / .xls)
 
 Колонка	Поле	Описание
 1	product_code	Артикул (ID продукта → products.code)
-3	erp_plant_code	Завод ERP → objects.erp_plant_code → objects.code
-5	erp_warehouse_code	Склад ERP → objects.erp_warehouse_code → objects.code
+3	erp_plant_code	Завод ERP → objects.erp_plant_code → objects.code (если несколько заводов с одним кодом — активный с наименьшим `code`)
+5	erp_warehouse_code	Склад ERP → objects.erp_warehouse_code → objects.code (если несколько складов с одним кодом — активный с наименьшим `code`)
 17	unit	Единица измерения: `ШТ` или `КГ` (пусто → `ШТ`)
 19	available	Доступно (факт − заказы клиентов)
 20	plan	Запланировано (available + разнарядки)
@@ -1416,10 +1416,11 @@ json
 - `code` — целое число > 0, уникален (иначе 409 ALREADY_EXISTS)
 - `name`, `city` — не пустые
 - `type` — `plant` или `warehouse`
-- для `plant`: `erp_plant_code` обязателен, 4 цифры (1000-9999); `erp_warehouse_code` = null
-- для `warehouse`: `erp_warehouse_code` обязателен, 4 символа (буквы/цифры); `erp_plant_code` = null
-- `loading_point` — опционально, если заполнен: 4 символа (буквы/цифры)
-- `erp_plant_code` и `erp_warehouse_code` уникальны в таблице (иначе 409 CONFLICT)
+- для `plant`: `erp_plant_code` обязателен, 4 цифры (1000-9999)
+- для `warehouse`: `erp_warehouse_code` обязателен, 4 символа (буквы/цифры)
+- `erp_plant_code`, `erp_warehouse_code` и `loading_point` можно заполнять для **любого** типа объекта
+- `loading_point` — опционально, если заполнен: 4 символа (буквы/цифры); уникален среди неудалённых объектов (иначе 409 CONFLICT «Пункт отгрузки уже используется»). Пустые значения могут повторяться
+- `erp_plant_code` и `erp_warehouse_code` **не** уникальны: одинаковые коды ERP можно задать нескольким объектам
 - `is_active` по умолчанию true
 - невалидные ERP-поля → 400 VALIDATION_ERROR
 - `last_modified_by` / `last_modified_at` заполняются автоматически

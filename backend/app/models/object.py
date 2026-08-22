@@ -46,6 +46,14 @@ class Object(TimestampMixin, SoftDeleteMixin, Base):
             "erp_warehouse_code",
             postgresql_where=text("erp_warehouse_code IS NOT NULL"),
         ),
+        Index(
+            "uq_objects_loading_point",
+            "loading_point",
+            unique=True,
+            postgresql_where=text(
+                "loading_point IS NOT NULL AND deleted_at IS NULL"
+            ),
+        ),
     )
 
     code: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -54,8 +62,8 @@ class Object(TimestampMixin, SoftDeleteMixin, Base):
     region: Mapped[str | None] = mapped_column(Text)
     address: Mapped[str | None] = mapped_column(Text)
     type: Mapped[str] = mapped_column(String(20), nullable=False)
-    erp_plant_code: Mapped[int | None] = mapped_column(Integer, unique=True)
-    erp_warehouse_code: Mapped[str | None] = mapped_column(String(4), unique=True)
+    erp_plant_code: Mapped[int | None] = mapped_column(Integer)
+    erp_warehouse_code: Mapped[str | None] = mapped_column(String(4))
     loading_point: Mapped[str | None] = mapped_column(String(4))
     is_active: Mapped[bool] = mapped_column(
         Boolean,

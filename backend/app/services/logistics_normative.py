@@ -644,26 +644,34 @@ class ParsedBalanceRow:
 
 
 async def _find_plant(db: AsyncSession, erp_plant_code: int) -> Object:
-    plant = await db.scalar(
-        select(Object).where(
+    result = await db.execute(
+        select(Object)
+        .where(
             Object.erp_plant_code == erp_plant_code,
             Object.type == "plant",
             Object.deleted_at.is_(None),
         )
+        .order_by(Object.is_active.desc(), Object.code.asc())
+        .limit(1)
     )
+    plant = result.scalars().first()
     if plant is None:
         raise ValueError(f"Завод ERP {erp_plant_code} не найден")
     return plant
 
 
 async def _find_warehouse(db: AsyncSession, erp_warehouse_code: str) -> Object:
-    warehouse = await db.scalar(
-        select(Object).where(
+    result = await db.execute(
+        select(Object)
+        .where(
             Object.erp_warehouse_code == erp_warehouse_code,
             Object.type == "warehouse",
             Object.deleted_at.is_(None),
         )
+        .order_by(Object.is_active.desc(), Object.code.asc())
+        .limit(1)
     )
+    warehouse = result.scalars().first()
     if warehouse is None:
         raise ValueError(f"Склад ERP {erp_warehouse_code} не найден")
     return warehouse

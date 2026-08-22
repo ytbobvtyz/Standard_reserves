@@ -15,6 +15,7 @@ DELETE_OK_CODE = 3003
 DELETE_BLOCKED_WAREHOUSE = 3004
 DELETE_BLOCKED_PLANT = 3005
 DUPLICATE_ERP_CODE = 3002
+DUPLICATE_WAREHOUSE_CODE = 3007
 
 
 async def _cleanup_admin_objects() -> None:
@@ -26,6 +27,7 @@ async def _cleanup_admin_objects() -> None:
         DELETE_BLOCKED_PLANT,
         18210,
         DUPLICATE_ERP_CODE,
+        DUPLICATE_WAREHOUSE_CODE,
     ]
     async with AsyncSessionLocal() as session:
         await session.execute(
@@ -292,7 +294,7 @@ async def test_create_erp_validation(
         await _cleanup_admin_objects()
 
 
-async def test_erp_codes_are_unique(
+async def test_erp_codes_can_repeat(
     client: AsyncClient, logistics_user: AuthUser, catalog: dict[str, int]
 ) -> None:
     await _cleanup_admin_objects()
@@ -307,7 +309,7 @@ async def test_erp_codes_are_unique(
                 "city": "Москва",
                 "type": "plant",
                 "erp_plant_code": 2499,
-                "loading_point": "2R05",
+                "loading_point": "2Z01",
             },
         )
         assert first.status_code == 200, first.text
@@ -322,10 +324,11 @@ async def test_erp_codes_are_unique(
                 "city": "Москва",
                 "type": "plant",
                 "erp_plant_code": 2499,
+                "loading_point": "2Z02",
             },
         )
-        assert duplicate.status_code == 409, duplicate.text
-        assert duplicate.json()["error"]["code"] == "CONFLICT"
+        assert duplicate.status_code == 200, duplicate.text
+        assert duplicate.json()["data"]["erp_plant_code"] == 2499
 
         warehouse = await client.post(
             "/api/v1/references/objects",
@@ -345,15 +348,150 @@ async def test_erp_codes_are_unique(
             "/api/v1/references/objects",
             headers=auth_header(token),
             json={
-                "code": DUPLICATE_ERP_CODE,
+                "code": DUPLICATE_WAREHOUSE_CODE,
                 "name": "Склад Дубль",
                 "city": "Москва",
                 "type": "warehouse",
                 "erp_warehouse_code": "T001",
             },
         )
-        assert duplicate_wh.status_code == 409
-        assert duplicate_wh.json()["error"]["code"] == "CONFLICT"
+        assert duplicate_wh.status_code == 200, duplicate_wh.text
+        assert duplicate_wh.json()["data"]["erp_warehouse_code"] == "T001"
+    finally:
+        await _cleanup_admin_objects()
+
+
+async def test_loading_point_is_unique(
+    client: AsyncClient, logistics_user: AuthUser, catalog: dict[str, int]
+) -> None:
+    await _cleanup_admin_objects()
+    token = await login_token(client, logistics_user)
+    try:
+        first = await client.post(
+            "/api/v1/references/objects",
+            headers=auth_header(token),
+            json={
+                "code": NEW_CODE,
+                "name": "Склад с пунктом",
+                "city": "Москва",
+                "type": "warehouse",
+                "erp_warehouse_code": "T011",
+                "loading_point": "2Z99",
+            },
+        )
+        assert first.status_code == 200, first.text
+
+        duplicate = await client.post(
+            "/api/v1/references/objects",
+            headers=auth_header(token),
+            json={
+                "code": DUPLICATE_WAREHOUSE_CODE,
+                "name": "Склад дубль пункта",
+                "city": "Москва",
+                "type": "warehouse",
+                "erp_warehouse_code": "T012",
+                "loading_point": "2z99",
+            },
+        )
+        assert duplicate.status_code == 409, duplicate.text
+        assert duplicate.json()["error"]["code"] == "CONFLICT"
+        assert "Пункт отгрузки" in duplicate.json()["error"]["message"]
+
+        empty_one = await client.post(
+            "/api/v1/references/objects",
+            headers=auth_header(token),
+            json={
+                "code": DELETE_OK_CODE,
+                "name": "Склад без пункта 1",
+                "city": "Москва",
+                "type": "warehouse",
+                "erp_warehouse_code": "T013",
+            },
+        )
+        assert empty_one.status_code == 200, empty_one.text
+
+        empty_two = await client.post(
+            "/api/v1/references/objects",
+            headers=auth_header(token),
+            json={
+                "code": DUPLICATE_ERP_CODE,
+                "name": "Склад без пункта 2",
+                "city": "Москва",
+                "type": "warehouse",
+                "erp_warehouse_code": "T014",
+            },
+        )
+        assert empty_two.status_code == 200, empty_two.text
+
+        conflict_update = await client.put(
+            f"/api/v1/references/objects/{DELETE_OK_CODE}",
+            headers=auth_header(token),
+            json={"loading_point": "2Z99"},
+        )
+        assert conflict_update.status_code == 409, conflict_update.text
+
+        same_object = await client.put(
+            f"/api/v1/references/objects/{NEW_CODE}",
+            headers=auth_header(token),
+            json={"loading_point": "2Z99"},
+        )
+        assert same_object.status_code == 200, same_object.text
+    finally:
+        await _cleanup_admin_objects()
+
+
+async def test_any_object_type_can_store_all_erp_fields(
+    client: AsyncClient, logistics_user: AuthUser, catalog: dict[str, int]
+) -> None:
+    await _cleanup_admin_objects()
+    token = await login_token(client, logistics_user)
+    try:
+        plant = await client.post(
+            "/api/v1/references/objects",
+            headers=auth_header(token),
+            json={
+                "code": NEW_PLANT_CODE,
+                "name": "Завод с складом ERP",
+                "city": "Москва",
+                "type": "plant",
+                "erp_plant_code": 2488,
+                "erp_warehouse_code": "P001",
+                "loading_point": "2P01",
+            },
+        )
+        assert plant.status_code == 200, plant.text
+        plant_data = plant.json()["data"]
+        assert plant_data["erp_plant_code"] == 2488
+        assert plant_data["erp_warehouse_code"] == "P001"
+        assert plant_data["loading_point"] == "2P01"
+
+        warehouse = await client.post(
+            "/api/v1/references/objects",
+            headers=auth_header(token),
+            json={
+                "code": NEW_CODE,
+                "name": "Склад с заводом ERP",
+                "city": "Москва",
+                "type": "warehouse",
+                "erp_plant_code": 2489,
+                "erp_warehouse_code": "W001",
+                "loading_point": "2W01",
+            },
+        )
+        assert warehouse.status_code == 200, warehouse.text
+        warehouse_data = warehouse.json()["data"]
+        assert warehouse_data["erp_plant_code"] == 2489
+        assert warehouse_data["erp_warehouse_code"] == "W001"
+        assert warehouse_data["loading_point"] == "2W01"
+
+        updated_plant = await client.put(
+            f"/api/v1/references/objects/{NEW_PLANT_CODE}",
+            headers=auth_header(token),
+            json={"erp_warehouse_code": "P009"},
+        )
+        assert updated_plant.status_code == 200, updated_plant.text
+        assert updated_plant.json()["data"]["erp_plant_code"] == 2488
+        assert updated_plant.json()["data"]["erp_warehouse_code"] == "P009"
     finally:
         await _cleanup_admin_objects()
 

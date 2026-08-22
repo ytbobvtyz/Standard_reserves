@@ -138,6 +138,9 @@ describe('ObjectsPage', () => {
     expect(screen.getByLabelText('Завод')).toBeTruthy()
     expect(screen.getByLabelText('Склад')).toBeTruthy()
     expect(screen.getByLabelText('Пункт отгрузки')).toBeTruthy()
+    expect(screen.getByLabelText('Завод')).toHaveProperty('disabled', false)
+    expect(screen.getByLabelText('Склад')).toHaveProperty('disabled', false)
+    expect(screen.getByLabelText('Пункт отгрузки')).toHaveProperty('disabled', false)
     expect(screen.getByRole('button', { name: 'Создать' })).toBeTruthy()
   })
 

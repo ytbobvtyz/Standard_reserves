@@ -51,10 +51,6 @@ def _normalize_token(value: str | None) -> str | None:
 def _normalize_erp_fields(obj: Object) -> None:
     obj.erp_warehouse_code = _normalize_token(obj.erp_warehouse_code)
     obj.loading_point = _normalize_token(obj.loading_point)
-    if obj.type == "plant":
-        obj.erp_warehouse_code = None
-    elif obj.type == "warehouse":
-        obj.erp_plant_code = None
 
 
 def _validate_erp_fields(obj: Object) -> None:
@@ -64,54 +60,53 @@ def _validate_erp_fields(obj: Object) -> None:
             "VALIDATION_ERROR",
             "Пункт погрузки должен содержать 4 символа (буквы или цифры)",
         )
-    if obj.type == "plant":
-        if obj.erp_plant_code is None:
-            raise APIError(
-                400,
-                "VALIDATION_ERROR",
-                "Для завода укажите номер завода ERP",
-            )
-        if not ERP_PLANT_MIN <= obj.erp_plant_code <= ERP_PLANT_MAX:
-            raise APIError(
-                400,
-                "VALIDATION_ERROR",
-                "Номер завода ERP должен быть 4-значным (1000-9999)",
-            )
-        return
-    if not obj.erp_warehouse_code:
+    if obj.erp_plant_code is not None and not (
+        ERP_PLANT_MIN <= obj.erp_plant_code <= ERP_PLANT_MAX
+    ):
         raise APIError(
             400,
             "VALIDATION_ERROR",
-            "Для склада укажите номер склада ERP",
+            "Номер завода ERP должен быть 4-значным (1000-9999)",
         )
-    if not ERP_TOKEN_RE.fullmatch(obj.erp_warehouse_code):
+    if obj.erp_warehouse_code is not None and not ERP_TOKEN_RE.fullmatch(
+        obj.erp_warehouse_code
+    ):
         raise APIError(
             400,
             "VALIDATION_ERROR",
             "Номер склада ERP должен содержать 4 символа (буквы или цифры)",
         )
+    if obj.type == "plant" and obj.erp_plant_code is None:
+        raise APIError(
+            400,
+            "VALIDATION_ERROR",
+            "Для завода укажите номер завода ERP",
+        )
+    if obj.type == "warehouse" and not obj.erp_warehouse_code:
+        raise APIError(
+            400,
+            "VALIDATION_ERROR",
+            "Для склада укажите номер склада ERP",
+        )
 
 
-async def _ensure_erp_unique(
+async def _ensure_loading_point_unique(
     db: AsyncSession,
     obj: Object,
     *,
     exclude_code: int | None = None,
 ) -> None:
-    if obj.erp_plant_code is not None:
-        stmt = select(Object.code).where(Object.erp_plant_code == obj.erp_plant_code)
-        if exclude_code is not None:
-            stmt = stmt.where(Object.code != exclude_code)
-        if await db.scalar(stmt) is not None:
-            raise APIError(409, "CONFLICT", "Номер завода ERP уже используется")
-    if obj.erp_warehouse_code is not None:
+    if obj.loading_point is None:
+        return
+    with db.no_autoflush:
         stmt = select(Object.code).where(
-            Object.erp_warehouse_code == obj.erp_warehouse_code
+            Object.loading_point == obj.loading_point,
+            Object.deleted_at.is_(None),
         )
         if exclude_code is not None:
             stmt = stmt.where(Object.code != exclude_code)
         if await db.scalar(stmt) is not None:
-            raise APIError(409, "CONFLICT", "Номер склада ERP уже используется")
+            raise APIError(409, "CONFLICT", "Пункт отгрузки уже используется")
 
 
 def _audit(
@@ -167,7 +162,7 @@ async def create_object(
     )
     _normalize_erp_fields(obj)
     _validate_erp_fields(obj)
-    await _ensure_erp_unique(db, obj)
+    await _ensure_loading_point_unique(db, obj)
     _touch(obj, user)
     db.add(obj)
     _audit(
@@ -186,7 +181,7 @@ async def create_object(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        raise APIError(409, "CONFLICT", "ERP-идентификатор уже используется") from exc
+        raise APIError(409, "CONFLICT", "Пункт отгрузки уже используется") from exc
     created = await _load_object(db, body.code)
     assert created is not None
     return to_object_detail(created)
@@ -216,7 +211,7 @@ async def update_object(
         setattr(obj, field, value)
     _normalize_erp_fields(obj)
     _validate_erp_fields(obj)
-    await _ensure_erp_unique(db, obj, exclude_code=code)
+    await _ensure_loading_point_unique(db, obj, exclude_code=code)
     _touch(obj, user)
     _audit(
         db,
@@ -229,7 +224,7 @@ async def update_object(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        raise APIError(409, "CONFLICT", "ERP-идентификатор уже используется") from exc
+        raise APIError(409, "CONFLICT", "Пункт отгрузки уже используется") from exc
     db.expire_all()
     updated = await _load_object(db, code)
     assert updated is not None
