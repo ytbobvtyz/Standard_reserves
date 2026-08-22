@@ -11,10 +11,16 @@ from sqlalchemy import delete, select
 from app.core.database import AsyncSessionLocal
 from app.models.available_balance import AvailableBalance
 from app.models.normative import Normative
+from app.models.object import Object
 from app.models.product import Product
 from app.models.request import Request
 from app.models.request_item import RequestItem
 from app.models.sync_metadata import SyncMetadata
+from app.services.logistics_normative import (
+    _parse_int_cell,
+    _parse_quantity,
+    _parse_warehouse_code,
+)
 from tests.conftest import AuthUser, auth_header, delete_request, login_token
 
 TEST_PRODUCT_DEFICIT = 19001
@@ -867,3 +873,144 @@ async def test_upload_balances_reads_unit_sht_kg_and_rejects_invalid(
     assert item["available"] == 600
     assert item["plan"] == 600
     assert item["deficit"] == 400
+
+
+def test_parse_excel_codes_normalizes_float_and_string() -> None:
+    assert _parse_int_cell(2401, "завод") == 2401
+    assert _parse_int_cell(2401.0, "завод") == 2401
+    assert _parse_int_cell("2401.0", "завод") == 2401
+    assert _parse_int_cell("2401", "завод") == 2401
+    assert _parse_warehouse_code("F005") == "F005"
+    assert _parse_warehouse_code("f005") == "F005"
+    assert _parse_warehouse_code(2401.0) == "2401"
+    assert _parse_quantity(-120.5, "available") == Decimal("-120.50")
+    assert _parse_quantity("-80,00", "plan") == Decimal("-80.00")
+    assert _parse_quantity(0, "available") == Decimal("0.00")
+
+
+async def test_upload_balances_finds_erp_plant_code_on_warehouse(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    logistics_catalog: dict,
+) -> None:
+    """erp_plant_code may live on warehouses when there is no type=plant row."""
+    token = await login_token(client, logistics_user)
+    warehouse_code = 2002
+    erp_plant_only_on_warehouse = 2410
+    previous_plant_code = None
+    async with AsyncSessionLocal() as session:
+        warehouse = await session.get(Object, warehouse_code)
+        assert warehouse is not None
+        previous_plant_code = warehouse.erp_plant_code
+        warehouse.erp_plant_code = erp_plant_only_on_warehouse
+        await session.commit()
+
+    try:
+        content = _build_balances_xlsx(
+            [
+                _balance_excel_row(
+                    product_code=TEST_PRODUCT_DEFICIT,
+                    plant=2410.0,
+                    warehouse="F006",
+                    available=33,
+                    plan=44,
+                )
+            ]
+        )
+        response = await client.post(
+            "/api/v1/logistics/normative/upload",
+            headers=auth_header(token),
+            files={
+                "file": (
+                    "balances.xlsx",
+                    content,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()["data"]
+        assert data["uploaded"] == 1
+        assert data["errors"] == 0
+        assert data["error_details"] == []
+
+        async with AsyncSessionLocal() as session:
+            stored = await session.get(
+                AvailableBalance,
+                (warehouse_code, TEST_PRODUCT_DEFICIT),
+            )
+            assert stored is not None
+            assert stored.available == Decimal("33")
+            assert stored.plan == Decimal("44")
+            await session.execute(
+                delete(AvailableBalance).where(
+                    AvailableBalance.warehouse_code == warehouse_code,
+                    AvailableBalance.product_code == TEST_PRODUCT_DEFICIT,
+                )
+            )
+            await session.commit()
+    finally:
+        async with AsyncSessionLocal() as session:
+            warehouse = await session.get(Object, warehouse_code)
+            if warehouse is not None:
+                warehouse.erp_plant_code = previous_plant_code
+                await session.commit()
+
+
+async def test_upload_balances_accepts_negative_available_and_plan(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    logistics_catalog: dict,
+) -> None:
+    token = await login_token(client, logistics_user)
+    content = _build_balances_xlsx(
+        [
+            _balance_excel_row(
+                product_code=TEST_PRODUCT_DEFICIT,
+                plant=2401,
+                warehouse="F005",
+                available=-80,
+                plan=-30,
+            )
+        ]
+    )
+    response = await client.post(
+        "/api/v1/logistics/normative/upload",
+        headers=auth_header(token),
+        files={
+            "file": (
+                "balances.xlsx",
+                content,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["uploaded"] == 1
+    assert data["errors"] == 0
+
+    async with AsyncSessionLocal() as session:
+        stored = await session.get(
+            AvailableBalance,
+            (logistics_catalog["warehouse_code"], TEST_PRODUCT_DEFICIT),
+        )
+        assert stored is not None
+        assert stored.available == Decimal("-80")
+        assert stored.plan == Decimal("-30")
+
+    dashboard = await client.get(
+        "/api/v1/logistics/normative/dashboard",
+        params={"warehouse_code": logistics_catalog["warehouse_code"]},
+        headers=auth_header(token),
+    )
+    assert dashboard.status_code == 200, dashboard.text
+    warehouse = _warehouse(
+        dashboard.json()["data"], logistics_catalog["warehouse_code"]
+    )
+    item = _item(warehouse, TEST_PRODUCT_DEFICIT)
+    assert item["available"] == -80
+    assert item["plan"] == -30
+    assert item["normative_quantity"] == 1000
+    assert item["deficit"] == 1030
+    assert item["status"] == "warning"

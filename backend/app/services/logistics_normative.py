@@ -1,3 +1,4 @@
+import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -7,7 +8,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from openpyxl import Workbook, load_workbook
-from sqlalchemy import delete, select
+from sqlalchemy import case, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -33,6 +34,8 @@ from app.schemas.logistics import (
     Unit,
     WarehouseDeficit,
 )
+
+logger = logging.getLogger(__name__)
 
 ESTIMATED_DELIVERY_DAYS = 5
 KG_IN_TON = Decimal("1000")
@@ -574,27 +577,55 @@ def _looks_like_header(value: Any) -> bool:
 def _parse_int_cell(value: Any, field: str) -> int:
     if _is_blank(value):
         raise ValueError(f"Укажите {field}")
+    if isinstance(value, bool):
+        raise ValueError(f"{field} должен быть числом")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        as_int = int(value)
+        if float(as_int) == value:
+            return as_int
+        raise ValueError(f"{field} должен быть целым числом")
+    if isinstance(value, Decimal):
+        as_int = int(value)
+        if Decimal(as_int) == value:
+            return as_int
+        raise ValueError(f"{field} должен быть целым числом")
     text = str(value).strip().replace(",", ".")
     if text.endswith(".0"):
         text = text[:-2]
     try:
-        return int(float(text))
+        parsed = float(text)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{field} должен быть числом") from exc
+    as_int = int(parsed)
+    if parsed != float(as_int):
+        raise ValueError(f"{field} должен быть целым числом")
+    return as_int
 
 
 def _parse_warehouse_code(value: Any) -> str:
     if _is_blank(value):
         raise ValueError("Укажите склад (erp_warehouse_code)")
-    text = str(value).strip().upper()
-    if text.endswith(".0") and text[:-2].replace(".", "", 1).isdigit():
-        text = text[:-2]
-    try:
-        as_number = int(float(text.replace(",", ".")))
-        if text.replace(",", ".") in {str(as_number), f"{as_number}.0"}:
-            text = str(as_number)
-    except ValueError:
-        pass
+    if isinstance(value, bool):
+        raise ValueError("erp_warehouse_code должен содержать до 4 символов")
+    if isinstance(value, int):
+        text = str(value)
+    elif isinstance(value, float):
+        as_int = int(value)
+        if float(as_int) != value:
+            raise ValueError("erp_warehouse_code должен содержать до 4 символов")
+        text = str(as_int)
+    else:
+        text = str(value).strip().upper()
+        if text.endswith(".0") and text[:-2].replace(".", "", 1).isdigit():
+            text = text[:-2]
+        try:
+            as_number = int(float(text.replace(",", ".")))
+            if text.replace(",", ".") in {str(as_number), f"{as_number}.0"}:
+                text = str(as_number)
+        except ValueError:
+            pass
     if len(text) > 4:
         raise ValueError("erp_warehouse_code должен содержать до 4 символов")
     return text
@@ -611,15 +642,19 @@ def _parse_balance_unit(value: Any) -> str:
     raise ValueError("Единица измерения должна быть ШТ или КГ")
 
 
-def _parse_non_negative(value: Any, field: str) -> Decimal:
+def _parse_quantity(value: Any, field: str) -> Decimal:
     if _is_blank(value):
         raise ValueError(f"Укажите {field}")
-    try:
-        amount = Decimal(str(value).strip().replace(",", "."))
-    except (InvalidOperation, TypeError, ValueError) as exc:
-        raise ValueError(f"{field} должен быть числом") from exc
-    if amount < 0:
-        raise ValueError(f"{field} не может быть отрицательным")
+    if isinstance(value, bool):
+        raise ValueError(f"{field} должен быть числом")
+    if isinstance(value, (int, float, Decimal)):
+        amount = Decimal(str(value))
+    else:
+        text = str(value).strip().replace(" ", "").replace(",", ".")
+        try:
+            amount = Decimal(text)
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise ValueError(f"{field} должен быть числом") from exc
     return amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
@@ -644,27 +679,53 @@ class ParsedBalanceRow:
 
 
 async def _find_plant(db: AsyncSession, erp_plant_code: int) -> Object:
+    logger.info(
+        "Plant lookup: searching objects.erp_plant_code=%s (int)",
+        erp_plant_code,
+    )
     result = await db.execute(
         select(Object)
         .where(
             Object.erp_plant_code == erp_plant_code,
-            Object.type == "plant",
             Object.deleted_at.is_(None),
         )
-        .order_by(Object.is_active.desc(), Object.code.asc())
+        .order_by(
+            case((Object.type == "plant", 0), else_=1),
+            Object.is_active.desc(),
+            Object.code.asc(),
+        )
         .limit(1)
     )
     plant = result.scalars().first()
     if plant is None:
+        logger.warning(
+            "Plant lookup: no object with erp_plant_code=%s "
+            "(not searching objects.code)",
+            erp_plant_code,
+        )
         raise ValueError(f"Завод ERP {erp_plant_code} не найден")
+    logger.info(
+        "Plant lookup: found objects.code=%s name=%r type=%s "
+        "erp_plant_code=%s is_active=%s",
+        plant.code,
+        plant.name,
+        plant.type,
+        plant.erp_plant_code,
+        plant.is_active,
+    )
     return plant
 
 
 async def _find_warehouse(db: AsyncSession, erp_warehouse_code: str) -> Object:
+    warehouse_key = str(erp_warehouse_code)
+    logger.info(
+        "Warehouse lookup: searching objects.erp_warehouse_code=%r (str)",
+        warehouse_key,
+    )
     result = await db.execute(
         select(Object)
         .where(
-            Object.erp_warehouse_code == erp_warehouse_code,
+            Object.erp_warehouse_code == warehouse_key,
             Object.type == "warehouse",
             Object.deleted_at.is_(None),
         )
@@ -673,11 +734,23 @@ async def _find_warehouse(db: AsyncSession, erp_warehouse_code: str) -> Object:
     )
     warehouse = result.scalars().first()
     if warehouse is None:
-        raise ValueError(f"Склад ERP {erp_warehouse_code} не найден")
+        logger.warning(
+            "Warehouse lookup: no warehouse with erp_warehouse_code=%r",
+            warehouse_key,
+        )
+        raise ValueError(f"Склад ERP {warehouse_key} не найден")
+    logger.info(
+        "Warehouse lookup: found objects.code=%s name=%r type=%s erp_warehouse_code=%r",
+        warehouse.code,
+        warehouse.name,
+        warehouse.type,
+        warehouse.erp_warehouse_code,
+    )
     return warehouse
 
 
 async def _find_product(db: AsyncSession, product_code: int) -> Product:
+    logger.info("Product lookup: searching products.code=%s (int)", product_code)
     product = await db.scalar(
         select(Product).where(
             Product.code == product_code,
@@ -685,7 +758,13 @@ async def _find_product(db: AsyncSession, product_code: int) -> Product:
         )
     )
     if product is None:
+        logger.warning("Product lookup: no product with code=%s", product_code)
         raise ValueError(f"Продукт {product_code} не найден")
+    logger.info(
+        "Product lookup: found products.code=%s name=%r",
+        product.code,
+        product.name,
+    )
     return product
 
 
@@ -766,17 +845,27 @@ async def upload_balances(
         if row is None or _row_empty(row):
             continue
         try:
-            product_code = _parse_int_cell(
-                _cell(row, EXCEL_COL_PRODUCT), "артикул (product_code)"
+            raw_plant = _cell(row, EXCEL_COL_PLANT)
+            raw_warehouse = _cell(row, EXCEL_COL_WAREHOUSE)
+            raw_product = _cell(row, EXCEL_COL_PRODUCT)
+            product_code = _parse_int_cell(raw_product, "артикул (product_code)")
+            erp_plant_code = _parse_int_cell(raw_plant, "завод (erp_plant_code)")
+            erp_warehouse_code = _parse_warehouse_code(raw_warehouse)
+            logger.info(
+                "Excel row %s: plant raw=%r (%s) -> %s; "
+                "warehouse raw=%r (%s) -> %r; product raw=%r -> %s",
+                excel_row,
+                raw_plant,
+                type(raw_plant).__name__,
+                erp_plant_code,
+                raw_warehouse,
+                type(raw_warehouse).__name__,
+                erp_warehouse_code,
+                raw_product,
+                product_code,
             )
-            erp_plant_code = _parse_int_cell(
-                _cell(row, EXCEL_COL_PLANT), "завод (erp_plant_code)"
-            )
-            erp_warehouse_code = _parse_warehouse_code(_cell(row, EXCEL_COL_WAREHOUSE))
-            available = _parse_non_negative(
-                _cell(row, EXCEL_COL_AVAILABLE), "available"
-            )
-            plan = _parse_non_negative(_cell(row, EXCEL_COL_PLAN), "plan")
+            available = _parse_quantity(_cell(row, EXCEL_COL_AVAILABLE), "available")
+            plan = _parse_quantity(_cell(row, EXCEL_COL_PLAN), "plan")
             unit = _parse_balance_unit(_cell(row, EXCEL_COL_UNIT))
             await _find_plant(db, erp_plant_code)
             warehouse = await _find_warehouse(db, erp_warehouse_code)

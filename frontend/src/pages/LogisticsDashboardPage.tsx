@@ -42,6 +42,14 @@ function formatQty(value: number, unit: Unit): string {
   }).format(value)
 }
 
+function QuantityCell({ value, unit }: { value: number; unit: Unit }) {
+  return (
+    <span style={value < 0 ? { color: '#cf1322', fontWeight: 600 } : undefined}>
+      {formatQty(value, unit)}
+    </span>
+  )
+}
+
 function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
@@ -182,13 +190,13 @@ export function LogisticsDashboardPage() {
       title: 'Доступно',
       dataIndex: 'available',
       width: 120,
-      render: (value: number) => formatQty(value, unit),
+      render: (value: number) => <QuantityCell value={value} unit={unit} />,
     },
     {
       title: 'Запланировано',
       dataIndex: 'plan',
       width: 140,
-      render: (value: number) => formatQty(value, unit),
+      render: (value: number) => <QuantityCell value={value} unit={unit} />,
     },
     {
       title: 'Дефицит',
