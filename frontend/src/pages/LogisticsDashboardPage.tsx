@@ -178,6 +178,15 @@ export function LogisticsDashboardPage() {
     [visibleWarehouses],
   )
 
+  const totals = useMemo(() => {
+    const rows = visibleWarehouses.flatMap((warehouse) => warehouse.deficit_items)
+    return {
+      normative: sumItems(rows, 'normative_quantity'),
+      available: sumItems(rows, 'available'),
+      plan: sumItems(rows, 'plan'),
+    }
+  }, [visibleWarehouses])
+
   useEffect(() => {
     setSelectedWarehouseCodes((current) =>
       current.filter((code) => visibleWarehouseCodes.includes(code)),
@@ -332,10 +341,19 @@ export function LogisticsDashboardPage() {
             </Button>
           ) : null}
         </Space>
-        <Typography.Text type="secondary">
-          Дефицит: {formatQty(summary.total_deficit, unit)} {unit} · склады:{' '}
-          {summary.deficit_warehouses} · позиции: {summary.deficit_products}
-        </Typography.Text>
+        <Space direction="vertical" size={0} align="end">
+          <Typography.Text type="secondary">
+            Дефицит: {formatQty(summary.total_deficit, unit)} {unit} · склады:{' '}
+            {summary.deficit_warehouses} · позиции: {summary.deficit_products}
+          </Typography.Text>
+          <Typography.Text type="secondary">
+            Всего норматив: {formatQty(totals.normative, unit)} {unit}
+            {' · '}Всего доступно:{' '}
+            <QuantityCell value={totals.available} unit={unit} /> {unit}
+            {' · '}Всего запланировано:{' '}
+            <QuantityCell value={totals.plan} unit={unit} /> {unit}
+          </Typography.Text>
+        </Space>
       </Space>
       <Space direction="vertical" size={0}>
         {syncInfo?.last_balances_sync_at ? (
