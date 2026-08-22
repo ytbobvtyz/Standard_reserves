@@ -2,12 +2,13 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 from fastapi.responses import Response
-from sqlalchemy import Select, String, cast, func, or_, select
+from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user, get_db, require_roles
 from app.core.exceptions import APIError
+from app.core.pagination import paginate
 from app.models.object import Object
 from app.models.product import Product
 from app.models.user import User
@@ -40,10 +41,6 @@ PRODUCT_MANAGERS = require_roles("pp", "economist", "logistics")
 OBJECT_MANAGERS = require_roles("logistics")
 
 
-def _paginate(stmt: Select, page: int, limit: int) -> Select:
-    return stmt.offset((page - 1) * limit).limit(limit)
-
-
 @router.get("/products", response_model=PaginatedResponse[list[ProductListItem]])
 async def list_products(
     search: str | None = Query(default=None),
@@ -73,7 +70,7 @@ async def list_products(
         select(func.count()).select_from(Product).where(*conditions)
     )
     result = await db.execute(
-        _paginate(
+        paginate(
             select(Product)
             .options(selectinload(Product.plant))
             .where(*conditions)
@@ -201,7 +198,7 @@ async def list_objects(
 
     total = await db.scalar(select(func.count()).select_from(Object).where(*conditions))
     result = await db.execute(
-        _paginate(
+        paginate(
             select(Object).where(*conditions).order_by(Object.code),
             page,
             limit,

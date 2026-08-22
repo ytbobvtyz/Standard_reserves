@@ -515,6 +515,7 @@ Query параметры:
 
 Параметр	Тип	Описание
 type	string	normative / one_time
+client_name	string	Клиент (частичное совпадение, ILIKE)
 page	integer	Страница
 limit	integer	Записей на страницу
 Response (200):
@@ -559,18 +560,13 @@ text
 Authorization: Bearer <token>
 Действия:
 
-1. Подтвердить:
+API принимает только `approve` и `reject`. Отдельное действие `edit` **не поддерживается** (422). Изменение объёма и срока выполняется в теле `approve`.
+
+1. Подтвердить (с опциональной корректировкой объёма и срока):
 
 json
 {
     "action": "approve",
-    "comment": "Объем подтвержден"
-}
-2. Редактировать объем:
-
-json
-{
-    "action": "edit",
     "items": [
         {
             "product_code": 10001,
@@ -578,12 +574,13 @@ json
             "quantity_approved": 800
         }
     ],
-    "comment": "Снижаем объем на 20% из-за ограничений по заводу"
+    "comment": "Снижаем объем на 20% из-за ограничений по заводу",
+    "expiry_date": "2026-12-31"
 }
 
-`expiry_date` можно передать в `approve` и `edit`. Срок не может превышать 6 месяцев от `created_at`, иначе 400 INVALID_EXPIRY_DATE. Изменение срока пишется в комментарий истории согласования.
+`expiry_date` можно передать в `approve`. Срок не может превышать 6 месяцев от `created_at`, иначе 400 INVALID_EXPIRY_DATE. Изменение срока пишется в комментарий истории согласования. Если `items` не переданы, `quantity_approved` заполняется из `quantity_requested`.
 
-3. Отказать:
+2. Отказать:
 
 json
 {
@@ -626,25 +623,13 @@ text
 Authorization: Bearer <token>
 Действия:
 
-1. Подтвердить (нормативный):
+API принимает только `approve` и `reject`. Отдельное действие `edit` **не поддерживается** (422). Изменение объёма и срока выполняется в теле `approve`.
+
+1. Подтвердить (нормативный или разовый, с опциональной корректировкой):
 
 json
 {
     "action": "approve",
-    "comment": "Экономика приемлема"
-}
-1. Подтвердить (разовый):
-
-json
-{
-    "action": "approve",
-    "comment": "Доставка экономически обоснована"
-}
-2. Редактировать/отправить на доработку:
-
-json
-{
-    "action": "edit",
     "items": [
         {
             "product_code": 10001,
@@ -652,22 +637,19 @@ json
             "quantity_approved": 600
         }
     ],
-    "comment": "Снижаем объем",
-    "expiry_date": "2026-12-31"
+    "comment": "Экономика приемлема",
+    "expiry_date": "2026-10-01"
 }
 
-`expiry_date` можно передать в `approve` и `edit`. Для `approve` действует проверка 6 месяцев от `created_at` (400 INVALID_EXPIRY_DATE).
+`expiry_date` можно передать в `approve`. Для нормативного запроса действует двойная проверка:
+- максимум 6 месяцев от `created_at` (400 INVALID_EXPIRY_DATE);
+- только уменьшение: новое значение ≥ `CURRENT_DATE` и ≤ текущей `expiry_date`.
+  - 400 BAD_REQUEST «Дата окончания не может быть позже текущей»
+  - 400 BAD_REQUEST «Дата окончания не может быть раньше сегодняшнего дня»
 
-При `action = 'edit'` для **нормативного** запроса в статусе `economy_check`:
-- Можно изменить `expiry_date`
-- **Новое значение**:
-  - ✅ Должно быть **≤** текущей `expiry_date` (только уменьшать)
-  - ✅ Должно быть **≥** текущей даты (`CURRENT_DATE`)
-  - ❌ Не может быть больше текущей `expiry_date`
-- 400 BAD_REQUEST «Дата окончания не может быть позже текущей» — если новое значение > текущей `expiry_date`
-- 400 BAD_REQUEST «Дата окончания не может быть раньше сегодняшнего дня» — если новое значение < `CURRENT_DATE`
+Если `items` не переданы, `quantity_approved` заполняется из `quantity_requested`.
 
-3. Отказать:
+2. Отказать:
 
 json
 {
@@ -853,8 +835,21 @@ Request:
 
 json
 {
-    "product_codes": [10001, 10002]  // Опционально, если не указаны — все с дефицитом
+    "product_codes": [10001, 10002]
 }
+Опционально: если `product_codes` не указаны — все позиции с дефицитом по складу.
+
+6.3.1. Сформировать заказы по нескольким складам
+text
+POST /logistics/normative/generate-orders
+Права: только logistics.
+
+json
+{
+    "warehouse_codes": [2001, 2002],
+    "product_codes": [10001]
+}
+`warehouse_codes` обязателен (хотя бы один склад). Ответ тот же, что у 6.3: список заказов, сгруппированных по заводам.
 Response (200):
 
 json
@@ -942,7 +937,18 @@ json
         "total": 3
     }
 }
-6.6. Отметить разовое перемещение как исполненное
+6.6. Справочники для фильтров разовых
+text
+GET /logistics/one-time/initiators
+GET /logistics/one-time/clients
+Права: все авторизованные. `initiators` — список заявителей разовых запросов. `clients` — список уникальных имён клиентов.
+
+6.7. Выгрузить разовый запрос в Excel
+text
+GET /logistics/one-time/{request_id}/export
+Права: только logistics. Response: Excel-файл.
+
+6.8. Отметить разовое перемещение как исполненное
 text
 POST /logistics/one-time/{request_id}/execute
 Headers:
@@ -985,6 +991,7 @@ warehouse_code	integer	Склад
 product_code	integer	Артикул
 client_name	string	Клиент (частичное совпадение)
 category	string	A/B/C
+search	string	Поиск по коду или названию продукта
 page	integer	Страница
 limit	integer	Записей на страницу
 Response (200):
@@ -1026,6 +1033,7 @@ Query параметры:
 date	date	✅	Дата среза
 warehouse_code	integer	❌	Склад
 product_code	integer	❌	Артикул
+search	string	❌	Поиск по коду или названию продукта
 Response (200):
 
 json
@@ -1512,74 +1520,11 @@ json
     "message": "Объект удален"
 }
 9. УПРАВЛЕНИЕ ОСТАТКАМИ
-На MVP загрузка остатков выполняется через `POST /logistics/normative/upload` (Excel ERP, поля `available` и `plan`). Исторический CSV-эндпоинт `/inventory/upload` не используется.
+На MVP загрузка остатков выполняется через `POST /logistics/normative/upload` (Excel ERP, поля `available` и `plan`). Эндпоинты `/inventory/*` **не реализованы**.
 
-9.1. Получить остаток по складу
-text
-GET /inventory/balances
-Headers:
+10. ИНТЕГРАЦИЯ С ТАРИФАМИ (ЗАДЕЛ, НЕ РЕАЛИЗОВАНО)
+`GET /tariffs/delivery` в MVP отсутствует. Экономист принимает решение без отображения тарифов.
 
-text
-Authorization: Bearer <token>
-Query параметры:
-
-Параметр	Тип	Обязательный	Описание
-warehouse_code	integer	✅	Склад
-product_code	integer	❌	Артикул
-Response (200):
-
-json
-{
-    "status": "success",
-    "data": {
-        "warehouse_code": 2001,
-        "warehouse_name": "Склад Ростов",
-        "items": [
-            {
-                "product_code": 10001,
-                "product_name": "Подшипник 6204ZZ",
-                "available": 600,
-                "plan": 600,
-                "unit": "шт",
-                "last_sync_at": "2026-08-18T08:00:00Z"
-            }
-        ]
-    }
-}
-10. ИНТЕГРАЦИЯ С ТАРИФАМИ (ЗАДЕЛ)
-10.1. Получить тариф доставки
-text
-GET /tariffs/delivery
-Headers:
-
-text
-Authorization: Bearer <token>
-Права: Экономисты, логисты
-
-Query параметры:
-
-Параметр	Тип	Обязательный	Описание
-plant_code	integer	✅	Завод
-warehouse_code	integer	✅	Склад
-product_code	integer	✅	Артикул
-Response (200):
-
-json
-{
-    "status": "success",
-    "data": {
-        "plant_code": 1001,
-        "plant_name": "Завод Московский",
-        "warehouse_code": 2001,
-        "warehouse_name": "Склад Ростов",
-        "product_code": 10001,
-        "product_name": "Подшипник 6204ZZ",
-        "delivery_cost": 12.50,           // за единицу
-        "delivery_cost_currency": "RUB",
-        "storage_cost": 0.98,              // за единицу в месяц
-        "storage_cost_currency": "RUB"
-    }
-}
 11. ИСТОРИЯ И АУДИТ
 11.1. Получить историю изменений запроса
 text
@@ -1609,70 +1554,24 @@ json
     ]
 }
 12. ЗАДЕЛ ПОД АГЕНТА ЛОГИСТА
-12.1. Получить события (для агента)
-text
-GET /agent/events
-Headers:
+Таблица `events` создана, триггеры пишут события. HTTP-эндпоинты `/agent/events` и `/agent/events/{id}/process` в MVP **не реализованы**.
 
-text
-Authorization: Bearer <token>
-Query параметры:
-
-Параметр	Тип	Описание
-processed	boolean	Фильтр по статусу обработки
-event_type	string	Тип события
-limit	integer	Записей на страницу
-Response (200):
-
-json
-{
-    "status": "success",
-    "data": [
-        {
-            "id": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
-            "event_type": "deficit_detected",
-            "request_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-            "payload": {
-                "warehouse_code": 2001,
-                "product_code": 10001,
-                "deficit": 400,
-                "normative_quantity": 1000,
-                "available": 600,
-                "plan": 600
-            },
-            "processed": false,
-            "created_at": "2026-08-18T11:00:00Z"
-        }
-    ]
-}
-12.2. Отметить событие как обработанное
-text
-POST /agent/events/{event_id}/process
-Headers:
-
-text
-Authorization: Bearer <token>
-Response (200):
-
-json
-{
-    "status": "success",
-    "message": "Событие обработано"
-}
 13. СВОДКА ЭНДПОИНТОВ
-13.1. Группировка по функционалу
+13.1. Группировка по функционалу (реализовано)
 Группа	Эндпоинты	Количество
-Аутентификация	/auth/*	5
-Запросы	/requests/*	7
-Согласование (ПП)	/approvals/pp/*	2
-Согласование (экономист)	/approvals/economy/*	2
-Логистика	/logistics/*	7
-Нормативы	/normatives/*	4
-Справочники	/references/*	8
-Остатки	/inventory/*	2
-Тарифы (задел)	/tariffs/*	1
-Агент (задел)	/agent/*	2
-ИТОГО		35
+Аутентификация	/auth/login, logout, refresh, profile, change-password	5
+Запросы	/requests, /requests/{id}, submit, history, expiry-date	7
+Согласование (ПП)	/approvals/pp/pending, /approvals/pp/{id}/action	2
+Согласование (экономист)	/approvals/economy/pending, /approvals/economy/{id}/action	2
+Логистика нормативы	dashboard, upload, sync-info, export, generate-orders, /{wh}/generate-orders	6
+Логистика разовые	list, initiators, clients, export, execute	5
+Нормативы	/normatives, on-date, calculate	3
+Продукты (related)	/products/{code}/related	1
+Справочники продукты	list, template, upload, get, edit, put, delete	7
+Справочники объекты	list, create, get, edit, put, delete	6
+Справочники пользователи	/references/users	1
+ИТОГО реализовано		~45
+Не реализовано (задел)	/inventory/*, /tariffs/*, /agent/*, /auth/register	—
 13.2. Ролевой доступ
 Роль	Доступные эндпоинты
 guest	Просмотр справочников, нормативов и дашборда логистики (только чтение)
@@ -1689,20 +1588,20 @@ text
 4. ПП: POST /approvals/pp/{id}/action (approve) → утверждает
 5. Экономист: GET /approvals/economy/pending → видит запрос
 6. Экономист: POST /approvals/economy/{id}/action (approve) → утверждает
-7. Автоматически: создается запись в normatives (триггер)
+7. Автоматически: создается запись в normatives (сервис при approve экономиста; в БД также есть триггер)
 8. Логист: GET /logistics/normative/dashboard → видит дефицит
-9. Логист: POST /logistics/normative/{warehouse_code}/generate-orders → формирует заказы
+9. Логист: POST /logistics/normative/generate-orders → формирует заказы
 10. Логист: GET /logistics/normative/export → выгружает Excel
 14.2. Разовое перемещение — полный цикл
 text
 1. Коммерция/Логист: POST /requests → создает разовый запрос (draft)
-2. Коммерция/Логист: POST /requests/{id}/submit → отправляет на ПП
+2. Коммерция/Логист: POST /requests/{id}/submit → отправляет на ПП (статус pp_approved)
 3. ПП: GET /approvals/pp/pending → видит запрос
 4. ПП: POST /approvals/pp/{id}/action (approve) → утверждает
 5. Экономист: GET /approvals/economy/pending → видит запрос
 6. Экономист: POST /approvals/economy/{id}/action (approve) → утверждает → статус approved
 7. Логист: GET /logistics/one-time/list → видит запрос
 8. Логист: POST /logistics/one-time/{id}/execute → отмечает исполненным
-Версия: 1.1
+Версия: 1.2
 Дата: 22.08.2026
-Статус: На согласовании
+Статус: Утверждена

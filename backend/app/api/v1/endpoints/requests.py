@@ -3,11 +3,12 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import Select, exists, func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user, get_db
+from app.core.pagination import paginate
 from app.models.request import Request
 from app.models.request_item import RequestItem
 from app.models.user import User
@@ -45,10 +46,6 @@ from app.services.requests import (
 )
 
 router = APIRouter(tags=["Запросы"])
-
-
-def _paginate(stmt: Select, page: int, limit: int) -> Select:
-    return stmt.offset((page - 1) * limit).limit(limit)
 
 
 @router.post(
@@ -119,7 +116,7 @@ async def list_requests(
         select(func.count()).select_from(Request).where(*conditions)
     )
     result = await db.execute(
-        _paginate(
+        paginate(
             select(Request)
             .options(selectinload(Request.items), selectinload(Request.initiator))
             .where(*conditions)

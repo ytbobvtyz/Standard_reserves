@@ -3,11 +3,12 @@ from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from typing import Literal
 
-from sqlalchemy import Select, String, cast, exists, func, or_, select
+from sqlalchemy import String, cast, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import APIError
+from app.core.pagination import paginate
 from app.models.normative import Normative
 from app.models.object import Object
 from app.models.product import Product
@@ -28,10 +29,6 @@ CATEGORY_FACTORS = {
 DEFAULT_UNIT = "шт"
 
 CategoryFilter = Literal["A", "B", "C"]
-
-
-def _paginate(stmt: Select, page: int, limit: int) -> Select:
-    return stmt.offset((page - 1) * limit).limit(limit)
 
 
 def _end_of_day(value: date) -> datetime:
@@ -100,7 +97,7 @@ async def list_current_normatives(
         select(func.count()).select_from(Normative).where(*conditions)
     )
     result = await db.execute(
-        _paginate(
+        paginate(
             select(Normative)
             .options(
                 selectinload(Normative.product),

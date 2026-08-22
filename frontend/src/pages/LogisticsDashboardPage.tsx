@@ -36,6 +36,8 @@ import { DeficitIndicator } from '../components/logistics/DeficitIndicator'
 import { FilterToggle } from '../components/logistics/FilterToggle'
 import { UnitToggle } from '../components/logistics/UnitToggle'
 import { useAuthStore } from '../stores/auth'
+import { downloadBlob } from '../utils/download'
+import { formatShortName } from '../utils/format'
 
 function formatQty(value: number, unit: Unit): string {
   return new Intl.NumberFormat('ru-RU', {
@@ -105,17 +107,6 @@ function warehouseMetrics(items: DeficitItem[]) {
   }
 }
 
-function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(url)
-}
-
 function matchesSearch(item: DeficitItem, search: string): boolean {
   if (!search) {
     return true
@@ -125,17 +116,6 @@ function matchesSearch(item: DeficitItem, search: string): boolean {
     String(item.product_code).includes(term) ||
     item.product_name.toLowerCase().includes(term)
   )
-}
-
-function formatShortName(fullName: string): string {
-  const parts = fullName.trim().split(/\s+/).filter(Boolean)
-  if (parts.length === 0) {
-    return fullName
-  }
-  if (parts.length === 1) {
-    return parts[0]
-  }
-  return `${parts[0]} ${parts[1].charAt(0)}.`
 }
 
 function formatSyncAt(value: string): string {

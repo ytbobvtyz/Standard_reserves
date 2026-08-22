@@ -241,6 +241,7 @@ export interface ApprovalActionResult {
 
 export interface ApprovalListParams {
   type?: RequestType
+  client_name?: string
   page?: number
   limit?: number
 }

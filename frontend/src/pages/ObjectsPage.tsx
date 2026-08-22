@@ -25,6 +25,7 @@ import type {
   ObjectUpdatePayload,
 } from '../api/types'
 import { useAuthStore } from '../stores/auth'
+import { formatDateTime } from '../utils/format'
 
 const TYPE_LABEL: Record<ObjectType, string> = {
   plant: 'Завод',
@@ -32,13 +33,6 @@ const TYPE_LABEL: Record<ObjectType, string> = {
 }
 
 const ERP_TOKEN = /^[A-Za-z0-9]{4}$/
-
-function formatDateTime(value?: string | null): string {
-  if (!value) {
-    return '—'
-  }
-  return new Date(value).toLocaleString('ru-RU')
-}
 
 function erpFields(type?: ObjectType) {
   return (

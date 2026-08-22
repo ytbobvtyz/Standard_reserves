@@ -49,14 +49,14 @@ export function ApprovalsPage() {
       const request = isEconomy
         ? approvalsApi.getEconomyPending
         : approvalsApi.getPPPending
-      const { data } = await request({ type, page, limit })
-      const filtered = clientName
-        ? data.data.filter((item) =>
-            item.client_name.toLowerCase().includes(clientName.toLowerCase()),
-          )
-        : data.data
-      setItems(filtered)
-      setTotal(clientName ? filtered.length : (data.meta?.total ?? data.data.length))
+      const { data } = await request({
+        type,
+        page,
+        limit,
+        client_name: clientName || undefined,
+      })
+      setItems(data.data)
+      setTotal(data.meta?.total ?? data.data.length)
     } catch (error) {
       message.error(getApiErrorMessage(error, 'Не удалось загрузить запросы'))
     } finally {

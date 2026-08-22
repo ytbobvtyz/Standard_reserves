@@ -24,6 +24,7 @@ async def _pending_response(
     request_type: str | None,
     page: int,
     limit: int,
+    client_name: str | None = None,
 ) -> PaginatedResponse[list[ApprovalPendingRequest]]:
     requests, total = await list_pending(
         db,
@@ -31,6 +32,7 @@ async def _pending_response(
         request_type=request_type,
         page=page,
         limit=limit,
+        client_name=client_name,
     )
     return PaginatedResponse(
         data=[to_pending(item) for item in requests],
@@ -44,6 +46,7 @@ async def _pending_response(
 )
 async def list_pp_pending(
     type: Literal["normative", "one_time"] | None = Query(default=None),
+    client_name: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=50, ge=1, le=200),
     _current_user: User = Depends(require_roles("pp")),
@@ -55,6 +58,7 @@ async def list_pp_pending(
         request_type=type,
         page=page,
         limit=limit,
+        client_name=client_name,
     )
 
 
@@ -84,6 +88,7 @@ async def pp_action(
 )
 async def list_economy_pending(
     type: Literal["normative", "one_time"] | None = Query(default=None),
+    client_name: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=50, ge=1, le=200),
     _current_user: User = Depends(require_roles("economist")),
@@ -95,6 +100,7 @@ async def list_economy_pending(
         request_type=type,
         page=page,
         limit=limit,
+        client_name=client_name,
     )
 
 

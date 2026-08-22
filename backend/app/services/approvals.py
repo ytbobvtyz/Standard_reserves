@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import APIError
+from app.core.pagination import paginate
 from app.models.normative import Normative
 from app.models.request import Request
 from app.models.request_item import RequestItem
@@ -98,21 +99,26 @@ async def list_pending(
     request_type: str | None,
     page: int,
     limit: int,
+    client_name: str | None = None,
 ) -> tuple[list[Request], int]:
     conditions = [Request.deleted_at.is_(None), Request.status == status]
     if request_type:
         conditions.append(Request.request_type == request_type)
+    if client_name and client_name.strip():
+        conditions.append(Request.client_name.ilike(f"%{client_name.strip()}%"))
 
     total = await db.scalar(
         select(func.count()).select_from(Request).where(*conditions)
     )
     result = await db.execute(
-        select(Request)
-        .options(*PENDING_OPTIONS)
-        .where(*conditions)
-        .order_by(Request.created_at.desc())
-        .offset((page - 1) * limit)
-        .limit(limit)
+        paginate(
+            select(Request)
+            .options(*PENDING_OPTIONS)
+            .where(*conditions)
+            .order_by(Request.created_at.desc()),
+            page,
+            limit,
+        )
     )
     return list(result.scalars().unique().all()), total or 0
 

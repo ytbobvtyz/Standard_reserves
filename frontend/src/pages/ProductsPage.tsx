@@ -33,26 +33,10 @@ import type {
 } from '../api/types'
 import { ProductAutocomplete } from '../components/requests/ProductAutocomplete'
 import { useAuthStore } from '../stores/auth'
+import { downloadBlob } from '../utils/download'
+import { formatDateTime } from '../utils/format'
 
 const PRODUCT_MANAGERS = new Set(['pp', 'economist', 'logistics'])
-
-function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(url)
-}
-
-function formatDateTime(value?: string | null): string {
-  if (!value) {
-    return '—'
-  }
-  return new Date(value).toLocaleString('ru-RU')
-}
 
 export function ProductsPage() {
   const navigate = useNavigate()

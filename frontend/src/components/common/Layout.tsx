@@ -35,6 +35,61 @@ export function AppLayout() {
                 : location.pathname
 
   const canCreate = user?.role === 'commercial' || user?.role === 'logistics'
+  const showPP = user?.role === 'pp'
+  const showEconomy = user?.role === 'economist'
+
+  const menuItems = [
+    { key: '/dashboard', icon: <DashboardOutlined />, label: 'Дашборд' },
+    { key: '/requests/my', icon: <FileTextOutlined />, label: 'Запросы' },
+    ...(canCreate
+      ? [
+          {
+            key: '/requests/create',
+            icon: <FileTextOutlined />,
+            label: 'Создать запрос',
+          },
+        ]
+      : []),
+    ...(showPP
+      ? [
+          {
+            key: '/approvals/pp',
+            icon: <CheckSquareOutlined />,
+            label: 'Согласование ПП',
+          },
+        ]
+      : []),
+    ...(showEconomy
+      ? [
+          {
+            key: '/approvals/economy',
+            icon: <CheckSquareOutlined />,
+            label: 'Согласование экономиста',
+          },
+        ]
+      : []),
+    { key: '/normatives', icon: <DatabaseOutlined />, label: 'Нормативы' },
+    {
+      key: '/logistics/dashboard',
+      icon: <CarOutlined />,
+      label: 'Логистика',
+    },
+    {
+      key: '/logistics/one-time',
+      icon: <CarOutlined />,
+      label: 'Разовые перемещения',
+    },
+    {
+      key: '/references/products',
+      icon: <DatabaseOutlined />,
+      label: 'Продукты',
+    },
+    {
+      key: '/references/objects',
+      icon: <DatabaseOutlined />,
+      label: 'Объекты',
+    },
+  ]
 
   return (
     <AntLayout style={{ minHeight: '100vh' }}>
@@ -54,46 +109,7 @@ export function AppLayout() {
           mode="inline"
           selectedKeys={[selectedKey]}
           onClick={({ key }) => navigate(key)}
-          items={[
-            { key: '/dashboard', icon: <DashboardOutlined />, label: 'Дашборд' },
-            { key: '/requests/my', icon: <FileTextOutlined />, label: 'Запросы' },
-            ...(canCreate
-              ? [
-                  {
-                    key: '/requests/create',
-                    icon: <FileTextOutlined />,
-                    label: 'Создать запрос',
-                  },
-                ]
-              : []),
-            { key: '/approvals/pp', icon: <CheckSquareOutlined />, label: 'Согласование ПП' },
-            {
-              key: '/approvals/economy',
-              icon: <CheckSquareOutlined />,
-              label: 'Согласование экономиста',
-            },
-            { key: '/normatives', icon: <DatabaseOutlined />, label: 'Нормативы' },
-            {
-              key: '/logistics/dashboard',
-              icon: <CarOutlined />,
-              label: 'Логистика',
-            },
-            {
-              key: '/logistics/one-time',
-              icon: <CarOutlined />,
-              label: 'Разовые перемещения',
-            },
-            {
-              key: '/references/products',
-              icon: <DatabaseOutlined />,
-              label: 'Продукты',
-            },
-            {
-              key: '/references/objects',
-              icon: <DatabaseOutlined />,
-              label: 'Объекты',
-            },
-          ]}
+          items={menuItems}
         />
       </Sider>
       <AntLayout>

@@ -11,11 +11,11 @@
 |-----------|------------|---------|
 | **Фреймворк** | React 18+ | Универсальность, экосистема |
 | **Сборка** | Vite | Быстрая разработка, горячая перезагрузка |
-| **Стейт-менеджмент** | Pinia | Простота, типизация, DevTools |
+| **Стейт-менеджмент** | Zustand | Лёгкий store для auth; остальное — локальный `useState` |
 | **Роутинг** | React Router v6 | Навигация по страницам |
-| **UI-библиотека** | Ant Design / MUI / shadcn/ui | Богатые компоненты, таблицы, формы |
-| **HTTP-клиент** | Axios + React Query | Кеширование, рефетчинг, обработка ошибок |
-| **Типизация** | TypeScript + OpenAPI-генерация | Безопасность, авто-дополнение |
+| **UI-библиотека** | Ant Design | Таблицы, формы, модалки |
+| **HTTP-клиент** | Axios | Bearer-токен, обработка 401 |
+| **Типизация** | TypeScript | Безопасность, авто-дополнение |
 
 ### 1.2. Роли и страницы
 
@@ -252,12 +252,13 @@ text
 │ 📝 18.08 09:00 Создан (Иванов И.) │
 │ │
 │ ──── Действия ──────────────────────────────────────────────────── │
-│ [ ✏️ Редактировать ] (только черновик) │
-│ [ ⏳ Отправить на согласование ] (только черновик) │
+│ [ ✏️ Редактировать ] (только черновик, инициатор) │
+│ [ ⏳ Отправить на согласование ] (только черновик, инициатор) │
+│ [ 🗑 Удалить ] (только инициатор; статусы draft / pp_approved / economy_check / rejected / expired) │
+│ [ 📅 Изменить дату ] (норматив status=active; все роли кроме guest; только уменьшение, не раньше сегодня) │
 │ [ 🚚 Сформировать заказы ] (только логист, активный норматив) │
 │ [ 📤 Выгрузить в Excel ] (только логист, активный норматив) │
 │ [ ✅ Исполнить ] (только логист, разовый, статус approved) │
-│ [ 🚫 Отменить ] (только логист, разовый, статус approved) │
 └─────────────────────────────────────────────────────────────────────┘
 
 text
@@ -309,8 +310,9 @@ text
 │ 10002 │ Корпус чугунный │ Владик │ 500 │ [500] │ шт │
 │ │
 │ Комментарий: [________________________________] │
+│ Срок действия: [2026-12-31 📅]  (только нормативные) │
 │ │
-│ [ ❌ Отказать ] [ ✏️ Редактировать ] [ ✅ Утвердить ] │
+│ [ ❌ Отказать ] [ ✅ Утвердить ] │
 └─────────────────────────────────────────────────────────────────────┘
 
 text
@@ -321,9 +323,10 @@ text
 - Кнопки массовых действий (опционально)
 - Модальное окно согласования с:
   - Информацией о запросе
-  - Редактируемой таблицей позиций (только количество)
+  - Редактируемой таблицей позиций (количество утверждается при «Утвердить»)
+  - Полем срока действия (нормативные; у экономиста — только уменьшение)
   - Полем для комментария
-  - Кнопками: "Отказать", "Редактировать", "Утвердить"
+  - Кнопками: «Отказать», «Утвердить». Отдельной кнопки «Редактировать» нет.
 
 ---
 
@@ -593,10 +596,12 @@ text
 
 ```tsx
 <StatusBadge status="draft" />          // ⚪ Черновик
-<StatusBadge status="pp_approved" />    // 🟡 Ожидает экономиста
+<StatusBadge status="pp_approved" />    // 🔵 Ожидает ПП (очередь после submit)
+<StatusBadge status="economy_check" />  // 🔵 Ожидает экономиста
 <StatusBadge status="active" />         // 🟢 Активен
+<StatusBadge status="approved" />       // 🟢 Согласован (разовый)
 <StatusBadge status="rejected" />       // 🔴 Отклонен
-<StatusBadge status="expired" />        // ⚫ Просрочен
+<StatusBadge status="expired" />        // ⚫ Истек
 <StatusBadge status="executed" />       // ✅ Исполнен
 4.2. DeficitIndicator
 tsx
@@ -654,70 +659,28 @@ text
 /requests/my	MyRequestsPage	Все авторизованные
 /requests/create	CreateRequestPage	Commercial, Logistics
 /requests/:id	RequestDetailPage	Все авторизованные
-/approvals/pp	ApprovalPage	PP
-/approvals/economy	ApprovalPage	Economist
+/approvals/pp	ApprovalsPage	PP (пункт меню только у pp)
+/approvals/economy	ApprovalsPage	Economist (пункт меню только у economist)
 /logistics/dashboard	LogisticsDashboardPage	Все авторизованные (кнопки управления — только logistics)
 /logistics/one-time	OneTimeRequestsPage	Все авторизованные (кнопки управления — только logistics)
 /normatives	NormativesPage	Все авторизованные
 /references/products	ProductsPage	Все авторизованные
+/references/products/:code	ProductDetailPage	Все авторизованные
 /references/objects	ObjectsPage	Все авторизованные
-/references/users	UsersPage	Админ
+/references/users	ReferencesPage	Заглушка (заголовок); API GET /references/users есть
 6. СОСТОЯНИЯ (STORES)
-6.1. AuthStore (Pinia)
+6.1. AuthStore (Zustand)
+
+На фронте реализован один store — `src/stores/auth.ts` (Zustand). Списки запросов, согласование, логистика и справочники хранятся в локальном `useState` страниц, без Pinia/RequestStore.
+
 typescript
 interface AuthStore {
     user: User | null;
     token: string | null;
     isAuthenticated: boolean;
     login(username: string, password: string): Promise<void>;
-    logout(): void;
+    logout(): Promise<void>;
     refreshToken(): Promise<void>;
-}
-6.2. RequestStore
-typescript
-interface RequestStore {
-    requests: Request[];
-    currentRequest: Request | null;
-    isLoading: boolean;
-    fetchRequests(filters: RequestFilters): Promise<void>;
-    fetchRequest(id: string): Promise<void>;
-    createRequest(data: CreateRequest): Promise<void>;
-    submitRequest(id: string): Promise<void>;
-}
-6.3. ApprovalStore
-typescript
-interface ApprovalStore {
-    pendingRequests: Request[];
-    isLoading: boolean;
-    fetchPending(role: 'pp' | 'economist'): Promise<void>;
-    approve(id: string, comment: string): Promise<void>;
-    reject(id: string, comment: string): Promise<void>;
-    edit(id: string, items: EditItem[], comment: string): Promise<void>;
-}
-6.4. NormativeStore
-typescript
-interface NormativeStore {
-    normatives: Normative[];
-    isLoading: boolean;
-    unit: 'шт' | 'т';
-    filter: 'all' | 'with_normatives' | 'deficit_only';
-    fetchNormatives(filters: NormativeFilters): Promise<void>;
-    fetchOnDate(date: string, filters: NormativeFilters): Promise<void>;
-    setUnit(unit: 'шт' | 'т'): void;
-    setFilter(filter: 'all' | 'with_normatives' | 'deficit_only'): void;
-}
-6.5. LogisticsStore
-typescript
-interface LogisticsStore {
-    deficitData: DeficitItem[];
-    oneTimeRequests: OneTimeRequest[];
-    isLoading: boolean;
-    fetchDeficit(filters: DeficitFilters): Promise<void>;
-    fetchOneTimeRequests(filters: OneTimeFilters): Promise<void>;
-    generateOrders(warehouseCode: number): Promise<void>;
-    executeOneTime(id: string, data: ExecuteData): Promise<void>;
-    lastBalancesSyncAt: string | null;
-    lastBalancesSyncBy: { full_name: string; role: string } | null;
 }
 7. ЭКРАННЫЕ СОСТОЯНИЯ
 7.1. Loading
@@ -771,7 +734,10 @@ Dashboard с графиками	❌ Отложено (простая сводк�
 Drag-and-drop (позиции в запросе)	❌ Отложено
 Переключение единиц (шт/т)	✅ ✅ ✅ В MVP
 Три режима фильтрации	✅ ✅ ✅ В MVP
-Фильтры в разовых запросах	✅ ✅ ✅ В MVP
-Версия: 1.2
+Фильтры в разовых запросах	✅ В MVP
+Меню по ролям	✅ Согласование ПП/экономиста скрыто у других ролей
+Удаление запроса до финального согласования	✅ В MVP
+Изменение даты активного норматива	✅ В MVP
+Версия: 1.3
 Дата: 22.08.2026
 Статус: Утверждена

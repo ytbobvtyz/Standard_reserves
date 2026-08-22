@@ -8,7 +8,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from openpyxl import Workbook, load_workbook
-from sqlalchemy import case, delete, select
+from sqlalchemy import case, delete, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -155,10 +155,45 @@ async def _load_plants(db: AsyncSession, plant_ids: set[int]) -> dict[int, Objec
     return {item.code: item for item in result.scalars().all()}
 
 
+async def _load_balances(
+    db: AsyncSession,
+    *,
+    keys: set[tuple[int, int]] | None = None,
+    warehouse_code: int | None = None,
+    warehouse_codes: list[int] | None = None,
+    product_codes: list[int] | None = None,
+) -> dict[tuple[int, int], AvailableBalance]:
+    conditions = []
+    if keys is not None:
+        if not keys:
+            return {}
+        conditions.append(
+            tuple_(
+                AvailableBalance.warehouse_code,
+                AvailableBalance.product_code,
+            ).in_(list(keys))
+        )
+    else:
+        if warehouse_code is not None:
+            conditions.append(AvailableBalance.warehouse_code == warehouse_code)
+        elif warehouse_codes:
+            conditions.append(AvailableBalance.warehouse_code.in_(warehouse_codes))
+        if product_codes:
+            conditions.append(AvailableBalance.product_code.in_(product_codes))
+    stmt = select(AvailableBalance)
+    if conditions:
+        stmt = stmt.where(*conditions)
+    return {
+        (item.warehouse_code, item.product_code): item
+        for item in (await db.execute(stmt)).scalars().all()
+    }
+
+
 async def collect_deficit_rows(
     db: AsyncSession,
     *,
     warehouse_code: int | None = None,
+    warehouse_codes: list[int] | None = None,
     filter_mode: FilterMode = "with_normatives",
     unit: Unit = "шт",
     product_codes: list[int] | None = None,
@@ -172,6 +207,8 @@ async def collect_deficit_rows(
     ]
     if warehouse_code is not None:
         conditions.append(Normative.warehouse_code == warehouse_code)
+    elif warehouse_codes:
+        conditions.append(Normative.warehouse_code.in_(warehouse_codes))
     if product_codes:
         conditions.append(Normative.product_code.in_(product_codes))
 
@@ -187,19 +224,6 @@ async def collect_deficit_rows(
         .order_by(Normative.warehouse_code, Normative.product_code)
     )
     normatives = list(result.scalars().unique().all())
-
-    balance_conditions = []
-    if warehouse_code is not None:
-        balance_conditions.append(AvailableBalance.warehouse_code == warehouse_code)
-    if product_codes:
-        balance_conditions.append(AvailableBalance.product_code.in_(product_codes))
-    balance_stmt = select(AvailableBalance)
-    if balance_conditions:
-        balance_stmt = balance_stmt.where(*balance_conditions)
-    balances = {
-        (item.warehouse_code, item.product_code): item
-        for item in (await db.execute(balance_stmt)).scalars().all()
-    }
 
     aggregated: dict[tuple[int, int], dict] = {}
     for normative in normatives:
@@ -225,6 +249,16 @@ async def collect_deficit_rows(
             or normative.expiry_date < bucket["expiry_date"]
         ):
             bucket["expiry_date"] = normative.expiry_date
+
+    if filter_mode == "all":
+        balances = await _load_balances(
+            db,
+            warehouse_code=warehouse_code,
+            warehouse_codes=warehouse_codes,
+            product_codes=product_codes,
+        )
+    else:
+        balances = await _load_balances(db, keys=set(aggregated))
 
     covered_keys = set(aggregated)
     if filter_mode == "all":
@@ -399,15 +433,19 @@ def _orders_payload(orders: list[PlantOrder]) -> GenerateOrdersData:
     )
 
 
-async def _get_warehouse(db: AsyncSession, warehouse_code: int) -> Object:
-    warehouse = await db.get(Object, warehouse_code)
-    if (
-        warehouse is None
-        or warehouse.deleted_at is not None
-        or warehouse.type != "warehouse"
-    ):
-        raise APIError(404, "NOT_FOUND", "Склад не найден")
-    return warehouse
+async def _load_warehouses(
+    db: AsyncSession, warehouse_codes: list[int]
+) -> dict[int, Object]:
+    if not warehouse_codes:
+        return {}
+    result = await db.execute(
+        select(Object).where(
+            Object.code.in_(warehouse_codes),
+            Object.deleted_at.is_(None),
+            Object.type == "warehouse",
+        )
+    )
+    return {item.code: item for item in result.scalars().all()}
 
 
 async def generate_orders(
@@ -416,27 +454,52 @@ async def generate_orders(
     warehouse_code: int,
     product_codes: list[int] | None = None,
 ) -> GenerateOrdersData:
-    warehouse = await _get_warehouse(db, warehouse_code)
+    return await generate_orders_for_warehouses(
+        db,
+        warehouse_codes=[warehouse_code],
+        product_codes=product_codes,
+    )
+
+
+async def generate_orders_for_warehouses(
+    db: AsyncSession,
+    *,
+    warehouse_codes: list[int],
+    product_codes: list[int] | None = None,
+) -> GenerateOrdersData:
+    if not warehouse_codes:
+        raise APIError(400, "VALIDATION_ERROR", "Укажите хотя бы один склад")
+
+    unique_codes = list(dict.fromkeys(warehouse_codes))
+    warehouses = await _load_warehouses(db, unique_codes)
+    for code in unique_codes:
+        if code not in warehouses:
+            raise APIError(404, "NOT_FOUND", "Склад не найден")
 
     rows = await collect_deficit_rows(
         db,
-        warehouse_code=warehouse_code,
+        warehouse_codes=unique_codes,
         filter_mode="deficit_only",
         unit="шт",
         product_codes=product_codes,
     )
-    grouped: dict[int, list[DeficitRow]] = defaultdict(list)
+    grouped: dict[tuple[int, int], list[DeficitRow]] = defaultdict(list)
     for row in rows:
         if row.deficit <= 0:
             continue
-        grouped[row.plant_id].append(row)
+        grouped[(row.warehouse_code, row.plant_id)].append(row)
 
-    plant_ids = set(grouped)
+    warehouse_order = {code: index for index, code in enumerate(unique_codes)}
+    plant_ids = {plant_id for _, plant_id in grouped}
     plants = await _load_plants(db, plant_ids)
     orders: list[PlantOrder] = []
-    for plant_code in sorted(grouped):
+    for warehouse_code, plant_code in sorted(
+        grouped,
+        key=lambda item: (warehouse_order[item[0]], item[1]),
+    ):
+        warehouse = warehouses[warehouse_code]
         plant = plants.get(plant_code)
-        items = grouped[plant_code]
+        items = grouped[(warehouse_code, plant_code)]
         orders.append(
             PlantOrder(
                 plant_code=plant_code,
@@ -456,30 +519,6 @@ async def generate_orders(
             )
         )
 
-    return _orders_payload(orders)
-
-
-async def generate_orders_for_warehouses(
-    db: AsyncSession,
-    *,
-    warehouse_codes: list[int],
-    product_codes: list[int] | None = None,
-) -> GenerateOrdersData:
-    if not warehouse_codes:
-        raise APIError(400, "VALIDATION_ERROR", "Укажите хотя бы один склад")
-
-    unique_codes = list(dict.fromkeys(warehouse_codes))
-    for code in unique_codes:
-        await _get_warehouse(db, code)
-
-    orders: list[PlantOrder] = []
-    for code in unique_codes:
-        result = await generate_orders(
-            db,
-            warehouse_code=code,
-            product_codes=product_codes,
-        )
-        orders.extend(result.orders)
     return _orders_payload(orders)
 
 

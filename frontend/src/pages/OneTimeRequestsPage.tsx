@@ -28,6 +28,7 @@ import type {
 } from '../api/types'
 import { StatusBadge } from '../components/common/StatusBadge'
 import { useAuthStore } from '../stores/auth'
+import { downloadBlob } from '../utils/download'
 
 interface FilterState {
   warehouse_code?: number
@@ -43,17 +44,6 @@ const STATUS_OPTIONS: Array<{ value: RequestStatus; label: string }> = [
   { value: 'executed', label: 'Исполнен' },
   { value: 'rejected', label: 'Отклонен' },
 ]
-
-function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(url)
-}
 
 function formatDate(value: string): string {
   return new Date(value).toLocaleDateString('ru-RU')

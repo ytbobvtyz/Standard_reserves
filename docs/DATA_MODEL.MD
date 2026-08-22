@@ -125,7 +125,7 @@ erDiagram
     requests {
         uuid id PK "идентификатор"
         varchar request_type "normative / one_time"
-        varchar status "draft/pp_approved/economy_check/active/approved/rejected/expired/executed"
+        varchar status "draft/pp_approved/economy_check/active/approved/rejected/expired/executed (без pp_rework/economy_rework)"
         text client_name "метка авторства"
         uuid initiator_id FK "инициатор"
         text initiator_comment "комментарий инициатора"
@@ -134,6 +134,9 @@ erDiagram
         date expiry_date "срок действия (только нормативные)"
         timestamp approved_at "дата утверждения"
         timestamp executed_at "дата исполнения"
+        uuid executed_by FK "кто исполнил (разовые)"
+        text order_number "номер разнарядки (разовые)"
+        text executed_comment "комментарий исполнения"
         timestamp pp_approved_at "дата согласования ПП"
         uuid pp_approved_by FK "кто согласовал от ПП"
         varchar pp_action "approve/reject/edit"
@@ -500,8 +503,6 @@ CREATE TABLE requests (
         'draft',
         'pp_approved',
         'economy_check',
-        'pp_rework',
-        'economy_rework',
         'active',
         'approved',
         'rejected',
@@ -516,6 +517,9 @@ CREATE TABLE requests (
     expiry_date DATE,
     approved_at TIMESTAMP WITH TIME ZONE,
     executed_at TIMESTAMP WITH TIME ZONE,
+    executed_by UUID REFERENCES users(id),
+    order_number TEXT,
+    executed_comment TEXT,
     pp_approved_at TIMESTAMP WITH TIME ZONE,
     pp_approved_by UUID REFERENCES users(id),
     pp_action VARCHAR(20) CHECK (pp_action IN ('approve', 'reject', 'edit')),
@@ -547,15 +551,20 @@ comment_economy	TEXT	❌	Комментарий экономиста
 expiry_date	DATE	❌	Срок действия (только нормативные), не позже created_at + 6 месяцев
 approved_at	TIMESTAMP	❌	Дата утверждения
 executed_at	TIMESTAMP	❌	Дата исполнения (разовые)
+executed_by	UUID	❌	Кто исполнил → users.id (разовые)
+order_number	TEXT	❌	Номер разнарядки (разовые)
+executed_comment	TEXT	❌	Комментарий исполнения (разовые)
 pp_approved_at	TIMESTAMP	❌	Дата согласования ПП
 pp_approved_by	UUID	❌	Кто согласовал от ПП → users.id
-pp_action	VARCHAR(20)	❌	approve / reject / edit
+pp_action	VARCHAR(20)	❌	approve / reject (`edit` в CHECK БД допустим, API отклоняет)
 economy_approved_at	TIMESTAMP	❌	Дата согласования экономиста
 economy_approved_by	UUID	❌	Кто согласовал от экономистов → users.id
-economy_action	VARCHAR(20)	❌	approve / reject / edit
+economy_action	VARCHAR(20)	❌	approve / reject (`edit` в CHECK БД допустим, API отклоняет)
 created_at	TIMESTAMP	✅	Дата создания
 updated_at	TIMESTAMP	✅	Дата обновления
 deleted_at	TIMESTAMP	❌	Дата удаления (soft delete)
+
+Статусы `pp_rework` и `economy_rework` в MVP не используются. Согласующий корректирует объём и срок в рамках `approve`; возврата на доработку нет.
 4.2. request_items — Позиции запроса
 sql
 CREATE TABLE request_items (
@@ -1036,31 +1045,28 @@ FOR EACH ROW
 WHEN (NEW.status = 'active' AND OLD.status = 'economy_check')
 EXECUTE FUNCTION trigger_create_normative();
 10. МИГРАЦИИ (ПОРЯДОК СОЗДАНИЯ)
-№	Файл	Таблицы
-1	001_objects.sql	objects
-2	002_products.sql	products
-3	003_users.sql	users
-4	004_requests.sql	requests
-5	005_request_items.sql	request_items
-6	006_request_item_history.sql	request_item_history
-7	007_normatives.sql	normatives
-8	008_available_balances.sql	available_balances
-9	009_events.sql	events
-11	011_product_admin.sql	products (gtin, mark_control, audit) + audit_log
-14	014_object_admin.sql	objects (last_modified_by, last_modified_at)
-15	015_object_erp.sql	objects (erp_plant_code, erp_warehouse_code, loading_point)
-16	016_balances_available_plan.sql	available_balances (quantity → available, +plan)
-17	017_balance_unit_kg.sql	available_balances.unit: шт, т, ШТ, КГ
-18	018_product_gtin_parent_relax.sql	products: снять UNIQUE с gtin, снять FK parent/children
-19	019_sync_metadata.sql	sync_metadata (дата и автор последней загрузки остатков)
-20	020_object_uniqueness.sql	objects: снять UNIQUE с ERP-кодов, UNIQUE на loading_point
-21	021_seed_users_objects.sql	начальные users + objects (остальные таблицы пустые)
-10	010_functions.sql	Все функции
-11	011_views.sql	Все представления
-12	012_triggers.sql	Все триггеры
-13	013_indexes.sql	Дополнительные индексы
+
+Фактические файлы Alembic (`backend/migrations/versions/`):
+
+| № | Файл | Содержание |
+|---|------|------------|
+| 1 | `0001_create_tables.py` | Все таблицы |
+| 2 | `0002_create_indexes.py` | Индексы |
+| 3 | `0003_functions_views_triggers.py` | Функции, представления, триггеры |
+| 4 | `0004_one_time_execute_fields.py` | `requests.executed_by`, `order_number`, `executed_comment` |
+| 5 | `0005_product_admin_fields.py` | `products`: gtin, mark_control, last_modified_*; `audit_log` |
+| 6 | `0006_object_admin_fields.py` | `objects.last_modified_by`, `last_modified_at` |
+| 7 | `0007_object_erp_fields.py` | `objects`: erp_plant_code, erp_warehouse_code, loading_point |
+| 8 | `0008_balances_available_plan.py` | `available_balances`: quantity → available, +plan |
+| 9 | `0009_balance_unit_kg.py` | `available_balances.unit`: шт, т, ШТ, КГ |
+| 10 | `0010_product_gtin_parent_relax.py` | products: снять UNIQUE с gtin, снять FK parent/children |
+| 11 | `0011_sync_metadata.py` | `sync_metadata` |
+| 12 | `0012_drop_unused_request_statuses.py` | CHECK статусов: убраны неиспользуемые `pp_rework`, `economy_rework` |
+
+Начальные пользователи и объекты заполняются скриптом `backend/scripts/seed_data.py`, а не миграцией.
+
 11. НАЧАЛЬНЫЕ ДАННЫЕ
-После `alembic upgrade head` (миграция `0013_seed_users_objects`) в БД есть только пользователи и объекты. Продукты, запросы, нормативы, остатки и прочие таблицы пустые (`sync_metadata` — служебная строка `id=1`).
+После `alembic upgrade head` и `python scripts/seed_data.py` в БД есть пользователи и объекты. Продукты, запросы, нормативы, остатки пустые (`sync_metadata` — служебная строка `id=1`).
 
 Пароль всех пользователей: `password`.
 
@@ -1135,6 +1141,6 @@ GROUP BY warehouse_code, product_code;
 Коэффициент удаленности	✅ Зафиксирован = 1 (в будущем Яндекс API)
 
 
-Версия: 2.1
+Версия: 2.2
 Дата: 22.08.2026
 Статус: Утверждена

@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import APIError
-from app.models.audit_log import AuditLog
 from app.models.available_balance import AvailableBalance
 from app.models.normative import Normative
 from app.models.object import Object
@@ -25,9 +24,9 @@ from app.schemas.reference import (
     ProductUploadError,
     ProductUploadResult,
 )
+from app.services.audit import add_audit_log
 from app.services.references import to_product_detail
 
-PRODUCT_MANAGER_ROLES = ("pp", "economist", "logistics")
 GTIN_RE = re.compile(r"^[0-9]{13}$")
 TEMPLATE_HEADERS = [
     "code",
@@ -163,14 +162,13 @@ def _audit(
     entity_id: str,
     payload: dict[str, Any],
 ) -> None:
-    db.add(
-        AuditLog(
-            entity_type="product",
-            entity_id=entity_id,
-            action=action,
-            changed_by=user.id,
-            payload=payload,
-        )
+    add_audit_log(
+        db,
+        entity_type="product",
+        entity_id=entity_id,
+        action=action,
+        user=user,
+        payload=payload,
     )
 
 
