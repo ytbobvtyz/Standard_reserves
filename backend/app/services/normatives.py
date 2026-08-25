@@ -19,13 +19,12 @@ from app.schemas.normative import (
     NormativeOnDateDetail,
     NormativeOnDateItem,
 )
+from app.services.logistics_normative import (
+    calculate_requirement,
+    category_factor,
+    distance_factor,
+)
 
-DISTANCE_FACTOR = Decimal("1")
-CATEGORY_FACTORS = {
-    "A": Decimal("1"),
-    "B": Decimal("1.5"),
-    "C": Decimal("2"),
-}
 DEFAULT_UNIT = "шт"
 
 CategoryFilter = Literal["A", "B", "C"]
@@ -206,11 +205,14 @@ async def calculate_normative(
         raise APIError(404, "NOT_FOUND", "Склад не найден")
 
     category = product.category.strip()
-    category_factor = CATEGORY_FACTORS.get(category, Decimal("1"))
+    cat_factor = category_factor(category)
+    dist_factor = distance_factor(bool(warehouse.long_distance))
     monthly = product.monthly_consumption
     calculated = None
     if monthly is not None:
-        calculated = monthly * DISTANCE_FACTOR * category_factor
+        calculated = calculate_requirement(
+            monthly, category, bool(warehouse.long_distance)
+        )
 
     return NormativeCalculateData(
         product_code=product.code,
@@ -219,8 +221,8 @@ async def calculate_normative(
         warehouse_code=warehouse.code,
         warehouse_name=warehouse.name,
         monthly_consumption=monthly,
-        distance_factor=DISTANCE_FACTOR,
-        category_factor=category_factor,
+        distance_factor=dist_factor,
+        category_factor=cat_factor,
         calculated_normative=calculated,
         unit=DEFAULT_UNIT,
     )

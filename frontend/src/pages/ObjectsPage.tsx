@@ -34,6 +34,19 @@ const TYPE_LABEL: Record<ObjectType, string> = {
 
 const ERP_TOKEN = /^[A-Za-z0-9]{4}$/
 
+function LongDistanceFormItem({ visible }: { visible: boolean }) {
+  return (
+    <Form.Item
+      label={visible ? 'Удалённый склад' : undefined}
+      name="long_distance"
+      valuePropName="checked"
+      hidden={!visible}
+    >
+      <Checkbox>Удалённый склад (железнодорожная доставка)</Checkbox>
+    </Form.Item>
+  )
+}
+
 function erpFields(type?: ObjectType) {
   return (
     <>
@@ -151,7 +164,7 @@ export function ObjectsPage() {
 
   const openCreate = () => {
     createForm.resetFields()
-    createForm.setFieldsValue({ is_active: true, type: 'warehouse' })
+    createForm.setFieldsValue({ is_active: true, type: 'warehouse', long_distance: false })
     setCreateOpen(true)
   }
 
@@ -167,6 +180,7 @@ export function ObjectsPage() {
         erp_warehouse_code: values.erp_warehouse_code || null,
         loading_point: values.loading_point || null,
         is_active: values.is_active ?? true,
+        long_distance: values.type === 'warehouse' ? Boolean(values.long_distance) : false,
       })
       message.success('Объект создан')
       setCreateOpen(false)
@@ -182,6 +196,7 @@ export function ObjectsPage() {
     setEditOpen(true)
     setEditLoading(true)
     setEditing(null)
+    editForm.resetFields()
     try {
       const { data } = await referencesApi.getObjectForEdit(code)
       setEditing(data.data)
@@ -195,6 +210,7 @@ export function ObjectsPage() {
         erp_warehouse_code: data.data.erp_warehouse_code,
         loading_point: data.data.loading_point,
         is_active: data.data.is_active,
+        long_distance: data.data.long_distance ?? false,
       })
     } catch (err) {
       message.error(getApiErrorMessage(err, 'Не удалось загрузить объект'))
@@ -221,6 +237,7 @@ export function ObjectsPage() {
         erp_warehouse_code: values.erp_warehouse_code || null,
         loading_point: values.loading_point || null,
         is_active: values.is_active,
+        long_distance: values.type === 'warehouse' ? Boolean(values.long_distance) : false,
       })
       message.success('Объект сохранён')
       setEditOpen(false)
@@ -275,6 +292,13 @@ export function ObjectsPage() {
       dataIndex: 'loading_point',
       width: 140,
       render: (value?: string | null) => value || '—',
+    },
+    {
+      title: 'Удалённый',
+      dataIndex: 'long_distance',
+      width: 110,
+      render: (value: boolean | undefined, record) =>
+        record.type === 'warehouse' && value ? 'Да' : '—',
     },
     { title: 'Регион', dataIndex: 'region' },
     {
@@ -404,9 +428,15 @@ export function ObjectsPage() {
                 { value: 'plant', label: 'Завод' },
                 { value: 'warehouse', label: 'Склад' },
               ]}
+              onChange={(value) => {
+                if (value !== 'warehouse') {
+                  createForm.setFieldValue('long_distance', false)
+                }
+              }}
             />
           </Form.Item>
           {erpFields(createType ?? 'warehouse')}
+          <LongDistanceFormItem visible={(createType ?? 'warehouse') === 'warehouse'} />
           <Form.Item name="is_active" valuePropName="checked">
             <Checkbox>Активен</Checkbox>
           </Form.Item>
@@ -480,9 +510,17 @@ export function ObjectsPage() {
                 { value: 'plant', label: 'Завод' },
                 { value: 'warehouse', label: 'Склад' },
               ]}
+              onChange={(value) => {
+                if (value !== 'warehouse') {
+                  editForm.setFieldValue('long_distance', false)
+                }
+              }}
             />
           </Form.Item>
           {erpFields(editType ?? editing?.type)}
+          <LongDistanceFormItem
+            visible={(editType ?? editing?.type) === 'warehouse'}
+          />
           <Form.Item name="is_active" valuePropName="checked">
             <Checkbox>Активен</Checkbox>
           </Form.Item>

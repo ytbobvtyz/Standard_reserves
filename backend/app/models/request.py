@@ -18,6 +18,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, SoftDeleteMixin, TimestampMixin
 
+MIN_EXPIRY_MONTHS = 3
 MAX_EXPIRY_MONTHS = 6
 
 if TYPE_CHECKING:
@@ -156,9 +157,17 @@ class Request(TimestampMixin, SoftDeleteMixin, Base):
         return created_at.date()
 
     @classmethod
+    def min_expiry_date(cls, created_at: datetime) -> date:
+        return cls.add_months(cls._as_utc_date(created_at), MIN_EXPIRY_MONTHS)
+
+    @classmethod
     def max_expiry_date(cls, created_at: datetime) -> date:
         return cls.add_months(cls._as_utc_date(created_at), MAX_EXPIRY_MONTHS)
 
     @staticmethod
     def validate_expiry_date(expiry_date: date, created_at: datetime) -> bool:
-        return expiry_date <= Request.max_expiry_date(created_at)
+        return (
+            Request.min_expiry_date(created_at)
+            <= expiry_date
+            <= Request.max_expiry_date(created_at)
+        )

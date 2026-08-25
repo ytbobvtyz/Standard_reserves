@@ -102,6 +102,7 @@ describe('ObjectsPage', () => {
     expect(screen.getByRole('columnheader', { name: 'Завод' })).toBeTruthy()
     expect(screen.getByRole('columnheader', { name: 'Склад' })).toBeTruthy()
     expect(screen.getByRole('columnheader', { name: 'Пункт отгрузки' })).toBeTruthy()
+    expect(screen.getByRole('columnheader', { name: 'Удалённый' })).toBeTruthy()
     expect(screen.getByText('F005')).toBeTruthy()
     expect(screen.getByText('2R05')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Редактировать' })).toBeTruthy()
@@ -141,6 +142,7 @@ describe('ObjectsPage', () => {
     expect(screen.getByLabelText('Завод')).toHaveProperty('disabled', false)
     expect(screen.getByLabelText('Склад')).toHaveProperty('disabled', false)
     expect(screen.getByLabelText('Пункт отгрузки')).toHaveProperty('disabled', false)
+    expect(screen.getByRole('checkbox', { name: /Удалённый склад/ })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Создать' })).toBeTruthy()
   })
 
@@ -179,5 +181,27 @@ describe('ObjectsPage', () => {
     await waitFor(() => {
       expect(deleteObject).toHaveBeenCalledWith(2001)
     })
+  }, 15000)
+
+  it('saves the remote warehouse flag', async () => {
+    render(
+      <MemoryRouter>
+        <ObjectsPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByText('Склад Ростов')).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Редактировать' }))
+    await waitFor(() => {
+      expect(screen.getByRole('checkbox', { name: /Удалённый склад/ })).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('checkbox', { name: /Удалённый склад/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    await waitFor(() => {
+      expect(updateObject).toHaveBeenCalled()
+    })
+    expect(updateObject.mock.calls[0][0]).toBe(2001)
+    expect(updateObject.mock.calls[0][1]).toMatchObject({ long_distance: true })
   }, 15000)
 })

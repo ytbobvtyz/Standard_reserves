@@ -256,7 +256,7 @@ Errors:
 
 400 — Невалидные данные
 
-400 INVALID_EXPIRY_DATE — `expiry_date` позже 6 месяцев от даты создания
+400 INVALID_EXPIRY_DATE — `expiry_date` раньше 3 месяцев или позже 6 месяцев от даты создания
 
 403 — Недостаточно прав (только commercial для нормативных; commercial/logistics для разовых)
 
@@ -420,11 +420,11 @@ json
     ],
     "comment": "Уточненный объем"
 }
-При редактировании черновика `expiry_date` можно изменять без ограничений, кроме базового: максимум 6 месяцев от даты создания (`created_at`). Правило «только уменьшать» на черновик **не** распространяется.
+При редактировании черновика `expiry_date` можно изменять без ограничений, кроме базового: от 3 до 6 месяцев от даты создания (`created_at`). Правило «только уменьшать» на черновик **не** распространяется.
 
 Errors:
 
-400 INVALID_EXPIRY_DATE — `expiry_date` позже created_at + 6 месяцев
+400 INVALID_EXPIRY_DATE — `expiry_date` раньше created_at + 3 месяца или позже created_at + 6 месяцев
 
 400 INVALID_STATUS — запрос не в статусе draft
 
@@ -605,7 +605,7 @@ json
     "expiry_date": "2026-12-31"
 }
 
-`expiry_date` можно передать в `approve`. Срок не может превышать 6 месяцев от `created_at`, иначе 400 INVALID_EXPIRY_DATE. Изменение срока пишется в комментарий истории согласования. Если `items` не переданы, `quantity_approved` заполняется из `quantity_requested`.
+`expiry_date` можно передать в `approve`. Срок должен быть от 3 до 6 месяцев от `created_at`, иначе 400 INVALID_EXPIRY_DATE. Изменение срока пишется в комментарий истории согласования. Если `items` не переданы, `quantity_approved` заполняется из `quantity_requested`.
 
 2. Отказать:
 
@@ -668,11 +668,13 @@ json
     "expiry_date": "2026-10-01"
 }
 
-`expiry_date` можно передать в `approve`. Для нормативного запроса действует двойная проверка:
-- максимум 6 месяцев от `created_at` (400 INVALID_EXPIRY_DATE);
+`expiry_date` можно передать в `approve`. Для нормативного запроса действует проверка:
+- минимум 3 месяца и максимум 6 месяцев от `created_at` (400 INVALID_EXPIRY_DATE);
 - только уменьшение: новое значение ≥ `CURRENT_DATE` и ≤ текущей `expiry_date`.
   - 400 BAD_REQUEST «Дата окончания не может быть позже текущей»
   - 400 BAD_REQUEST «Дата окончания не может быть раньше сегодняшнего дня»
+
+Проверка минимума 3 месяца сохраняется при согласовании экономистом.
 
 Если `items` не переданы, `quantity_approved` заполняется из `quantity_requested`.
 
@@ -739,12 +741,15 @@ json
         {
             "warehouse_code": 2001,
             "warehouse_name": "Склад Ростов",
+            "long_distance": false,
+            "long_distance_message": null,
             "deficit_items": [
                 {
                     "product_code": 10001,
                     "product_name": "Подшипник 6204ZZ",
                     "category": "A",
                     "normative_quantity": 1000,
+                    "requirement": 1000,
                     "available": 600,
                     "plan": 600,
                     "unit": "шт",
@@ -765,7 +770,20 @@ json
     }
 }
 
-`available` — доступно (факт − заказы клиентов). `plan` — запланировано (`available` + разнарядки). `deficit` = норматив − `plan`.
+`available` — доступно (факт − заказы клиентов). `plan` — запланировано (`available` + разнарядки).
+
+`requirement` (Потребность) = `normative_quantity` × коэффициент категории (A=1, B=1.5, C=2) × коэффициент удалённости (`long_distance` false=1, true=1.5).
+
+`deficit` = `requirement` − `plan`.
+
+Для склада с `long_distance = true` возвращаются `long_distance: true` и сообщение:
+
+```json
+{
+    "long_distance": true,
+    "long_distance_message": "Ввиду удалённого расположения склада, пополнение возможно по железной дороге — срок доставки около 1 месяца от даты готовности продукции на производственной площадке, в связи с чем нормативы увеличены"
+}
+```
 
 6.2. Загрузить остатки из Excel (ERP)
 text
@@ -1242,6 +1260,7 @@ json
             "erp_warehouse_code": null,
             "loading_point": null,
             "is_active": true,
+            "long_distance": false,
             "last_modified_at": "2026-08-20T12:00:00Z"
         },
         {
@@ -1255,6 +1274,7 @@ json
             "erp_warehouse_code": "F005",
             "loading_point": "2R05",
             "is_active": true,
+            "long_distance": false,
             "last_modified_at": "2026-08-18T09:00:00Z"
         }
     ]
@@ -1448,7 +1468,8 @@ json
     "type": "warehouse",
     "erp_warehouse_code": "T001",
     "loading_point": "2T01",
-    "is_active": true
+    "is_active": true,
+    "long_distance": false
 }
 Правила:
 - `code` — целое число > 0, уникален (иначе 409 ALREADY_EXISTS)
@@ -1460,6 +1481,7 @@ json
 - `loading_point` — опционально, если заполнен: 4 символа (буквы/цифры); уникален среди неудалённых объектов (иначе 409 CONFLICT «Пункт отгрузки уже используется»). Пустые значения могут повторяться
 - `erp_plant_code` и `erp_warehouse_code` **не** уникальны: одинаковые коды ERP можно задать нескольким объектам
 - `is_active` по умолчанию true
+- `long_distance` — признак удалённого склада (по умолчанию false). Имеет смысл только для `type = warehouse`; для `plant` всегда сохраняется false
 - невалидные ERP-поля → 400 VALIDATION_ERROR
 - `last_modified_by` / `last_modified_at` заполняются автоматически
 
@@ -1490,6 +1512,7 @@ json
         "erp_warehouse_code": "T001",
         "loading_point": "2T01",
         "is_active": true,
+        "long_distance": false,
         "last_modified_by": {
             "id": "44444444-4444-4444-4444-444444444444",
             "full_name": "Кузнецов Кузьма"
@@ -1517,7 +1540,8 @@ json
     "type": "warehouse",
     "erp_warehouse_code": "T009",
     "loading_point": "2T09",
-    "is_active": true
+    "is_active": true,
+    "long_distance": true
 }
 Валидация: name/city не пустые, type = plant|warehouse, те же правила ERP что при создании. ERP-коды можно менять.
 
@@ -1632,6 +1656,6 @@ text
 6. Экономист: POST /approvals/economy/{id}/action (approve) → утверждает → статус approved
 7. Логист: GET /logistics/one-time/list → видит запрос
 8. Логист: POST /logistics/one-time/{id}/execute → отмечает исполненным
-Версия: 1.2
-Дата: 22.08.2026
+Версия: 1.3
+Дата: 24.08.2026
 Статус: Утверждена

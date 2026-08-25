@@ -26,6 +26,7 @@ class DeficitItem(BaseModel):
     product_name: str
     category: str
     normative_quantity: DecimalNumber
+    requirement: DecimalNumber
     available: DecimalNumber
     plan: DecimalNumber
     unit: str
@@ -66,6 +67,8 @@ class BalanceSyncInfo(BaseModel):
 class WarehouseDeficit(BaseModel):
     warehouse_code: int
     warehouse_name: str
+    long_distance: bool = False
+    long_distance_message: str | None = None
     deficit_items: list[DeficitItem]
     total_deficit: DecimalNumber
     deficit_count: int

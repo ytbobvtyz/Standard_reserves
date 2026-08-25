@@ -76,6 +76,7 @@ erDiagram
         varchar erp_warehouse_code "ERP склад, 4 символа"
         varchar loading_point "пункт отгрузки, уникальный"
         boolean is_active "активный"
+        boolean long_distance "удалённый склад (ЖД)"
         uuid last_modified_by FK "кто изменил"
         timestamp last_modified_at "когда изменили"
         timestamp created_at "дата создания"
@@ -362,6 +363,7 @@ CREATE TABLE objects (
     erp_warehouse_code VARCHAR(4),
     loading_point VARCHAR(4),
     is_active BOOLEAN DEFAULT true,
+    long_distance BOOLEAN DEFAULT false,
     last_modified_by UUID REFERENCES users(id),
     last_modified_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -390,6 +392,7 @@ erp_plant_code	INTEGER	❌	Номер завода в ERP (4 цифры; обя�
 erp_warehouse_code	VARCHAR(4)	❌	Номер склада в ERP (4 символа; обязателен для warehouse; не уникален)
 loading_point	VARCHAR(4)	❌	Пункт отгрузки ERP (4 символа; уникален среди неудалённых, если заполнен)
 is_active	BOOLEAN	✅	Активный (по умолчанию true)
+long_distance	BOOLEAN	✅	Удалённый склад, коэффициент ×1,5 (по умолчанию false; имеет смысл для `warehouse`)
 last_modified_by	UUID	❌	Кто изменил → users.id
 last_modified_at	TIMESTAMP	❌	Когда изменили
 created_at	TIMESTAMP	✅	Дата создания
@@ -548,7 +551,7 @@ initiator_id	UUID	✅	Инициатор → users.id
 initiator_comment	TEXT	❌	Комментарий инициатора
 comment_pp	TEXT	❌	Комментарий ПП
 comment_economy	TEXT	❌	Комментарий экономиста
-expiry_date	DATE	❌	Срок действия (только нормативные), не позже created_at + 6 месяцев
+expiry_date	DATE	❌	Срок действия (только нормативные), от created_at + 3 месяца до created_at + 6 месяцев
 approved_at	TIMESTAMP	❌	Дата утверждения
 executed_at	TIMESTAMP	❌	Дата исполнения (разовые)
 executed_by	UUID	❌	Кто исполнил → users.id (разовые)
@@ -669,7 +672,7 @@ created_at	TIMESTAMP	✅	Дата создания
 updated_at	TIMESTAMP	✅	Дата обновления
 deleted_at	TIMESTAMP	❌	Дата удаления (soft delete)
 5.2. available_balances — Остатки ERP
-Загружается из ERP вручную (Excel) на MVP. `available` — доступно к отгрузке (факт минус заказы клиентов). `plan` — запланировано (`available` плюс разнарядки). Дефицит на дашборде: норматив − plan. В будущем — автоматическая синхронизация.
+Загружается из ERP вручную (Excel) на MVP. `available` — доступно к отгрузке (факт минус заказы клиентов). `plan` — запланировано (`available` плюс разнарядки). Дефицит на дашборде: потребность − plan. В будущем — автоматическая синхронизация.
 
 sql
 CREATE TABLE available_balances (
@@ -834,6 +837,7 @@ CREATE OR REPLACE FUNCTION calculate_normative(
 DECLARE
     v_monthly_consumption DECIMAL(12,2);
     v_category CHAR(1);
+    v_long_distance BOOLEAN;
     v_result DECIMAL(12,2);
 BEGIN
     SELECT monthly_consumption, category
@@ -846,9 +850,15 @@ BEGIN
         RETURN NULL;
     END IF;
 
-    -- Коэффициент удаленности (MVP: всегда 1)
-    -- Коэффициент категории
-    v_result := v_monthly_consumption * 1 *
+    SELECT COALESCE(long_distance, false) INTO v_long_distance
+    FROM objects
+    WHERE code = p_warehouse_code
+      AND deleted_at IS NULL;
+
+    -- Коэффициент удаленности: false → 1, true → 1.5
+    -- Коэффициент категории: A=1, B=1.5, C=2
+    v_result := v_monthly_consumption *
+        CASE WHEN v_long_distance THEN 1.5 ELSE 1 END *
         CASE v_category
             WHEN 'A' THEN 1
             WHEN 'B' THEN 1.5
@@ -902,16 +912,30 @@ SELECT
     n.product_code,
     p.name AS product_name,
     p.category,
-    n.quantity AS normative_quantity,
-    n.unit AS normative_unit,
+            n.quantity AS normative_quantity,
+            n.quantity
+                * CASE p.category WHEN 'A' THEN 1 WHEN 'B' THEN 1.5 WHEN 'C' THEN 2 ELSE 1 END
+                * CASE WHEN o.long_distance THEN 1.5 ELSE 1 END
+                AS requirement,
+            n.unit AS normative_unit,
             COALESCE(ab.available, 0) AS available,
             COALESCE(ab.plan, 0) AS plan,
             COALESCE(ab.unit, 'шт') AS fact_unit,
-            (n.quantity - COALESCE(ab.plan, 0)) AS deficit,
+            (
+                n.quantity
+                * CASE p.category WHEN 'A' THEN 1 WHEN 'B' THEN 1.5 WHEN 'C' THEN 2 ELSE 1 END
+                * CASE WHEN o.long_distance THEN 1.5 ELSE 1 END
+                - COALESCE(ab.plan, 0)
+            ) AS deficit,
             n.expiry_date,
             n.client_name,
             CASE
-                WHEN (n.quantity - COALESCE(ab.plan, 0)) > 0 THEN 'warning'
+                WHEN (
+                    n.quantity
+                    * CASE p.category WHEN 'A' THEN 1 WHEN 'B' THEN 1.5 WHEN 'C' THEN 2 ELSE 1 END
+                    * CASE WHEN o.long_distance THEN 1.5 ELSE 1 END
+                    - COALESCE(ab.plan, 0)
+                ) > 0 THEN 'warning'
                 ELSE 'ok'
             END AS status
 FROM normatives n
@@ -920,7 +944,12 @@ JOIN products p ON n.product_code = p.code
 LEFT JOIN available_balances ab ON n.warehouse_code = ab.warehouse_code AND n.product_code = ab.product_code
 WHERE n.deleted_at IS NULL
   AND n.expiry_date >= CURRENT_DATE
-  AND (n.quantity - COALESCE(ab.plan, 0)) > 0;
+  AND (
+        n.quantity
+        * CASE p.category WHEN 'A' THEN 1 WHEN 'B' THEN 1.5 WHEN 'C' THEN 2 ELSE 1 END
+        * CASE WHEN o.long_distance THEN 1.5 ELSE 1 END
+        - COALESCE(ab.plan, 0)
+      ) > 0;
 8.2. Нормативы на дату
 sql
 CREATE OR REPLACE VIEW normatives_on_date AS
@@ -1061,7 +1090,10 @@ EXECUTE FUNCTION trigger_create_normative();
 | 9 | `0009_balance_unit_kg.py` | `available_balances.unit`: шт, т, ШТ, КГ |
 | 10 | `0010_product_gtin_parent_relax.py` | products: снять UNIQUE с gtin, снять FK parent/children |
 | 11 | `0011_sync_metadata.py` | `sync_metadata` |
-| 12 | `0012_drop_unused_request_statuses.py` | CHECK статусов: убраны неиспользуемые `pp_rework`, `economy_rework` |
+| 12 | `0012_drop_unused_request_statuses.py` / `0012_object_uniqueness.py` | CHECK статусов; уникальность ERP-полей |
+| 13 | `0013_seed_users_objects.py` | Начальные пользователи и объекты |
+| 14 | `0014_drop_rework_statuses.py` | Повторная очистка статусов `pp_rework` / `economy_rework` |
+| 15 | `0015_object_long_distance.py` | `objects.long_distance`; формула потребности в `calculate_normative` и `deficit_view` |
 
 Начальные пользователи и объекты заполняются скриптом `backend/scripts/seed_data.py`, а не миграцией.
 
@@ -1138,9 +1170,9 @@ GROUP BY warehouse_code, product_code;
 Таблица request_item_history	✅ История изменений
 Функция expire_normatives()	✅ Нужна с первого дня
 Функция get_related_products()	✅ Для расчета по цепочке артикулов
-Коэффициент удаленности	✅ Зафиксирован = 1 (в будущем Яндекс API)
+Коэффициент удаленности	✅ `objects.long_distance`: false → ×1, true → ×1,5
 
 
-Версия: 2.2
-Дата: 22.08.2026
+Версия: 2.3
+Дата: 24.08.2026
 Статус: Утверждена

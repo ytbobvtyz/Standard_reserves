@@ -38,9 +38,7 @@ def request_payload(**overrides):
     return payload
 
 
-async def _create_submitted(
-    client: AsyncClient, token: str, **overrides
-) -> str:
+async def _create_submitted(client: AsyncClient, token: str, **overrides) -> str:
     response = await client.post(
         "/api/v1/requests",
         headers=auth_header(token),
@@ -183,8 +181,7 @@ async def test_pp_edit(
         matching = [
             row
             for row in history
-            if float(row.new_value) == 800
-            and row.changed_by == pp_user.id
+            if float(row.new_value) == 800 and row.changed_by == pp_user.id
         ]
         assert matching
         assert matching[0].comment == (
@@ -626,8 +623,7 @@ async def test_pp_edit_expiry_date_success(
     )
     assert detail.json()["data"]["expiry_date"] == new_expiry
     history_comments = [
-        entry.get("comment") or ""
-        for entry in detail.json()["data"]["history"]
+        entry.get("comment") or "" for entry in detail.json()["data"]["history"]
     ]
     assert any("Срок действия:" in comment for comment in history_comments)
     await delete_request(request_id)
@@ -699,10 +695,10 @@ async def test_economy_edit_can_reduce_expiry_date(
     pp_token = await login_token(client, pp_user)
     economist_token = await login_token(client, economist_user)
     request_id = await _create_submitted(
-        client, commercial_token, expiry_date=valid_expiry_date(3)
+        client, commercial_token, expiry_date=valid_expiry_date(6)
     )
     await _pp_approve(client, pp_token, request_id)
-    new_expiry = valid_expiry_date(1)
+    new_expiry = valid_expiry_date(4)
 
     response = await client.post(
         f"/api/v1/approvals/economy/{request_id}/action",
@@ -719,6 +715,36 @@ async def test_economy_edit_can_reduce_expiry_date(
         headers=auth_header(economist_token),
     )
     assert detail.json()["data"]["expiry_date"] == new_expiry
+    await delete_request(request_id)
+
+
+async def test_economy_cannot_reduce_expiry_below_three_months(
+    client: AsyncClient,
+    test_user: AuthUser,
+    pp_user: AuthUser,
+    economist_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    commercial_token = await login_token(client, test_user)
+    pp_token = await login_token(client, pp_user)
+    economist_token = await login_token(client, economist_user)
+    request_id = await _create_submitted(
+        client, commercial_token, expiry_date=valid_expiry_date(6)
+    )
+    await _pp_approve(client, pp_token, request_id)
+
+    response = await client.post(
+        f"/api/v1/approvals/economy/{request_id}/action",
+        headers=auth_header(economist_token),
+        json={
+            "action": "approve",
+            "expiry_date": valid_expiry_date(2),
+            "comment": "Слишком короткий срок",
+        },
+    )
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["code"] == "INVALID_EXPIRY_DATE"
+    assert "3 месяцев" in response.json()["error"]["message"]
     await delete_request(request_id)
 
 

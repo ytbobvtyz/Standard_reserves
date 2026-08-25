@@ -17,9 +17,11 @@ from app.models.request import Request
 from app.models.request_item import RequestItem
 from app.models.sync_metadata import SyncMetadata
 from app.services.logistics_normative import (
+    LONG_DISTANCE_MESSAGE,
     _parse_int_cell,
     _parse_quantity,
     _parse_warehouse_code,
+    calculate_requirement,
 )
 from tests.conftest import AuthUser, auth_header, delete_request, login_token
 
@@ -74,7 +76,7 @@ async def logistics_catalog(catalog: dict[str, int], test_user: AuthUser):
             Product(
                 code=TEST_PRODUCT_OK,
                 name="Тестовый корпус без дефицита",
-                category="B",
+                category="A",
                 plant_id=1002,
                 weight_kg=Decimal("2.5000"),
                 is_active=True,
@@ -123,7 +125,7 @@ async def logistics_catalog(catalog: dict[str, int], test_user: AuthUser):
                 unit="шт",
                 client_name=CLIENT_NAME,
                 expiry_date=date(2026, 12, 31),
-                category="B",
+                category="A",
             )
         )
         session.add(
@@ -214,14 +216,107 @@ async def test_dashboard_returns_deficit(
     item = _item(warehouse, TEST_PRODUCT_DEFICIT)
     assert item["product_name"] == "Тестовый подшипник логистики"
     assert item["normative_quantity"] == 1000
+    assert item["requirement"] == 1000
     assert item["available"] == 600
     assert item["plan"] == 600
     assert item["deficit"] == 400
     assert item["unit"] == "шт"
     assert item["status"] == "warning"
     assert item["client_name"] == CLIENT_NAME
+    assert warehouse["long_distance"] is False
+    assert warehouse["long_distance_message"] is None
     assert warehouse["deficit_count"] >= 1
     assert body["summary"]["deficit_products"] >= 1
+
+
+def test_calculate_requirement_factors() -> None:
+    assert calculate_requirement(Decimal("1000"), "A", False) == Decimal("1000")
+    assert calculate_requirement(Decimal("1000"), "B", False) == Decimal("1500")
+    assert calculate_requirement(Decimal("1000"), "C", False) == Decimal("2000")
+    assert calculate_requirement(Decimal("1000"), "A", True) == Decimal("1500")
+    assert calculate_requirement(Decimal("1000"), "B", True) == Decimal("2250")
+    assert calculate_requirement(Decimal("1000"), "C", True) == Decimal("3000")
+
+
+async def test_dashboard_requirement_uses_category_and_distance(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    logistics_catalog: dict,
+) -> None:
+    warehouse_code = logistics_catalog["warehouse_code"]
+    async with AsyncSessionLocal() as session:
+        warehouse = await session.get(Object, warehouse_code)
+        assert warehouse is not None
+        warehouse.long_distance = True
+        await session.commit()
+    try:
+        token = await login_token(client, logistics_user)
+        response = await client.get(
+            "/api/v1/logistics/normative/dashboard",
+            params={"warehouse_code": warehouse_code},
+            headers=auth_header(token),
+        )
+        assert response.status_code == 200, response.text
+        warehouse = _warehouse(response.json()["data"], warehouse_code)
+        assert warehouse["long_distance"] is True
+        assert warehouse["long_distance_message"] == LONG_DISTANCE_MESSAGE
+        item = _item(warehouse, TEST_PRODUCT_DEFICIT)
+        assert item["normative_quantity"] == 1000
+        assert item["requirement"] == 1500
+        assert item["plan"] == 600
+        assert item["deficit"] == 900
+        assert item["category"] == "A"
+    finally:
+        async with AsyncSessionLocal() as session:
+            warehouse = await session.get(Object, warehouse_code)
+            assert warehouse is not None
+            warehouse.long_distance = False
+            await session.commit()
+
+
+async def test_dashboard_remote_requirement_multiplies_category_and_distance(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    logistics_catalog: dict,
+) -> None:
+    warehouse_code = logistics_catalog["warehouse_code"]
+    async with AsyncSessionLocal() as session:
+        warehouse = await session.get(Object, warehouse_code)
+        assert warehouse is not None
+        warehouse.long_distance = True
+        ok_product = await session.get(Product, TEST_PRODUCT_OK)
+        assert ok_product is not None
+        ok_product.category = "B"
+        await session.commit()
+    try:
+        token = await login_token(client, logistics_user)
+        response = await client.get(
+            "/api/v1/logistics/normative/dashboard",
+            params={"warehouse_code": warehouse_code, "filter_mode": "all"},
+            headers=auth_header(token),
+        )
+        assert response.status_code == 200, response.text
+        warehouse = _warehouse(response.json()["data"], warehouse_code)
+        assert warehouse["long_distance"] is True
+        category_a = _item(warehouse, TEST_PRODUCT_DEFICIT)
+        assert category_a["category"] == "A"
+        assert category_a["normative_quantity"] == 1000
+        assert category_a["requirement"] == 1500
+        category_b = _item(warehouse, TEST_PRODUCT_OK)
+        assert category_b["category"] == "B"
+        assert category_b["normative_quantity"] == 500
+        assert category_b["requirement"] == 1125
+        assert category_b["plan"] == 500
+        assert category_b["deficit"] == 625
+    finally:
+        async with AsyncSessionLocal() as session:
+            warehouse = await session.get(Object, warehouse_code)
+            assert warehouse is not None
+            warehouse.long_distance = False
+            ok_product = await session.get(Product, TEST_PRODUCT_OK)
+            assert ok_product is not None
+            ok_product.category = "A"
+            await session.commit()
 
 
 async def test_dashboard_filter_deficit_only(
@@ -284,6 +379,7 @@ async def test_dashboard_unit_conversion(
     item = _item(warehouse, TEST_PRODUCT_DEFICIT)
     assert item["unit"] == "т"
     assert item["normative_quantity"] == pytest.approx(0.25)
+    assert item["requirement"] == pytest.approx(0.25)
     assert item["available"] == pytest.approx(0.15)
     assert item["plan"] == pytest.approx(0.15)
     assert item["deficit"] == pytest.approx(0.1)
@@ -449,6 +545,7 @@ async def test_export_excel_returns_file(
         "Артикул",
         "Название",
         "Норматив",
+        "Потребность",
         "Доступно",
         "Запланировано",
         "Дефицит",
@@ -463,11 +560,12 @@ async def test_export_excel_returns_file(
     assert matched[0] == "Склад Ростов"
     assert matched[2] == "Тестовый подшипник логистики"
     assert matched[3] == 1000
-    assert matched[4] == 600
+    assert matched[4] == 1000
     assert matched[5] == 600
-    assert matched[6] == 400
-    assert matched[7] == "шт"
-    assert matched[8] == CLIENT_NAME
+    assert matched[6] == 600
+    assert matched[7] == 400
+    assert matched[8] == "шт"
+    assert matched[9] == CLIENT_NAME
 
 
 def _balance_excel_row(

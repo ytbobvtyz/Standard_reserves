@@ -19,6 +19,7 @@ const dashboard: LogisticsDashboardData = {
           product_name: 'Подшипник 6204ZZ',
           category: 'A',
           normative_quantity: 1000,
+          requirement: 1000,
           available: 600,
           plan: 600,
           unit: 'шт',
@@ -34,6 +35,7 @@ const dashboard: LogisticsDashboardData = {
           product_name: 'Корпус без дефицита',
           category: 'B',
           normative_quantity: 500,
+          requirement: 500,
           available: 500,
           plan: 500,
           unit: 'шт',
@@ -49,6 +51,9 @@ const dashboard: LogisticsDashboardData = {
     {
       warehouse_code: 2003,
       warehouse_name: 'Склад Казань',
+      long_distance: true,
+      long_distance_message:
+        'Ввиду удалённого расположения склада, пополнение возможно по железной дороге — срок доставки около 1 месяца от даты готовности продукции на производственной площадке, в связи с чем нормативы увеличены',
       total_deficit: 80,
       deficit_count: 1,
       deficit_items: [
@@ -57,6 +62,7 @@ const dashboard: LogisticsDashboardData = {
           product_name: 'Вал приводной 500мм',
           category: 'C',
           normative_quantity: 120,
+          requirement: 120,
           available: 40,
           plan: 40,
           unit: 'шт',
@@ -205,6 +211,10 @@ describe('LogisticsDashboardPage', () => {
     await expandWarehouse('Склад Ростов')
     expect(screen.getByText('Подшипник 6204ZZ')).toBeTruthy()
     expect(screen.getByText('Корпус без дефицита')).toBeTruthy()
+    expect(screen.getByRole('columnheader', { name: 'Категория' })).toBeTruthy()
+    expect(screen.getByText('A')).toBeTruthy()
+    expect(screen.getByText('B')).toBeTruthy()
+    expect(screen.getAllByText('Потребность').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Доступно').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Запланировано').length).toBeGreaterThan(0)
     expect(screen.getAllByText(/норматив:/).length).toBeGreaterThan(0)
@@ -233,7 +243,7 @@ describe('LogisticsDashboardPage', () => {
     expect(screen.getByText('Подшипник 6204ZZ')).toBeTruthy()
     fireEvent.click(screen.getByRole('radio', { name: 'тонны' }))
     await waitFor(() => {
-      expect(screen.getByText('0,25')).toBeTruthy()
+      expect(screen.getAllByText('0,25').length).toBeGreaterThan(0)
     })
     expect(getDashboard).toHaveBeenCalledTimes(1)
     expect(getDashboard).toHaveBeenCalledWith({
@@ -357,6 +367,22 @@ describe('LogisticsDashboardPage', () => {
     expect(screen.queryByRole('checkbox', { name: 'Выбрать все склады' })).toBeNull()
     expect(screen.getByText(/Актуальные остатки обновлены/)).toBeTruthy()
     expect(screen.getByText(/Иванов И\. \(logistics\)/)).toBeTruthy()
+  })
+
+  it('shows a notice for a remote warehouse', async () => {
+    render(
+      <MemoryRouter>
+        <LogisticsDashboardPage />
+      </MemoryRouter>,
+    )
+    await expandWarehouse('Склад Казань')
+    expect(screen.getByText('Удалённый')).toBeTruthy()
+    expect(screen.getByText('Удалённый склад')).toBeTruthy()
+    expect(
+      screen.getByText(/пополнение возможно по железной дороге/),
+    ).toBeTruthy()
+    expect(screen.getByRole('columnheader', { name: 'Категория' })).toBeTruthy()
+    expect(screen.getByText('C')).toBeTruthy()
   })
 
   it('shows empty sync message when balances were never uploaded', async () => {

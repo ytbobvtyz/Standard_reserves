@@ -39,6 +39,36 @@ logger = logging.getLogger(__name__)
 
 ESTIMATED_DELIVERY_DAYS = 5
 KG_IN_TON = Decimal("1000")
+CATEGORY_FACTORS = {
+    "A": Decimal("1"),
+    "B": Decimal("1.5"),
+    "C": Decimal("2"),
+}
+DISTANCE_FACTOR_REMOTE = Decimal("1.5")
+DISTANCE_FACTOR_NEAR = Decimal("1")
+LONG_DISTANCE_MESSAGE = (
+    "Ввиду удалённого расположения склада, пополнение возможно по железной дороге "
+    "— срок доставки около 1 месяца от даты готовности продукции на производственной "
+    "площадке, в связи с чем нормативы увеличены"
+)
+
+
+def category_factor(category: str) -> Decimal:
+    return CATEGORY_FACTORS.get(category.strip().upper(), Decimal("1"))
+
+
+def distance_factor(long_distance: bool) -> Decimal:
+    return DISTANCE_FACTOR_REMOTE if long_distance else DISTANCE_FACTOR_NEAR
+
+
+def calculate_requirement(
+    normative_quantity: Decimal,
+    category: str,
+    long_distance: bool,
+) -> Decimal:
+    return (
+        normative_quantity * category_factor(category) * distance_factor(long_distance)
+    )
 
 
 @dataclass
@@ -54,6 +84,7 @@ class DeficitRow:
     plant_name: str
     weight_kg: Decimal
     normative_quantity: Decimal
+    requirement: Decimal
     available: Decimal
     plan: Decimal
     deficit: Decimal
@@ -62,6 +93,7 @@ class DeficitRow:
     expiry_date: date | None
     status: Literal["warning", "ok"]
     stock_unit: str
+    long_distance: bool
 
 
 def _quantize(value: Decimal, unit: Unit) -> Decimal:
@@ -120,8 +152,13 @@ def _convert_row(
     client_name: str,
     expiry_date: date | None,
     stock_unit: str,
+    long_distance: bool | None = None,
 ) -> DeficitRow:
-    deficit_pcs = normative_pcs - plan_pcs
+    is_remote = bool(warehouse.long_distance if long_distance is None else long_distance)
+    requirement_pcs = calculate_requirement(
+        normative_pcs, product.category, is_remote
+    )
+    deficit_pcs = requirement_pcs - plan_pcs
     status: Literal["warning", "ok"] = "warning" if deficit_pcs > 0 else "ok"
     return DeficitRow(
         warehouse_code=warehouse.code,
@@ -137,6 +174,9 @@ def _convert_row(
         normative_quantity=_quantize(
             from_pieces(normative_pcs, unit, product.weight_kg), unit
         ),
+        requirement=_quantize(
+            from_pieces(requirement_pcs, unit, product.weight_kg), unit
+        ),
         available=_quantize(from_pieces(available_pcs, unit, product.weight_kg), unit),
         plan=_quantize(from_pieces(plan_pcs, unit, product.weight_kg), unit),
         deficit=_quantize(from_pieces(deficit_pcs, unit, product.weight_kg), unit),
@@ -145,6 +185,7 @@ def _convert_row(
         expiry_date=expiry_date,
         status=status,
         stock_unit=stock_unit,
+        long_distance=is_remote,
     )
 
 
@@ -312,6 +353,15 @@ async def collect_deficit_rows(
 
     plant_ids = {resolve_plant_id(bucket["product"]) for bucket in aggregated.values()}
     plants = await _load_plants(db, plant_ids)
+    warehouse_codes_used = {bucket["warehouse"].code for bucket in aggregated.values()}
+    long_distance_by_code: dict[int, bool] = {}
+    if warehouse_codes_used:
+        flags = await db.execute(
+            select(Object.code, Object.long_distance).where(
+                Object.code.in_(warehouse_codes_used)
+            )
+        )
+        long_distance_by_code = {code: bool(flag) for code, flag in flags.all()}
 
     rows: list[DeficitRow] = []
     for warehouse_code_key, product_code in sorted(aggregated):
@@ -343,6 +393,9 @@ async def collect_deficit_rows(
             stock_unit=(
                 _normalize_stock_unit(balance.unit) if balance is not None else "ШТ"
             ),
+            long_distance=long_distance_by_code.get(
+                warehouse.code, bool(warehouse.long_distance)
+            ),
         )
         if filter_mode == "deficit_only" and row.deficit <= 0:
             continue
@@ -358,6 +411,7 @@ def _to_deficit_item(row: DeficitRow) -> DeficitItem:
         product_name=row.product_name,
         category=row.category,
         normative_quantity=row.normative_quantity,
+        requirement=row.requirement,
         available=row.available,
         plan=row.plan,
         unit=row.unit,
@@ -373,19 +427,24 @@ def _to_deficit_item(row: DeficitRow) -> DeficitItem:
 def build_dashboard(rows: list[DeficitRow]) -> DashboardResponse:
     grouped: dict[int, list[DeficitRow]] = defaultdict(list)
     names: dict[int, str] = {}
+    remote: dict[int, bool] = {}
     for row in rows:
         grouped[row.warehouse_code].append(row)
         names[row.warehouse_code] = row.warehouse_name
+        remote[row.warehouse_code] = row.long_distance
 
     warehouses: list[WarehouseDeficit] = []
     for warehouse_code in sorted(grouped):
         items = grouped[warehouse_code]
         positive = [item for item in items if item.deficit > 0]
         total = sum((item.deficit for item in positive), Decimal("0"))
+        is_remote = remote.get(warehouse_code, False)
         warehouses.append(
             WarehouseDeficit(
                 warehouse_code=warehouse_code,
                 warehouse_name=names[warehouse_code],
+                long_distance=is_remote,
+                long_distance_message=LONG_DISTANCE_MESSAGE if is_remote else None,
                 deficit_items=[_to_deficit_item(item) for item in items],
                 total_deficit=total,
                 deficit_count=len(positive),
@@ -545,6 +604,7 @@ async def export_excel(
             "Артикул",
             "Название",
             "Норматив",
+            "Потребность",
             "Доступно",
             "Запланировано",
             "Дефицит",
@@ -559,6 +619,7 @@ async def export_excel(
                 row.product_code,
                 row.product_name,
                 float(row.normative_quantity),
+                float(row.requirement),
                 float(row.available),
                 float(row.plan),
                 float(row.deficit),

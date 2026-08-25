@@ -24,9 +24,12 @@ import { useAuthStore } from '../stores/auth'
 import {
   EXPIRY_ERROR,
   EXPIRY_HINT,
+  EXPIRY_TOO_SOON,
   defaultExpiryDate,
   isExpiryTooFar,
+  isExpiryTooSoon,
   maxExpiryDate,
+  minExpiryDate,
 } from '../utils/expiryDate'
 
 interface ItemFormValue {
@@ -140,6 +143,9 @@ export function CreateRequestPage() {
                 { required: true, message: 'Укажите срок действия' },
                 {
                   validator: async (_, value: Dayjs | undefined) => {
+                    if (isExpiryTooSoon(value)) {
+                      return Promise.reject(new Error(EXPIRY_TOO_SOON))
+                    }
                     if (isExpiryTooFar(value)) {
                       return Promise.reject(new Error(EXPIRY_ERROR))
                     }
@@ -150,7 +156,11 @@ export function CreateRequestPage() {
               <DatePicker
                 style={{ width: '100%' }}
                 disabledDate={(current) =>
-                  Boolean(current && current.isAfter(maxExpiryDate(), 'day'))
+                  Boolean(
+                    current &&
+                      (current.isBefore(minExpiryDate(), 'day') ||
+                        current.isAfter(maxExpiryDate(), 'day')),
+                  )
                 }
               />
             </Form.Item>

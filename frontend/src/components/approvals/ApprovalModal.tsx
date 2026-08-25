@@ -13,10 +13,13 @@ import {
   ECONOMY_EXPIRY_HINT,
   EXPIRY_ERROR,
   EXPIRY_HINT,
+  EXPIRY_TOO_SOON,
   expiryDecreaseError,
   isExpiryDecreaseInvalid,
   isExpiryTooFar,
+  isExpiryTooSoon,
   maxExpiryDate,
+  minExpiryDate,
 } from '../../utils/expiryDate'
 
 const TYPE_LABEL: Record<RequestType, string> = {
@@ -67,6 +70,7 @@ export function ApprovalModal({
   const isNormative = request?.request_type === 'normative'
   const isEconomy = stage === 'economy'
   const maxDate = maxExpiryDate(request?.created_at)
+  const minDate = minExpiryDate(request?.created_at)
   const currentExpiry = request?.expiry_date
 
   const submitAction = async (action: ApprovalAction) => {
@@ -81,6 +85,10 @@ export function ApprovalModal({
       const invalid = editableItems.some((item) => item.quantity_approved_input <= 0)
       if (invalid) {
         message.error('Утвержденное количество должно быть больше 0')
+        return
+      }
+      if (isNormative && isExpiryTooSoon(expiryDate, request.created_at)) {
+        message.error(EXPIRY_TOO_SOON)
         return
       }
       if (isNormative && isEconomy && isExpiryDecreaseInvalid(expiryDate, currentExpiry)) {
@@ -154,6 +162,9 @@ export function ApprovalModal({
                   if (!current) {
                     return false
                   }
+                  if (current.isBefore(minDate, 'day')) {
+                    return true
+                  }
                   if (isEconomy) {
                     return (
                       current.isBefore(dayjs(), 'day') ||
@@ -172,6 +183,11 @@ export function ApprovalModal({
               {isEconomy && isExpiryDecreaseInvalid(expiryDate, currentExpiry) ? (
                 <Typography.Text type="danger" style={{ display: 'block' }}>
                   {expiryDecreaseError(expiryDate, currentExpiry)}
+                </Typography.Text>
+              ) : null}
+              {isExpiryTooSoon(expiryDate, request.created_at) ? (
+                <Typography.Text type="danger" style={{ display: 'block' }}>
+                  {EXPIRY_TOO_SOON}
                 </Typography.Text>
               ) : null}
               {!isEconomy && isExpiryTooFar(expiryDate, request.created_at) ? (

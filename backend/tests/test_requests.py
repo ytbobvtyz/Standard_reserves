@@ -18,6 +18,10 @@ def too_far_expiry_date() -> str:
     return Request.add_months(date.today(), 7).isoformat()
 
 
+def too_soon_expiry_date() -> str:
+    return Request.add_months(date.today(), 2).isoformat()
+
+
 def request_payload(**overrides):
     payload = {
         "request_type": "normative",
@@ -401,7 +405,7 @@ async def test_update_draft_expiry_can_increase(
     client: AsyncClient, test_user: AuthUser, catalog: dict[str, int]
 ) -> None:
     token = await login_token(client, test_user)
-    _, created = await _create(client, token, expiry_date=valid_expiry_date(2))
+    _, created = await _create(client, token, expiry_date=valid_expiry_date(3))
     request_id = created["data"]["id"]
     new_expiry = valid_expiry_date(5)
     response = await client.put(
@@ -421,8 +425,11 @@ async def test_update_draft_expiry_can_increase(
 def test_validate_expiry_date_method() -> None:
     created_at = datetime(2026, 8, 21, tzinfo=UTC)
     max_date = Request.add_months(date(2026, 8, 21), 6)
+    min_date = Request.add_months(date(2026, 8, 21), 3)
     assert Request.validate_expiry_date(max_date, created_at)
+    assert Request.validate_expiry_date(min_date, created_at)
     assert Request.validate_expiry_date(date(2026, 11, 21), created_at)
+    assert not Request.validate_expiry_date(date(2026, 10, 21), created_at)
     assert not Request.validate_expiry_date(Request.add_months(max_date, 1), created_at)
 
 
@@ -433,6 +440,32 @@ async def test_create_request_expiry_too_far_fails(
     status, body = await _create(client, token, expiry_date=too_far_expiry_date())
     assert status == 400, body
     assert body["error"]["code"] == "INVALID_EXPIRY_DATE"
+
+
+async def test_create_request_expiry_too_soon_fails(
+    client: AsyncClient, test_user: AuthUser, catalog: dict[str, int]
+) -> None:
+    token = await login_token(client, test_user)
+    status, body = await _create(client, token, expiry_date=too_soon_expiry_date())
+    assert status == 400, body
+    assert body["error"]["code"] == "INVALID_EXPIRY_DATE"
+    assert "3 месяцев" in body["error"]["message"]
+
+
+async def test_update_draft_expiry_too_soon_fails(
+    client: AsyncClient, test_user: AuthUser, catalog: dict[str, int]
+) -> None:
+    token = await login_token(client, test_user)
+    _, created = await _create(client, token)
+    request_id = created["data"]["id"]
+    response = await client.put(
+        f"/api/v1/requests/{request_id}",
+        headers=auth_header(token),
+        json={"expiry_date": too_soon_expiry_date()},
+    )
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["code"] == "INVALID_EXPIRY_DATE"
+    await delete_request(request_id)
 
 
 async def test_update_draft_expiry_too_far_fails(

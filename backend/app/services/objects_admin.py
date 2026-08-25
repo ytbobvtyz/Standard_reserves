@@ -158,6 +158,7 @@ async def create_object(
         erp_warehouse_code=body.erp_warehouse_code,
         loading_point=body.loading_point,
         is_active=body.is_active,
+        long_distance=body.long_distance if body.type == "warehouse" else False,
     )
     _normalize_erp_fields(obj)
     _validate_erp_fields(obj)
@@ -205,9 +206,12 @@ async def update_object(
         "erp_plant_code": obj.erp_plant_code,
         "erp_warehouse_code": obj.erp_warehouse_code,
         "loading_point": obj.loading_point,
+        "long_distance": obj.long_distance,
     }
     for field, value in updates.items():
         setattr(obj, field, value)
+    if obj.type != "warehouse":
+        obj.long_distance = False
     _normalize_erp_fields(obj)
     _validate_erp_fields(obj)
     await _ensure_loading_point_unique(db, obj, exclude_code=code)

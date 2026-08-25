@@ -50,9 +50,7 @@ class Object(TimestampMixin, SoftDeleteMixin, Base):
             "uq_objects_loading_point",
             "loading_point",
             unique=True,
-            postgresql_where=text(
-                "loading_point IS NOT NULL AND deleted_at IS NULL"
-            ),
+            postgresql_where=text("loading_point IS NOT NULL AND deleted_at IS NULL"),
         ),
     )
 
@@ -70,6 +68,12 @@ class Object(TimestampMixin, SoftDeleteMixin, Base):
         nullable=False,
         default=True,
         server_default=text("true"),
+    )
+    long_distance: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
     )
     last_modified_by: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),

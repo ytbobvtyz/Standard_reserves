@@ -10,15 +10,14 @@ from app.schemas.common import DecimalNumber
 from app.schemas.user import UserBrief
 
 INVALID_EXPIRY_DATE_CODE = "INVALID_EXPIRY_DATE"
-INVALID_EXPIRY_DATE_MESSAGE = (
-    "Срок не может превышать 6 месяцев от даты создания"
+INVALID_EXPIRY_DATE_MESSAGE = "Срок не может превышать 6 месяцев от даты создания"
+INVALID_EXPIRY_DATE_TOO_SOON_MESSAGE = (
+    "Срок действия норматива не может быть менее 3 месяцев"
 )
 EXPIRY_DATE_TOO_LATE_CODE = "BAD_REQUEST"
 EXPIRY_DATE_TOO_LATE_MESSAGE = "Дата окончания не может быть позже текущей"
 EXPIRY_DATE_IN_PAST_CODE = "BAD_REQUEST"
-EXPIRY_DATE_IN_PAST_MESSAGE = (
-    "Дата окончания не может быть раньше сегодняшнего дня"
-)
+EXPIRY_DATE_IN_PAST_MESSAGE = "Дата окончания не может быть раньше сегодняшнего дня"
 CANNOT_DELETE_APPROVED_CODE = "BAD_REQUEST"
 CANNOT_DELETE_APPROVED_MESSAGE = (
     "Невозможно удалить запрос после финального согласования"
@@ -35,7 +34,15 @@ def validate_expiry_date_limit(
     if expiry_date is None:
         return
     reference = created_at or datetime.now(UTC)
-    if not RequestModel.validate_expiry_date(expiry_date, reference):
+    min_date = RequestModel.min_expiry_date(reference)
+    max_date = RequestModel.max_expiry_date(reference)
+    if expiry_date < min_date:
+        raise APIError(
+            400,
+            INVALID_EXPIRY_DATE_CODE,
+            INVALID_EXPIRY_DATE_TOO_SOON_MESSAGE,
+        )
+    if expiry_date > max_date:
         raise APIError(400, INVALID_EXPIRY_DATE_CODE, INVALID_EXPIRY_DATE_MESSAGE)
 
 
@@ -65,7 +72,7 @@ class RequestCreate(BaseModel):
     client_name: str = Field(min_length=1, max_length=500)
     expiry_date: date | None = Field(
         default=None,
-        description="Не позже 6 месяцев от даты создания",
+        description="От 3 до 6 месяцев от даты создания",
     )
     items: list[RequestItemCreate] = Field(min_length=1)
     comment: str | None = None
@@ -75,9 +82,7 @@ class RequestCreate(BaseModel):
         if self.expiry_date is None:
             return self
         # 400 INVALID_EXPIRY_DATE выбрасывается в сервисе, а не через 422 Pydantic.
-        if not RequestModel.validate_expiry_date(
-            self.expiry_date, datetime.now(UTC)
-        ):
+        if not RequestModel.validate_expiry_date(self.expiry_date, datetime.now(UTC)):
             return self
         return self
 
@@ -86,7 +91,7 @@ class RequestUpdate(BaseModel):
     client_name: str | None = Field(default=None, min_length=1, max_length=500)
     expiry_date: date | None = Field(
         default=None,
-        description="Не позже 6 месяцев от даты создания запроса",
+        description="От 3 до 6 месяцев от даты создания запроса",
     )
     items: list[RequestItemCreate] | None = Field(default=None, min_length=1)
     comment: str | None = None

@@ -110,7 +110,7 @@ describe('ApprovalsPage', () => {
     expect(screen.getByText('Склад Ростов')).toBeTruthy()
     expect(screen.getByText('Срок действия')).toBeTruthy()
     expect(
-      screen.getByText('Максимальный срок — 6 месяцев от даты создания'),
+      screen.getByText('Минимальный срок — 3 месяца, максимальный — 6 месяцев'),
     ).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Утвердить' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Редактировать' })).toBeNull()
@@ -150,7 +150,7 @@ describe('ApprovalsPage', () => {
     expect(screen.getByText('Срок действия')).toBeTruthy()
     expect(
       screen.getByText(
-        'Срок можно только уменьшить: не раньше сегодня и не позже текущей даты',
+        'Срок можно только уменьшить: не раньше 3 месяцев от даты создания и не позже текущей даты',
       ),
     ).toBeTruthy()
   })

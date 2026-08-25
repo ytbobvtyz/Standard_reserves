@@ -141,6 +141,15 @@ async def db_ready() -> AsyncGenerator[None, None]:
         await connection.execute(
             text(
                 "ALTER TABLE objects "
+                "ADD COLUMN IF NOT EXISTS long_distance BOOLEAN DEFAULT false"
+            )
+        )
+        await connection.execute(
+            text("UPDATE objects SET long_distance = false WHERE long_distance IS NULL")
+        )
+        await connection.execute(
+            text(
+                "ALTER TABLE objects "
                 "DROP CONSTRAINT IF EXISTS objects_erp_plant_code_key"
             )
         )
@@ -150,12 +159,16 @@ async def db_ready() -> AsyncGenerator[None, None]:
                 "DROP CONSTRAINT IF EXISTS objects_erp_warehouse_code_key"
             )
         )
-        await connection.execute(text("DROP INDEX IF EXISTS objects_erp_plant_code_key"))
+        await connection.execute(
+            text("DROP INDEX IF EXISTS objects_erp_plant_code_key")
+        )
         await connection.execute(
             text("DROP INDEX IF EXISTS objects_erp_warehouse_code_key")
         )
         await connection.execute(text("DROP INDEX IF EXISTS uq_objects_erp_plant_code"))
-        await connection.execute(text("DROP INDEX IF EXISTS uq_objects_erp_warehouse_code"))
+        await connection.execute(
+            text("DROP INDEX IF EXISTS uq_objects_erp_warehouse_code")
+        )
         await connection.execute(text("DROP INDEX IF EXISTS uq_objects_loading_point"))
         await connection.execute(
             text(

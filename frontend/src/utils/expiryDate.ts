@@ -1,15 +1,21 @@
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
 
+export const MIN_EXPIRY_MONTHS = 3
 export const MAX_EXPIRY_MONTHS = 6
-export const EXPIRY_HINT = 'Максимальный срок — 6 месяцев от даты создания'
+export const EXPIRY_HINT = 'Минимальный срок — 3 месяца, максимальный — 6 месяцев'
 export const EXPIRY_ERROR = 'Срок не может превышать 6 месяцев от даты создания'
+export const EXPIRY_TOO_SOON = 'Срок действия норматива не может быть менее 3 месяцев'
 export const EXPIRY_TOO_LATE = 'Дата окончания не может быть позже текущей'
 export const EXPIRY_IN_PAST = 'Дата окончания не может быть раньше сегодняшнего дня'
 export const ECONOMY_EXPIRY_HINT =
-  'Срок можно только уменьшить: не раньше сегодня и не позже текущей даты'
+  'Срок можно только уменьшить: не раньше 3 месяцев от даты создания и не позже текущей даты'
 export const ACTIVE_EXPIRY_HINT =
   'Можно только уменьшить срок: от сегодня до текущей даты окончания'
+
+export function minExpiryDate(from?: string | Date | Dayjs | null): Dayjs {
+  return dayjs(from ?? undefined).add(MIN_EXPIRY_MONTHS, 'month')
+}
 
 export function maxExpiryDate(from?: string | Date | Dayjs | null): Dayjs {
   return dayjs(from ?? undefined).add(MAX_EXPIRY_MONTHS, 'month')
@@ -27,6 +33,36 @@ export function isExpiryTooFar(
     return false
   }
   return value.startOf('day').isAfter(maxExpiryDate(from).startOf('day'))
+}
+
+export function isExpiryTooSoon(
+  value: Dayjs | null | undefined,
+  from?: string | Date | Dayjs | null,
+): boolean {
+  if (!value) {
+    return false
+  }
+  return value.startOf('day').isBefore(minExpiryDate(from).startOf('day'))
+}
+
+export function isExpiryOutOfRange(
+  value: Dayjs | null | undefined,
+  from?: string | Date | Dayjs | null,
+): boolean {
+  return isExpiryTooSoon(value, from) || isExpiryTooFar(value, from)
+}
+
+export function expiryRangeError(
+  value: Dayjs | null | undefined,
+  from?: string | Date | Dayjs | null,
+): string | null {
+  if (isExpiryTooSoon(value, from)) {
+    return EXPIRY_TOO_SOON
+  }
+  if (isExpiryTooFar(value, from)) {
+    return EXPIRY_ERROR
+  }
+  return null
 }
 
 export function isExpiryInPast(value: Dayjs | null | undefined): boolean {

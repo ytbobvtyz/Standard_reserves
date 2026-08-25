@@ -92,6 +92,7 @@ class ObjectListItem(BaseModel):
     erp_warehouse_code: str | None = None
     loading_point: str | None = None
     is_active: bool
+    long_distance: bool = False
     last_modified_at: datetime | None = None
 
 
@@ -110,6 +111,7 @@ class ObjectCreate(BaseModel):
     erp_warehouse_code: str | None = None
     loading_point: str | None = None
     is_active: bool = True
+    long_distance: bool = False
 
     @field_validator("name", "city")
     @classmethod
@@ -138,6 +140,7 @@ class ObjectUpdate(BaseModel):
     erp_warehouse_code: str | None = None
     loading_point: str | None = None
     is_active: bool | None = None
+    long_distance: bool | None = None
 
     @field_validator("name", "city")
     @classmethod

@@ -20,7 +20,7 @@ class ApprovalActionRequest(BaseModel):
     comment: str | None = None
     expiry_date: date | None = Field(
         default=None,
-        description="Не позже 6 месяцев от даты создания запроса",
+        description="От 3 до 6 месяцев от даты создания запроса",
     )
 
 

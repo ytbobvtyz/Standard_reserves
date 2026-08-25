@@ -30,6 +30,7 @@ import {
   EXPIRY_HINT,
   expiryDecreaseError,
   maxExpiryDate,
+  minExpiryDate,
 } from '../utils/expiryDate'
 import { formatDateTime } from '../utils/format'
 import { canDeleteByStatus, DELETE_CONFIRM } from '../utils/requestActions'
@@ -215,7 +216,9 @@ export function RequestDetailPage() {
                   disabled={!canEditExpiry}
                   disabledDate={(current) =>
                     Boolean(
-                      current && current.isAfter(maxExpiryDate(request.created_at), 'day'),
+                      current &&
+                        (current.isBefore(minExpiryDate(request.created_at), 'day') ||
+                          current.isAfter(maxExpiryDate(request.created_at), 'day')),
                     )
                   }
                   format="DD.MM.YYYY"

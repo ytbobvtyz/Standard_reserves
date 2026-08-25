@@ -58,6 +58,7 @@ def to_object_list_item(obj: Object) -> ObjectListItem:
         erp_warehouse_code=obj.erp_warehouse_code,
         loading_point=obj.loading_point,
         is_active=obj.is_active,
+        long_distance=bool(obj.long_distance),
         last_modified_at=obj.last_modified_at,
     )
 

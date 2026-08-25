@@ -118,6 +118,7 @@ async def test_create_get_update_delete_object(
         assert created_data["erp_plant_code"] is None
         assert created_data["loading_point"] == "2T01"
         assert created_data["is_active"] is True
+        assert created_data["long_distance"] is False
         assert created_data["last_modified_by"]["id"] == str(logistics_user.id)
         assert created_data["last_modified_at"] is not None
 
@@ -175,6 +176,69 @@ async def test_create_get_update_delete_object(
             headers=auth_header(token),
         )
         assert missing.status_code == 404
+    finally:
+        await _cleanup_admin_objects()
+
+
+async def test_warehouse_long_distance_flag(
+    client: AsyncClient, logistics_user: AuthUser, catalog: dict[str, int]
+) -> None:
+    await _cleanup_admin_objects()
+    token = await login_token(client, logistics_user)
+    try:
+        created = await client.post(
+            "/api/v1/references/objects",
+            headers=auth_header(token),
+            json={
+                "code": NEW_CODE,
+                "name": "Склад удалённый",
+                "city": "Хабаровск",
+                "type": "warehouse",
+                "erp_warehouse_code": "T001",
+                "long_distance": True,
+            },
+        )
+        assert created.status_code == 200, created.text
+        assert created.json()["data"]["long_distance"] is True
+
+        listed = await client.get(
+            "/api/v1/references/objects",
+            headers=auth_header(token),
+        )
+        assert listed.status_code == 200
+        match = next(item for item in listed.json()["data"] if item["code"] == NEW_CODE)
+        assert match["long_distance"] is True
+
+        cleared = await client.put(
+            f"/api/v1/references/objects/{NEW_CODE}",
+            headers=auth_header(token),
+            json={"long_distance": False},
+        )
+        assert cleared.status_code == 200, cleared.text
+        assert cleared.json()["data"]["long_distance"] is False
+
+        restored = await client.put(
+            f"/api/v1/references/objects/{NEW_CODE}",
+            headers=auth_header(token),
+            json={"long_distance": True},
+        )
+        assert restored.status_code == 200, restored.text
+        assert restored.json()["data"]["long_distance"] is True
+
+        plant = await client.post(
+            "/api/v1/references/objects",
+            headers=auth_header(token),
+            json={
+                "code": NEW_PLANT_CODE,
+                "name": "Завод тестовый",
+                "city": "Москва",
+                "type": "plant",
+                "erp_plant_code": 3100,
+                "long_distance": True,
+            },
+        )
+        assert plant.status_code == 200, plant.text
+        assert plant.json()["data"]["long_distance"] is False
     finally:
         await _cleanup_admin_objects()
 

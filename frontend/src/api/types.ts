@@ -83,6 +83,7 @@ export interface ObjectListItem {
   erp_warehouse_code?: string | null
   loading_point?: string | null
   is_active: boolean
+  long_distance?: boolean
   last_modified_at?: string | null
 }
 
@@ -104,6 +105,7 @@ export interface ObjectCreatePayload {
   erp_warehouse_code?: string | null
   loading_point?: string | null
   is_active: boolean
+  long_distance?: boolean
 }
 
 export interface ObjectUpdatePayload {
@@ -116,6 +118,7 @@ export interface ObjectUpdatePayload {
   erp_warehouse_code?: string | null
   loading_point?: string | null
   is_active?: boolean
+  long_distance?: boolean
 }
 
 export interface RequestItemPayload {
@@ -288,6 +291,7 @@ export interface DeficitItem {
   product_name: string
   category: string
   normative_quantity: number
+  requirement: number
   available: number
   plan: number
   unit: Unit
@@ -302,6 +306,8 @@ export interface DeficitItem {
 export interface WarehouseDeficit {
   warehouse_code: number
   warehouse_name: string
+  long_distance?: boolean
+  long_distance_message?: string | null
   deficit_items: DeficitItem[]
   total_deficit: number
   deficit_count: number

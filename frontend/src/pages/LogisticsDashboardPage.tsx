@@ -1,4 +1,5 @@
 import {
+  Alert,
   Button,
   Checkbox,
   Collapse,
@@ -11,6 +12,8 @@ import {
   Spin,
   Table,
   Tabs,
+  Tag,
+  Tooltip,
   Typography,
   Upload,
   message,
@@ -55,12 +58,29 @@ function QuantityCell({ value, unit }: { value: number; unit: Unit }) {
 
 function sumItems(
   items: DeficitItem[],
-  field: 'normative_quantity' | 'available' | 'plan',
+  field: 'normative_quantity' | 'requirement' | 'available' | 'plan',
 ): number {
-  return items.reduce((total, item) => total + item[field], 0)
+  return items.reduce((total, item) => total + (item[field] ?? 0), 0)
 }
 
 const KG_IN_TON = 1000
+const CATEGORY_FACTORS: Record<string, number> = { A: 1, B: 1.5, C: 2 }
+const LONG_DISTANCE_NOTICE =
+  'Ввиду удалённого расположения склада, пополнение возможно по железной дороге — срок доставки около 1 месяца от даты готовности продукции на производственной площадке, в связи с чем нормативы увеличены'
+
+function formatFactor(value: number): string {
+  return String(value).replace('.', ',')
+}
+
+function requirementHint(category: string, longDistance: boolean): string {
+  const cat = (category || 'A').trim().toUpperCase()
+  const catFactor = CATEGORY_FACTORS[cat] ?? 1
+  const parts = [`категория ${cat} (×${formatFactor(catFactor)})`]
+  if (longDistance) {
+    parts.push('удалённый склад (×1,5)')
+  }
+  return `Потребность = норматив × ${parts.join(' × ')}`
+}
 
 function quantize(value: number, unit: Unit): number {
   const factor = unit === 'т' ? 10000 : 100
@@ -83,6 +103,7 @@ function convertItem(item: DeficitItem, unit: Unit): DeficitItem {
     ...item,
     unit,
     normative_quantity: fromPieces(item.normative_quantity, unit, weightKg),
+    requirement: fromPieces(item.requirement ?? 0, unit, weightKg),
     available: fromPieces(item.available, unit, weightKg),
     plan: fromPieces(item.plan, unit, weightKg),
     deficit: fromPieces(item.deficit, unit, weightKg),
@@ -220,6 +241,7 @@ export function LogisticsDashboardPage() {
     const positive = rows.filter((item) => item.deficit > 0)
     return {
       normative: sumItems(rows, 'normative_quantity'),
+      requirement: sumItems(rows, 'requirement'),
       available: sumItems(rows, 'available'),
       plan: sumItems(rows, 'plan'),
       deficit: positive.reduce((total, item) => total + item.deficit, 0),
@@ -240,14 +262,30 @@ export function LogisticsDashboardPage() {
     )
   }, [visibleWarehouseCodes])
 
-  const columns: ColumnsType<DeficitItem> = [
+  const itemColumns = (longDistance: boolean): ColumnsType<DeficitItem> => [
     { title: 'Артикул', dataIndex: 'product_code', width: 110 },
     { title: 'Название', dataIndex: 'product_name' },
+    {
+      title: 'Категория',
+      dataIndex: 'category',
+      width: 100,
+      render: (value: string) => value || '—',
+    },
     {
       title: 'Норматив',
       dataIndex: 'normative_quantity',
       width: 120,
       render: (value: number) => formatQty(value, unit),
+    },
+    {
+      title: 'Потребность',
+      dataIndex: 'requirement',
+      width: 130,
+      render: (value: number, record) => (
+        <Tooltip title={requirementHint(record.category, longDistance)}>
+          <span>{formatQty(value, unit)}</span>
+        </Tooltip>
+      ),
     },
     {
       title: 'Доступно',
@@ -395,6 +433,7 @@ export function LogisticsDashboardPage() {
           </Typography.Text>
           <Typography.Text type="secondary">
             Всего норматив: {formatQty(totals.normative, unit)} {unit}
+            {' · '}Всего потребность: {formatQty(totals.requirement, unit)} {unit}
             {' · '}Всего доступно:{' '}
             <QuantityCell value={totals.available} unit={unit} /> {unit}
             {' · '}Всего запланировано:{' '}
@@ -475,6 +514,7 @@ export function LogisticsDashboardPage() {
                 warehouse.deficit_items,
                 'normative_quantity',
               )
+              const totalRequirement = sumItems(warehouse.deficit_items, 'requirement')
               const totalAvailable = sumItems(warehouse.deficit_items, 'available')
               const totalPlan = sumItems(warehouse.deficit_items, 'plan')
               return {
@@ -502,13 +542,19 @@ export function LogisticsDashboardPage() {
                       unit={unit}
                     />
                     <Space direction="vertical" size={0}>
-                      <Typography.Text strong>
-                        {warehouse.warehouse_name}
-                      </Typography.Text>
+                      <Space size={8}>
+                        <Typography.Text strong>
+                          {warehouse.warehouse_name}
+                        </Typography.Text>
+                        {warehouse.long_distance ? (
+                          <Tag color="blue">Удалённый</Tag>
+                        ) : null}
+                      </Space>
                       <Typography.Text type="secondary">
                         дефицит: {warehouse.deficit_count} позиций,{' '}
                         {formatQty(warehouse.total_deficit, unit)} {unit}
                         {' · '}норматив: {formatQty(totalNormative, unit)} {unit}
+                        {' · '}потребность: {formatQty(totalRequirement, unit)} {unit}
                         {' · '}доступно:{' '}
                         <QuantityCell value={totalAvailable} unit={unit} /> {unit}
                         {' · '}запланировано:{' '}
@@ -518,13 +564,25 @@ export function LogisticsDashboardPage() {
                   </Space>
                 ),
                 children: isOpen ? (
-                  <Table
-                    rowKey={(item) => `${item.product_code}-${item.client_name}`}
-                    pagination={false}
-                    size="small"
-                    columns={columns}
-                    dataSource={warehouse.deficit_items}
-                  />
+                  <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                    {warehouse.long_distance ? (
+                      <Alert
+                        type="info"
+                        showIcon
+                        message="Удалённый склад"
+                        description={
+                          warehouse.long_distance_message || LONG_DISTANCE_NOTICE
+                        }
+                      />
+                    ) : null}
+                    <Table
+                      rowKey={(item) => `${item.product_code}-${item.client_name}`}
+                      pagination={false}
+                      size="small"
+                      columns={itemColumns(Boolean(warehouse.long_distance))}
+                      dataSource={warehouse.deficit_items}
+                    />
+                  </Space>
                 ) : null,
               }
             })}
