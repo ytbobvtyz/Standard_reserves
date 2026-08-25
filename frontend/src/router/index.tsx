@@ -14,6 +14,7 @@ import { ProductsPage } from '../pages/ProductsPage'
 import { ProductDetailPage } from '../pages/ProductDetailPage'
 import { ObjectsPage } from '../pages/ObjectsPage'
 import { ReferencesPage } from '../pages/ReferencesPage'
+import { AdminUsersPage } from '../pages/AdminUsersPage'
 
 export function AppRouter() {
   return (
@@ -44,6 +45,9 @@ export function AppRouter() {
             <Route path="/references/products" element={<ProductsPage />} />
             <Route path="/references/objects" element={<ObjectsPage />} />
             <Route path="/references/users" element={<ReferencesPage />} />
+            <Route element={<ProtectedRoute roles={['logistics']} />}>
+              <Route path="/admin/users" element={<AdminUsersPage />} />
+            </Route>
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

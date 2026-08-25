@@ -6,6 +6,7 @@ import {
   CarOutlined,
   DatabaseOutlined,
   LogoutOutlined,
+  TeamOutlined,
 } from '@ant-design/icons'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../stores/auth'
@@ -18,25 +19,29 @@ export function AppLayout() {
   const user = useAuthStore((state) => state.user)
   const logout = useAuthStore((state) => state.logout)
 
-  const selectedKey = location.pathname.startsWith('/requests/create')
+  const path = location.pathname
+  const selectedKey = path.startsWith('/requests/create')
     ? '/requests/create'
-    : location.pathname.startsWith('/requests')
+    : path.startsWith('/requests')
       ? '/requests/my'
-      : location.pathname.startsWith('/approvals')
-        ? location.pathname
-        : location.pathname.startsWith('/logistics')
-          ? location.pathname
-          : location.pathname.startsWith('/references/products')
+      : path.startsWith('/approvals')
+        ? path
+        : path.startsWith('/logistics')
+          ? path
+          : path.startsWith('/references/products')
             ? '/references/products'
-            : location.pathname.startsWith('/references/objects')
+            : path.startsWith('/references/objects')
               ? '/references/objects'
-              : location.pathname.startsWith('/references')
-                ? location.pathname
-                : location.pathname
+              : path.startsWith('/references')
+                ? path
+                : path.startsWith('/admin')
+                  ? path
+                  : path
 
   const canCreate = user?.role === 'commercial' || user?.role === 'logistics'
   const showPP = user?.role === 'pp'
   const showEconomy = user?.role === 'economist'
+  const showAdmin = user?.role === 'logistics'
 
   const menuItems = [
     { key: '/dashboard', icon: <DashboardOutlined />, label: 'Дашборд' },
@@ -89,6 +94,15 @@ export function AppLayout() {
       icon: <DatabaseOutlined />,
       label: 'Объекты',
     },
+    ...(showAdmin
+      ? [
+          {
+            key: '/admin/users',
+            icon: <TeamOutlined />,
+            label: 'Администрирование',
+          },
+        ]
+      : []),
   ]
 
   return (

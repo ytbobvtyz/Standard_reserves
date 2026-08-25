@@ -617,3 +617,47 @@ export interface RequestItemHistoryEntry {
   changed_at: string
   comment: string | null
 }
+
+export interface AdminUser {
+  id: string
+  username: string
+  email: string
+  full_name: string
+  role: UserRole
+  department_id?: string | null
+  department_name?: string | null
+  is_active: boolean
+  created_at: string
+  deleted_at?: string | null
+}
+
+export interface AdminUserListParams {
+  search?: string
+  role?: UserRole
+  department_id?: string
+  is_active?: boolean
+  deleted?: boolean
+  page?: number
+  limit?: number
+}
+
+export interface AdminUserCreatePayload {
+  username: string
+  email: string
+  full_name: string
+  role: UserRole
+  department_id?: string | null
+  password: string
+}
+
+export interface AdminUserUpdatePayload {
+  email: string
+  full_name: string
+  role: UserRole
+  department_id?: string | null
+  is_active: boolean
+}
+
+export interface PasswordResetData {
+  new_password: string
+}

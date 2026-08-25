@@ -1665,14 +1665,184 @@ json
     "status": "success",
     "message": "Объект удален"
 }
-9. УПРАВЛЕНИЕ ОСТАТКАМИ
+9. АДМИНИСТРИРОВАНИЕ ПОЛЬЗОВАТЕЛЕЙ
+
+Управление учётными записями (LOG-015) — роль `logistics`. Все эндпоинты защищены `require_roles("logistics")`.
+
+| Метод | Эндпоинт | Описание | Права |
+|-------|----------|----------|-------|
+| GET | `/admin/users` | Список пользователей (с фильтрами) | `logistics` |
+| POST | `/admin/users` | Создать пользователя | `logistics` |
+| GET | `/admin/users/{id}` | Получить пользователя для редактирования | `logistics` |
+| PUT | `/admin/users/{id}` | Обновить пользователя | `logistics` |
+| DELETE | `/admin/users/{id}` | Удалить пользователя (soft delete) | `logistics` |
+| POST | `/admin/users/{id}/reset-password` | Сбросить пароль | `logistics` |
+| GET | `/admin/departments` | Список подразделений (для выпадающего списка) | `logistics` |
+
+9.1. Список пользователей
+text
+GET /admin/users
+Headers:
+
+text
+Authorization: Bearer <token>
+Права: только logistics. Остальные роли — 403 FORBIDDEN.
+
+Query параметры:
+
+Параметр	Тип	Описание
+search	string	Поиск по username, email, full_name (ILIKE)
+role	string	commercial / pp / economist / logistics / guest
+department_id	uuid	Подразделение
+is_active	boolean	Фильтр по `is_active` (среди неудалённых, если `deleted` не true)
+deleted	boolean	Если true — только мягко удалённые (`deleted_at` задан). По умолчанию удалённые скрыты
+page	integer	Страница (по умолчанию 1)
+limit	integer	Записей на страницу (по умолчанию 50)
+
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": [
+        {
+            "id": "11111111-1111-1111-1111-111111111111",
+            "username": "ivanov",
+            "email": "ivanov@company.ru",
+            "full_name": "Иванов Иван",
+            "role": "commercial",
+            "department_id": "66111111-1111-1111-1111-111111111111",
+            "department_name": "Коммерческий отдел",
+            "is_active": true,
+            "created_at": "2026-08-18T09:00:00Z",
+            "deleted_at": null
+        }
+    ],
+    "meta": {
+        "page": 1,
+        "limit": 50,
+        "total": 5
+    }
+}
+9.2. Создать пользователя
+text
+POST /admin/users
+Права: logistics.
+
+Request:
+
+json
+{
+    "username": "sidorova",
+    "email": "sidorova@company.ru",
+    "full_name": "Сидорова Анна",
+    "role": "commercial",
+    "department_id": "66111111-1111-1111-1111-111111111111",
+    "password": "secure_password"
+}
+Правила:
+- `username` и `email` уникальны (иначе 409 ALREADY_EXISTS)
+- пароль хешируется bcrypt, в ответе не возвращается
+- `role` ∈ commercial / pp / economist / logistics / guest
+- `department_id` опционален; если задан — подразделение должно существовать
+- денормализованное поле `users.department` заполняется именем подразделения
+
+Response (201): объект пользователя (как в 9.1), без пароля.
+
+9.3. Получить пользователя
+text
+GET /admin/users/{id}
+Права: logistics. 404, если пользователь не найден.
+
+Response (200): тот же объект, что в списке.
+
+9.4. Обновить пользователя
+text
+PUT /admin/users/{id}
+Права: logistics. Поле `username` не изменяется.
+
+Request:
+
+json
+{
+    "email": "sidorova@company.ru",
+    "full_name": "Сидорова Анна Петровна",
+    "role": "pp",
+    "department_id": "66222222-2222-2222-2222-222222222222",
+    "is_active": true
+}
+Правила:
+- `email` уникален среди других пользователей (иначе 409)
+- нельзя сменить роль последнего активного логиста на другую (400 LAST_LOGISTICS)
+- нельзя деактивировать последнего активного логиста (400 LAST_LOGISTICS)
+- обновление удалённого пользователя — 400
+
+Response (200): обновлённый пользователь.
+
+9.5. Удалить пользователя
+text
+DELETE /admin/users/{id}
+Права: logistics. Soft delete: `deleted_at = NOW()`.
+
+Проверки:
+- нельзя удалить себя (400 CANNOT_DELETE_SELF)
+- нельзя удалить последнего активного логиста (400 LAST_LOGISTICS)
+- повторное удаление — 404
+
+Response (200):
+
+json
+{
+    "status": "success",
+    "message": "Пользователь удален"
+}
+9.6. Сбросить пароль
+text
+POST /admin/users/{id}/reset-password
+Права: logistics.
+
+Генерирует новый пароль из 8 символов (буквы и цифры), хеширует и сохраняет. Действующие сессии пользователя отзываются. Новый пароль возвращается **один раз**.
+
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": {
+        "new_password": "aB3kP9xQ"
+    }
+}
+Errors: 404 — пользователь не найден; 400 — пользователь удалён.
+
+9.7. Список подразделений
+text
+GET /admin/departments
+Права: logistics. Для выпадающего списка при создании/редактировании пользователя.
+
+По умолчанию возвращаются активные неудалённые подразделения.
+
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": [
+        {
+            "id": "66111111-1111-1111-1111-111111111111",
+            "name": "Коммерческий отдел",
+            "is_active": true
+        }
+    ]
+}
+
+10. УПРАВЛЕНИЕ ОСТАТКАМИ
 На MVP загрузка остатков выполняется через `POST /logistics/normative/upload` (Excel ERP, поля `available` и `plan`). Эндпоинты `/inventory/*` **не реализованы**.
 
-10. ИНТЕГРАЦИЯ С ТАРИФАМИ (ЗАДЕЛ, НЕ РЕАЛИЗОВАНО)
+11. ИНТЕГРАЦИЯ С ТАРИФАМИ (ЗАДЕЛ, НЕ РЕАЛИЗОВАНО)
 `GET /tariffs/delivery` в MVP отсутствует. Экономист принимает решение без отображения тарифов.
 
-11. ИСТОРИЯ И АУДИТ
-11.1. Получить историю изменений запроса
+12. ИСТОРИЯ И АУДИТ
+12.1. Получить историю изменений запроса
 text
 GET /requests/{request_id}/history
 Headers:
@@ -1699,11 +1869,11 @@ json
         }
     ]
 }
-12. ЗАДЕЛ ПОД АГЕНТА ЛОГИСТА
+13. ЗАДЕЛ ПОД АГЕНТА ЛОГИСТА
 Таблица `events` создана, триггеры пишут события. HTTP-эндпоинты `/agent/events` и `/agent/events/{id}/process` в MVP **не реализованы**.
 
-13. СВОДКА ЭНДПОИНТОВ
-13.1. Группировка по функционалу (реализовано)
+14. СВОДКА ЭНДПОИНТОВ
+14.1. Группировка по функционалу (реализовано)
 Группа	Эндпоинты	Количество
 Аутентификация	/auth/login, logout, refresh, profile, change-password	5
 Запросы	/requests, /requests/{id}, submit, history, expiry-date	7
@@ -1717,18 +1887,19 @@ json
 Справочники объекты	list, create, get, edit, put, delete	6
 Справочники пользователи	/references/users	1
 Справочники подразделения	/references/departments	1
+Администрирование	/admin/users, /admin/users/{id}, reset-password, /admin/departments	7
 Партии нормативов	/production-requests, template, upload, dates, delete	5
-ИТОГО реализовано		~51
+ИТОГО реализовано		~58
 Не реализовано (задел)	/inventory/*, /tariffs/*, /agent/*, /auth/register	—
-13.2. Ролевой доступ
+14.2. Ролевой доступ
 Роль	Доступные эндпоинты
 guest	Просмотр справочников, нормативов и дашборда логистики (только чтение)
 commercial	Создание запросов (нормативные + разовые), просмотр своих запросов, просмотр логистики (только чтение)
 pp	Согласование (ПП), просмотр всех запросов, CRUD продуктов, Excel-загрузка, просмотр логистики, управление партиями нормативов
 economist	Согласование (экономист), просмотр всех запросов, CRUD продуктов, Excel-загрузка, просмотр логистики, управление партиями нормативов
-logistics	Дашборд, формирование заказов, исполнение разовых, выгрузка Excel, загрузка остатков, CRUD продуктов и объектов, управление партиями нормативов
-14. ПРИМЕР ПОЛНОГО FLOW
-14.1. Нормативный запас — полный цикл
+logistics	Дашборд, формирование заказов, исполнение разовых, выгрузка Excel, загрузка остатков, CRUD продуктов и объектов, управление партиями нормативов, администрирование пользователей (`/admin/*`)
+15. ПРИМЕР ПОЛНОГО FLOW
+15.1. Нормативный запас — полный цикл
 text
 1. Коммерция: POST /requests → создает черновик (draft)
 2. Коммерция: POST /requests/{id}/submit → отправляет на ПП
@@ -1740,7 +1911,7 @@ text
 8. Логист: GET /logistics/normative/dashboard → видит дефицит
 9. Логист: POST /logistics/normative/generate-orders → формирует заказы
 10. Логист: GET /logistics/normative/export → выгружает Excel
-14.2. Разовое перемещение — полный цикл
+15.2. Разовое перемещение — полный цикл
 text
 1. Коммерция/Логист: POST /requests → создает разовый запрос (draft)
 2. Коммерция/Логист: POST /requests/{id}/submit → отправляет на ПП (статус pp_approved)
@@ -1750,7 +1921,7 @@ text
 6. Экономист: POST /approvals/economy/{id}/action (approve) → утверждает → статус approved
 7. Логист: GET /logistics/one-time/list → видит запрос
 8. Логист: POST /logistics/one-time/{id}/execute → отмечает исполненным
-15. ПРОИЗВОДСТВЕННЫЕ ЗАПРОСЫ
+16. ПРОИЗВОДСТВЕННЫЕ ЗАПРОСЫ
 
 Доступ: `logistics`, `economist`, `pp`.
 
@@ -1806,6 +1977,6 @@ text
 Разрешены исторические `valid_from`; обязательное правило —
 `valid_from <= valid_to`.
 
-Версия: 1.6
+Версия: 1.7
 Дата: 25.08.2026
 Статус: Утверждена
