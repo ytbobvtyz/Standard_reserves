@@ -1,5 +1,6 @@
 import { Form, Input, Modal, Select } from 'antd'
 import type { DepartmentListItem, UserRole } from '../../api/types'
+import { PasswordStrengthField } from '../common/PasswordStrengthField'
 import { ROLE_OPTIONS } from './roles'
 
 export interface CreateUserFormValues {
@@ -85,16 +86,7 @@ export function CreateUserModal({
             }))}
           />
         </Form.Item>
-        <Form.Item
-          name="password"
-          label="Пароль"
-          rules={[
-            { required: true, message: 'Укажите пароль' },
-            { min: 8, message: 'Минимум 8 символов' },
-          ]}
-        >
-          <Input.Password autoComplete="new-password" />
-        </Form.Item>
+        <PasswordStrengthField />
       </Form>
     </Modal>
   )

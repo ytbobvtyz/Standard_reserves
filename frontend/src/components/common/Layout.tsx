@@ -5,11 +5,14 @@ import {
   CheckSquareOutlined,
   CarOutlined,
   DatabaseOutlined,
+  KeyOutlined,
   LogoutOutlined,
   TeamOutlined,
 } from '@ant-design/icons'
+import { useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../stores/auth'
+import { ChangePasswordModal } from './ChangePasswordModal'
 
 const { Header, Sider, Content } = AntLayout
 
@@ -18,6 +21,7 @@ export function AppLayout() {
   const location = useLocation()
   const user = useAuthStore((state) => state.user)
   const logout = useAuthStore((state) => state.logout)
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false)
 
   const path = location.pathname
   const selectedKey = path.startsWith('/requests/create')
@@ -148,6 +152,12 @@ export function AppLayout() {
           <Space>
             <Typography.Text>{user?.full_name ?? 'Гость'}</Typography.Text>
             <Button
+              icon={<KeyOutlined />}
+              onClick={() => setChangePasswordOpen(true)}
+            >
+              Сменить пароль
+            </Button>
+            <Button
               icon={<LogoutOutlined />}
               onClick={async () => {
                 await logout()
@@ -162,6 +172,10 @@ export function AppLayout() {
           <Outlet />
         </Content>
       </AntLayout>
+      <ChangePasswordModal
+        open={changePasswordOpen}
+        onClose={() => setChangePasswordOpen(false)}
+      />
     </AntLayout>
   )
 }

@@ -139,6 +139,9 @@ describe('AdminUsersPage', () => {
     expect(screen.getByLabelText('Логин')).toBeTruthy()
     expect(screen.getByLabelText('Email')).toBeTruthy()
     expect(screen.getByLabelText('ФИО')).toBeTruthy()
+    expect(screen.getByLabelText('Пароль')).toBeTruthy()
+    expect(screen.getByText(/Минимум 8 символов/)).toBeTruthy()
+    expect(screen.getByText(/Заглавная буква/)).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Создать' })).toBeTruthy()
   })
 

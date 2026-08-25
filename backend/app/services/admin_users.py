@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import secrets
-import string
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -12,7 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import APIError
 from app.core.pagination import paginate
-from app.core.security import hash_password
+from app.core.security import generate_secure_password, hash_password
 from app.models.department import Department
 from app.models.session import Session
 from app.models.user import User
@@ -26,12 +24,11 @@ from app.schemas.admin import (
 )
 from app.services.audit import add_audit_log
 
-PASSWORD_ALPHABET = string.ascii_letters + string.digits
 PASSWORD_LENGTH = 8
 
 
 def generate_password(length: int = PASSWORD_LENGTH) -> str:
-    return "".join(secrets.choice(PASSWORD_ALPHABET) for _ in range(length))
+    return generate_secure_password(length)
 
 
 def to_user_response(user: User) -> UserResponse:

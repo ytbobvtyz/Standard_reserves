@@ -4,7 +4,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.core.database import AsyncSessionLocal
-from app.core.security import verify_password
+from app.core.security import validate_password_strength, verify_password
 from app.models.user import User
 from tests.conftest import (
     AuthUser,
@@ -23,7 +23,7 @@ def _payload(**overrides: object) -> dict[str, object]:
         "email": "new_manager@company.ru",
         "full_name": "Новый Менеджер",
         "role": "commercial",
-        "password": "password1",
+        "password": "Abc@1234",
     }
     data.update(overrides)
     return data
@@ -102,6 +102,18 @@ async def test_list_users_with_filters(
     assert all(item["is_active"] is True for item in by_active.json()["data"])
 
 
+async def test_create_user_rejects_weak_password(
+    client: AsyncClient, logistics_user: AuthUser
+) -> None:
+    token = await login_token(client, logistics_user)
+    response = await client.post(
+        "/api/v1/admin/users",
+        headers=auth_header(token),
+        json=_payload(password="password1"),
+    )
+    assert response.status_code == 422
+
+
 async def test_create_get_update_delete_user(
     client: AsyncClient, logistics_user: AuthUser
 ) -> None:
@@ -131,12 +143,12 @@ async def test_create_get_update_delete_user(
                 select(User).where(User.id == uuid.UUID(created_id))
             )
             assert user is not None
-            assert user.password_hash != "password1"
-            assert verify_password("password1", user.password_hash)
+            assert user.password_hash != "Abc@1234"
+            assert verify_password("Abc@1234", user.password_hash)
 
         login = await client.post(
             "/api/v1/auth/login",
-            json={"username": username, "password": "password1"},
+            json={"username": username, "password": "Abc@1234"},
         )
         assert login.status_code == 200, login.text
 
@@ -293,6 +305,7 @@ async def test_reset_password(client: AsyncClient, logistics_user: AuthUser) -> 
         new_password = response.json()["data"]["new_password"]
         assert isinstance(new_password, str)
         assert len(new_password) == 8
+        assert validate_password_strength(new_password)
 
         old_login = await client.post(
             "/api/v1/auth/login",

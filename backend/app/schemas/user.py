@@ -1,7 +1,9 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.core.security import require_strong_password
 
 
 class UserBrief(BaseModel):
@@ -23,3 +25,8 @@ class UserProfile(UserBrief):
 class ChangePasswordRequest(BaseModel):
     old_password: str = Field(min_length=1)
     new_password: str = Field(min_length=8, max_length=72)
+
+    @field_validator("new_password")
+    @classmethod
+    def check_new_password(cls, value: str) -> str:
+        return require_strong_password(value)

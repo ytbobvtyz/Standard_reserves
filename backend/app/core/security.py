@@ -1,3 +1,6 @@
+import re
+import secrets
+import string
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -9,6 +12,48 @@ from app.core.config import settings
 
 ALGORITHM = "HS256"
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+PASSWORD_MIN_LENGTH = 8
+PASSWORD_SPECIAL_CHARS = "!@#$%^&*()_+-="
+PASSWORD_SPECIAL_PATTERN = re.compile(r'[!@#$%^&*()_+\-=\[\]{};:"\\|,.<>/?]')
+PASSWORD_REQUIREMENTS_MESSAGE = (
+    "Пароль должен содержать минимум 8 символов, заглавную и строчную буквы, "
+    "цифру и специальный символ"
+)
+
+
+def validate_password_strength(password: str) -> bool:
+    if len(password) < PASSWORD_MIN_LENGTH:
+        return False
+    if not re.search(r"[A-Z]", password):
+        return False
+    if not re.search(r"[a-z]", password):
+        return False
+    if not re.search(r"[0-9]", password):
+        return False
+    if not PASSWORD_SPECIAL_PATTERN.search(password):
+        return False
+    return True
+
+
+def require_strong_password(password: str) -> str:
+    if not validate_password_strength(password):
+        raise ValueError(PASSWORD_REQUIREMENTS_MESSAGE)
+    return password
+
+
+def generate_secure_password(length: int = PASSWORD_MIN_LENGTH) -> str:
+    size = max(length, PASSWORD_MIN_LENGTH)
+    required = [
+        secrets.choice(string.ascii_uppercase),
+        secrets.choice(string.ascii_lowercase),
+        secrets.choice(string.digits),
+        secrets.choice(PASSWORD_SPECIAL_CHARS),
+    ]
+    alphabet = string.ascii_letters + string.digits + PASSWORD_SPECIAL_CHARS
+    chars = required + [secrets.choice(alphabet) for _ in range(size - len(required))]
+    secrets.SystemRandom().shuffle(chars)
+    return "".join(chars)
 
 
 def hash_password(password: str) -> str:

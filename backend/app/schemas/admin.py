@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.core.security import require_strong_password
+
 UserRole = Literal["commercial", "pp", "economist", "logistics", "guest"]
 EMAIL_RE = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 
@@ -28,6 +30,11 @@ class UserCreate(BaseModel):
     @classmethod
     def normalize_email(cls, value: str) -> str:
         return value.strip().lower()
+
+    @field_validator("password")
+    @classmethod
+    def check_password(cls, value: str) -> str:
+        return require_strong_password(value)
 
 
 class UserUpdate(BaseModel):

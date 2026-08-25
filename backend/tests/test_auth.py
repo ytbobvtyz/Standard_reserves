@@ -137,7 +137,7 @@ async def test_change_password(client: AsyncClient, test_user: AuthUser) -> None
     response = await client.post(
         "/api/v1/auth/change-password",
         headers=headers,
-        json={"old_password": DEFAULT_PASSWORD, "new_password": "new-password"},
+        json={"old_password": DEFAULT_PASSWORD, "new_password": "Abc@1234"},
     )
     assert response.status_code == 200
     assert response.json()["message"] == "Пароль изменен"
@@ -145,7 +145,7 @@ async def test_change_password(client: AsyncClient, test_user: AuthUser) -> None
     old_login = await _login(client, test_user.username, DEFAULT_PASSWORD)
     assert old_login.status_code == 401
 
-    new_login = await _login(client, test_user.username, "new-password")
+    new_login = await _login(client, test_user.username, "Abc@1234")
     assert new_login.status_code == 200
 
 
@@ -157,9 +157,22 @@ async def test_change_password_wrong_old(
     response = await client.post(
         "/api/v1/auth/change-password",
         headers={"Authorization": f"Bearer {access_token}"},
-        json={"old_password": "not-the-password", "new_password": "new-password"},
+        json={"old_password": "not-the-password", "new_password": "Abc@1234"},
     )
     assert response.status_code == 400
+
+
+async def test_change_password_rejects_weak(
+    client: AsyncClient, test_user: AuthUser
+) -> None:
+    login_response = await _login(client, test_user.username)
+    access_token = login_response.json()["data"]["access_token"]
+    response = await client.post(
+        "/api/v1/auth/change-password",
+        headers={"Authorization": f"Bearer {access_token}"},
+        json={"old_password": DEFAULT_PASSWORD, "new_password": "new-password"},
+    )
+    assert response.status_code == 422
 
 
 async def test_rbac_commercial_cannot_access_pp_route(
