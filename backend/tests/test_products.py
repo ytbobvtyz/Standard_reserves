@@ -203,3 +203,27 @@ async def test_products_include_analogs(
         assert CHILD_CODE not in codes
     finally:
         await _cleanup_related()
+
+
+async def test_products_find_active_analogs_from_inactive_exact_code(
+    client: AsyncClient, test_user: AuthUser, catalog: dict[str, int]
+) -> None:
+    await _seed_related_chain(catalog)
+    token = await login_token(client, test_user)
+    try:
+        response = await client.get(
+            "/api/v1/references/products",
+            headers=auth_header(token),
+            params={
+                "search": str(PARENT_CODE),
+                "include_analogs": True,
+                "is_active": True,
+            },
+        )
+        assert response.status_code == 200, response.text
+        by_code = {item["code"]: item for item in response.json()["data"]}
+        assert by_code[PARENT_CODE]["is_analog"] is False
+        assert by_code[MIDDLE_CODE]["is_analog"] is True
+        assert by_code[CHILD_CODE]["is_analog"] is True
+    finally:
+        await _cleanup_related()

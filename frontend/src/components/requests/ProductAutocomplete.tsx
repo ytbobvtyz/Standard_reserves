@@ -70,6 +70,7 @@ export function ProductAutocomplete({
         value: product.code,
         label: `${product.code} — ${product.name}`,
         product,
+        disabled: product.is_active === false,
       }))}
       optionRender={(option) => {
         const product = option.data.product as ProductListItem
@@ -79,6 +80,9 @@ export function ProductAutocomplete({
               {product.code} — {product.name}
             </span>
             {product.is_analog ? <Tag color="blue">Аналог</Tag> : null}
+            {product.is_active === false ? (
+              <Tag color="red">Не активен</Tag>
+            ) : null}
           </Space>
         )
       }}

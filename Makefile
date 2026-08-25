@@ -36,7 +36,7 @@ logs:
 	$(COMPOSE_DEV) logs -f
 
 test:
-	$(COMPOSE_DEV) run --rm backend pytest
+	$(COMPOSE_TEST) run --rm --build backend-test
 	$(COMPOSE_DEV) run --rm frontend npm test
 
 lint:

@@ -56,19 +56,29 @@ async def list_products(
     db: AsyncSession = Depends(get_db),
 ) -> PaginatedResponse[list[ProductListItem]]:
     conditions = [Product.deleted_at.is_(None)]
+    exact_code: int | None = None
     if search:
-        term = f"%{search.strip()}%"
+        normalized_search = search.strip()
+        term = f"%{normalized_search}%"
         search_filters = [
             Product.name.ilike(term),
             cast(Product.code, String).ilike(term),
         ]
-        if search.strip().isdigit():
-            search_filters.append(Product.code == int(search.strip()))
+        if normalized_search.isdigit():
+            exact_code = int(normalized_search)
+            search_filters.append(Product.code == exact_code)
         conditions.append(or_(*search_filters))
     if category:
         conditions.append(Product.category == category)
     if is_active is not None:
-        conditions.append(Product.is_active == is_active)
+        if include_analogs and is_active and exact_code is not None:
+            # An inactive exact match must remain a traversal seed so its active
+            # replacements can be returned as analogs.
+            conditions.append(
+                or_(Product.is_active.is_(True), Product.code == exact_code)
+            )
+        else:
+            conditions.append(Product.is_active == is_active)
 
     total = await db.scalar(
         select(func.count()).select_from(Product).where(*conditions)
