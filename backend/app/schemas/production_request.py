@@ -49,7 +49,7 @@ class ProductionRequestUploadResult(BaseModel):
     error_details: list[ProductionRequestUploadError]
 
 
-class ProductionRequestDatesUpdate(BaseModel):
+class ProductionRequestDateRange(BaseModel):
     valid_from: date
     valid_to: date
 
@@ -60,13 +60,9 @@ class ProductionRequestDatesUpdate(BaseModel):
         return self
 
 
-class ProductionRequestUploadOptions(BaseModel):
+class ProductionRequestDatesUpdate(ProductionRequestDateRange):
+    pass
+
+
+class ProductionRequestUploadOptions(ProductionRequestDateRange):
     client_name: str | None = Field(default=None, max_length=500)
-    valid_from: date
-    valid_to: date
-
-    @model_validator(mode="after")
-    def validate_range(self) -> Self:
-        if self.valid_to < self.valid_from:
-            raise ValueError("Дата окончания не может быть раньше даты начала")
-        return self

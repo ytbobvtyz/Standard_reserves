@@ -1210,6 +1210,8 @@ json
 
 | Метод | Эндпоинт | Описание | Права |
 |-------|----------|----------|-------|
+| GET | `/references/products` | Список продуктов | все авторизованные |
+| GET | `/references/products/{code}` | Карточка продукта | все авторизованные |
 | GET | `/references/products/template` | Скачать Excel-шаблон | pp, economist, logistics |
 | POST | `/references/products/upload` | Загрузить продукты из Excel | pp, economist, logistics |
 | GET | `/references/products/{code}/edit` | Получить продукт для редактирования | pp, economist, logistics |
@@ -1220,6 +1222,8 @@ json
 
 | Метод | Эндпоинт | Описание | Права |
 |-------|----------|----------|-------|
+| GET | `/references/objects` | Список объектов | все авторизованные |
+| GET | `/references/objects/{code}` | Карточка объекта | все авторизованные |
 | POST | `/references/objects` | Создать объект | logistics |
 | GET | `/references/objects/{code}/edit` | Получить объект для редактирования | logistics |
 | PUT | `/references/objects/{code}` | Обновить объект | logistics |
@@ -1297,6 +1301,12 @@ json
 замен. Благодаря этому запрос по выведенному из ассортимента артикулу возвращает
 сам артикул и его активные аналоги. Выбирать неактивный товар клиент не должен.
 
+8.1.1. Получить продукт по коду
+text
+GET /references/products/{code}
+Права: все авторизованные. 404, если продукт не найден или удалён.
+
+Response (200): тот же объект, что GET `/references/products/{code}/edit` (`ProductDetail`).
 8.2. Получить список объектов (склады/заводы)
 text
 GET /references/objects
@@ -1308,8 +1318,10 @@ Query параметры:
 
 Параметр	Тип	Описание
 type	string	plant / warehouse
-city	string	Город
+city	string	Город (частичное совпадение, ILIKE)
 is_active	boolean	Только активные
+page	integer	Страница (по умолчанию 1)
+limit	integer	Записей на страницу (по умолчанию 50, максимум 200)
 Response (200):
 
 json
@@ -1344,8 +1356,20 @@ json
             "long_distance": false,
             "last_modified_at": "2026-08-18T09:00:00Z"
         }
-    ]
+    ],
+    "meta": {
+        "page": 1,
+        "limit": 50,
+        "total": 15
+    }
 }
+
+8.2.1. Получить объект по коду
+text
+GET /references/objects/{code}
+Права: все авторизованные. 404, если объект не найден или удалён.
+
+Response (200): объект списка (`ObjectListItem`). Для полного набора полей редактирования — GET `/references/objects/{code}/edit` (только logistics).
 8.3. Получить список пользователей
 text
 GET /references/users
@@ -1977,62 +2001,173 @@ text
 6. Экономист: POST /approvals/economy/{id}/action (approve) → утверждает → статус approved
 7. Логист: GET /logistics/one-time/list → видит запрос
 8. Логист: POST /logistics/one-time/{id}/execute → отмечает исполненным
-16. ПРОИЗВОДСТВЕННЫЕ ЗАПРОСЫ
+15.3. Excel-партия нормативов
+text
+1. ПП / экономист / логист: GET /production-requests/template → скачивает шаблон
+2. POST /production-requests/upload (file, valid_from, valid_to, client_name?) → партия + нормативы
+3. GET /normatives и GET /logistics/normative/dashboard → новые нормативы видны с даты valid_from
+4. PATCH /production-requests/{id}/dates → меняет период и expiry_date нормативов
+5. DELETE /production-requests/{id} → партия и нормативы удалены каскадом
+16. ПРОИЗВОДСТВЕННЫЕ ЗАПРОСЫ (ПАРТИИ EXCEL)
 
-Доступ: `logistics`, `economist`, `pp`.
+Доступ ко всем эндпоинтам: `logistics`, `economist`, `pp` (`require_roles`). Остальные роли — 403.
 
-- `GET /production-requests` — список партий загрузки.
-- `GET /production-requests/template` — Excel-шаблон с колонками
-  `Завод ERP`, `Склад ERP`, `Артикул`, `Количество`, `Ед.`, `Клиент`.
-- `POST /production-requests/upload` — multipart-поля `file`, `valid_from`,
-  `valid_to`, необязательный `client_name`. Создаёт одну партию, её позиции
-  и активные нормативы. Клиент строки имеет приоритет над общим клиентом.
-  Первые три колонки файла обязательны и должны идти в порядке
-  `Завод ERP`, `Склад ERP`, `Артикул`; далее обязательны `Количество`, `Ед.`,
-  колонка `Клиент` необязательна. Внутренний склад определяется по паре
-  `objects.erp_plant_code` + `objects.erp_warehouse_code`; принимаются только
-  активные завод, склад и товар.
-  Строки обрабатываются независимо: валидные загружаются, невалидные
-  возвращаются в `error_details` как `{row, message}`. Ответ содержит
-  `total_rows`, `imported_count`, `error_count` и сообщение
-  «Загружено X строк из Y».
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| GET | `/production-requests` | Список партий (пагинация) |
+| GET | `/production-requests/template` | Excel-шаблон |
+| POST | `/production-requests/upload` | Загрузить партию |
+| PATCH | `/production-requests/{id}/dates` | Изменить период партии |
+| DELETE | `/production-requests/{id}` | Удалить партию каскадом |
 
-Пример результата частичной загрузки:
+Правило дат: `valid_from <= valid_to`. Исторический `valid_from` разрешён (не обязан быть ≥ сегодня).
 
-В примере объект `production_request` сокращён; его полный формат соответствует
-`ProductionRequestDetail`, возвращаемому списком партий.
+16.1. Список партий
+text
+GET /production-requests
+Query: `page` (default 1), `limit` (default 50, max 200). Сортировка: `created_at` DESC. Только неудалённые (`deleted_at IS NULL`).
 
-```json
+Response (200):
+
+json
 {
-  "status": "success",
-  "data": {
-    "production_request": {
-      "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-      "batch_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
-      "items_count": 2
-    },
-    "total_rows": 4,
-    "imported_count": 2,
-    "error_count": 2,
-    "message": "Загружено 2 строк из 4",
-    "error_details": [
-      {"row": 4, "message": "активный артикул 99999999 не найден"},
-      {"row": 5, "message": "Количество: ожидается число"}
-    ]
-  }
+    "status": "success",
+    "data": [
+        {
+            "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "batch_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            "source": "excel_upload",
+            "uploaded_by": {
+                "id": "22222222-2222-2222-2222-222222222222",
+                "username": "pp",
+                "full_name": "Петров Петр",
+                "role": "pp",
+                "department": "Планирование производства",
+                "department_id": "66222222-2222-2222-2222-222222222222"
+            },
+            "client_name": "ООО 'Ромашка'",
+            "valid_from": "2026-08-01",
+            "valid_to": "2026-11-01",
+            "status": "active",
+            "items_count": 2,
+            "created_at": "2026-08-25T10:00:00Z"
+        }
+    ],
+    "meta": {
+        "page": 1,
+        "limit": 50,
+        "total": 1
+    }
 }
-```
 
-Если все содержательные строки невалидны, партия не создаётся:
-`production_request` равен `null`, а ошибки всё равно возвращаются построчно.
-- `PATCH /production-requests/{id}/dates` — тело `{valid_from, valid_to}`;
-  обновляет период партии и `expiry_date` всех связанных нормативов.
-- `DELETE /production-requests/{id}` — физически удаляет партию, позиции и
-  связанные нормативы каскадом.
+16.2. Скачать Excel-шаблон
+text
+GET /production-requests/template
+Response (200): `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
+Файл: `production_normatives_template.xlsx`
 
-Разрешены исторические `valid_from`; обязательное правило —
-`valid_from <= valid_to`.
+Колонки шаблона (порядок фиксирован): `Завод ERP`, `Склад ERP`, `Артикул`, `Количество`, `Ед.`, `Клиент`.
 
-Версия: 1.8
+16.3. Загрузить партию
+text
+POST /production-requests/upload
+Content-Type: multipart/form-data
+Права: logistics, economist, pp.
+
+Form-data:
+
+Поле	Тип	Обязательное	Описание
+file	file	✅	Excel `.xlsx` / `.xls`, максимум 10 МБ
+valid_from	date	✅	Начало действия
+valid_to	date	✅	Окончание действия
+client_name	string	❌	Общий клиент (если в строке Excel клиент пуст)
+
+Правила файла:
+- первые три колонки обязательны и идут в порядке `Завод ERP`, `Склад ERP`, `Артикул`;
+- далее обязательны `Количество`, `Ед.`; колонка `Клиент` необязательна;
+- склад определяется по паре `objects.erp_plant_code` + `objects.erp_warehouse_code`;
+- принимаются только активные завод, склад и товар;
+- клиент строки имеет приоритет над общим `client_name`;
+- единицы: `шт` / `кг` / `т` (и синонимы Excel);
+- строки независимы: валидные загружаются, невалидные — в `error_details` `{row, message}`.
+
+Если `valid_to < valid_from` — 400 INVALID_DATES. Если файл не Excel / пустой / > 10 МБ — 400 INVALID_FILE. Если все содержательные строки невалидны, партия не создаётся: `production_request` = `null`, ошибки возвращаются.
+
+Response (201):
+
+json
+{
+    "status": "success",
+    "data": {
+        "production_request": {
+            "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "batch_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            "source": "excel_upload",
+            "uploaded_by": {
+                "id": "22222222-2222-2222-2222-222222222222",
+                "username": "pp",
+                "full_name": "Петров Петр",
+                "role": "pp"
+            },
+            "client_name": "ООО 'Ромашка'",
+            "valid_from": "2026-08-01",
+            "valid_to": "2026-11-01",
+            "status": "active",
+            "items_count": 2,
+            "created_at": "2026-08-25T10:00:00Z",
+            "items": [
+                {
+                    "id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+                    "product_code": 10001,
+                    "warehouse_code": 2401005,
+                    "quantity": 1000,
+                    "unit": "шт",
+                    "client_name": "ООО 'Ромашка'",
+                    "category": "A"
+                }
+            ]
+        },
+        "total_rows": 4,
+        "imported_count": 2,
+        "error_count": 2,
+        "message": "Загружено 2 строк из 4",
+        "error_details": [
+            {"row": 4, "message": "активный артикул 99999999 не найден"},
+            {"row": 5, "message": "Количество: ожидается число"}
+        ]
+    }
+}
+
+Для каждой импортированной строки создаётся активный норматив: `request_id` = NULL, `production_request_item_id` задан, `expiry_date` = `valid_to`.
+
+16.4. Изменить даты партии
+text
+PATCH /production-requests/{id}/dates
+Request:
+
+json
+{
+    "valid_from": "2026-08-15",
+    "valid_to": "2026-12-15"
+}
+
+Обновляет `valid_from` / `valid_to` партии и `expiry_date` всех связанных нормативов (= `valid_to`). 404, если партия не найдена. 422, если `valid_to < valid_from`.
+
+Response (200): `ProductionRequestDetail` (как объект `production_request` в 16.3).
+
+16.5. Удалить партию
+text
+DELETE /production-requests/{id}
+Физическое удаление (`session.delete`). Позиции и нормативы снимаются каскадом. 404, если партия не найдена.
+
+Response (200):
+
+json
+{
+    "status": "success",
+    "message": "Партия загрузки удалена"
+}
+
+Версия: 1.9
 Дата: 25.08.2026
 Статус: Утверждена

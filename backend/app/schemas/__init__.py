@@ -32,6 +32,12 @@ from app.schemas.normative import (
     NormativeListItem,
     NormativeOnDateItem,
 )
+from app.schemas.production_request import (
+    ProductionRequestDatesUpdate,
+    ProductionRequestDetail,
+    ProductionRequestListItem,
+    ProductionRequestUploadResult,
+)
 from app.schemas.reference import (
     ObjectListItem,
     ProductDetail,
@@ -74,6 +80,10 @@ __all__ = [
     "NormativeOnDateItem",
     "ObjectListItem",
     "PaginatedResponse",
+    "ProductionRequestDatesUpdate",
+    "ProductionRequestDetail",
+    "ProductionRequestListItem",
+    "ProductionRequestUploadResult",
     "ProductDetail",
     "ProductListItem",
     "RefreshRequest",

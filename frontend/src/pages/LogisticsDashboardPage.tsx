@@ -41,6 +41,7 @@ import { UnitToggle } from '../components/logistics/UnitToggle'
 import { useAuthStore } from '../stores/auth'
 import { downloadBlob } from '../utils/download'
 import { formatShortName } from '../utils/format'
+import { categoryFactor, formatFactor } from '../utils/requirement'
 
 function formatQty(value: number, unit: Unit): string {
   return new Intl.NumberFormat('ru-RU', {
@@ -64,18 +65,12 @@ function sumItems(
 }
 
 const KG_IN_TON = 1000
-const CATEGORY_FACTORS: Record<string, number> = { A: 1, B: 1.5, C: 2 }
 const LONG_DISTANCE_NOTICE =
   'Ввиду удалённого расположения склада, пополнение возможно по железной дороге — срок доставки около 1 месяца от даты готовности продукции на производственной площадке, в связи с чем нормативы увеличены'
 
-function formatFactor(value: number): string {
-  return String(value).replace('.', ',')
-}
-
 function requirementHint(category: string, longDistance: boolean): string {
   const cat = (category || 'A').trim().toUpperCase()
-  const catFactor = CATEGORY_FACTORS[cat] ?? 1
-  const parts = [`категория ${cat} (×${formatFactor(catFactor)})`]
+  const parts = [`категория ${cat} (×${formatFactor(categoryFactor(cat))})`]
   if (longDistance) {
     parts.push('удалённый склад (×1,5)')
   }

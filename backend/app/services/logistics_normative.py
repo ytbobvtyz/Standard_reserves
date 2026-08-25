@@ -35,41 +35,17 @@ from app.schemas.logistics import (
     Unit,
     WarehouseDeficit,
 )
+from app.services.coefficients import calculate_requirement
 
 logger = logging.getLogger(__name__)
 
 ESTIMATED_DELIVERY_DAYS = 5
 KG_IN_TON = Decimal("1000")
-CATEGORY_FACTORS = {
-    "A": Decimal("1"),
-    "B": Decimal("1.5"),
-    "C": Decimal("2"),
-}
-DISTANCE_FACTOR_REMOTE = Decimal("1.5")
-DISTANCE_FACTOR_NEAR = Decimal("1")
 LONG_DISTANCE_MESSAGE = (
     "Ввиду удалённого расположения склада, пополнение возможно по железной дороге "
     "— срок доставки около 1 месяца от даты готовности продукции на производственной "
     "площадке, в связи с чем нормативы увеличены"
 )
-
-
-def category_factor(category: str) -> Decimal:
-    return CATEGORY_FACTORS.get(category.strip().upper(), Decimal("1"))
-
-
-def distance_factor(long_distance: bool) -> Decimal:
-    return DISTANCE_FACTOR_REMOTE if long_distance else DISTANCE_FACTOR_NEAR
-
-
-def calculate_requirement(
-    normative_quantity: Decimal,
-    category: str,
-    long_distance: bool,
-) -> Decimal:
-    return (
-        normative_quantity * category_factor(category) * distance_factor(long_distance)
-    )
 
 
 @dataclass

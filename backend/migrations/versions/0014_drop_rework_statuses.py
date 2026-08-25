@@ -16,17 +16,14 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.execute(
-        "UPDATE requests SET status = 'pp_approved' WHERE status = 'pp_rework';"
-    )
+    op.execute("UPDATE requests SET status = 'pp_approved' WHERE status = 'pp_rework';")
     op.execute(
         "UPDATE requests SET status = 'economy_check' "
         "WHERE status = 'economy_rework';"
     )
     op.execute("ALTER TABLE requests DROP CONSTRAINT IF EXISTS ck_requests_status;")
     op.execute("ALTER TABLE requests DROP CONSTRAINT IF EXISTS requests_status_check;")
-    op.execute(
-        """
+    op.execute("""
         ALTER TABLE requests
         ADD CONSTRAINT ck_requests_status CHECK (
             status IN (
@@ -40,15 +37,13 @@ def upgrade() -> None:
                 'executed'
             )
         );
-        """
-    )
+        """)
 
 
 def downgrade() -> None:
     op.execute("ALTER TABLE requests DROP CONSTRAINT IF EXISTS ck_requests_status;")
     op.execute("ALTER TABLE requests DROP CONSTRAINT IF EXISTS requests_status_check;")
-    op.execute(
-        """
+    op.execute("""
         ALTER TABLE requests
         ADD CONSTRAINT ck_requests_status CHECK (
             status IN (
@@ -64,5 +59,4 @@ def downgrade() -> None:
                 'executed'
             )
         );
-        """
-    )
+        """)

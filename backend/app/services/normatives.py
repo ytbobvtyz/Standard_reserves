@@ -23,7 +23,7 @@ from app.schemas.normative import (
     NormativeOnDateDetail,
     NormativeOnDateItem,
 )
-from app.services.logistics_normative import (
+from app.services.coefficients import (
     calculate_requirement,
     category_factor,
     distance_factor,

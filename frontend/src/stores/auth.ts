@@ -4,7 +4,7 @@ import {
   clearAuthStorage,
   persistAuth,
 } from '../api/client'
-import type { User } from '../types'
+import type { User } from '../api/types'
 
 interface AuthState {
   user: User | null

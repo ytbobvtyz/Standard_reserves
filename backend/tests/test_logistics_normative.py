@@ -16,12 +16,12 @@ from app.models.product import Product
 from app.models.request import Request
 from app.models.request_item import RequestItem
 from app.models.sync_metadata import SyncMetadata
+from app.services.coefficients import calculate_requirement
 from app.services.logistics_normative import (
     LONG_DISTANCE_MESSAGE,
     _parse_int_cell,
     _parse_quantity,
     _parse_warehouse_code,
-    calculate_requirement,
 )
 from tests.conftest import AuthUser, auth_header, delete_request, login_token
 

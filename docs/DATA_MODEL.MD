@@ -185,16 +185,49 @@ erDiagram
     }
 
     %% ============================================
+    %% ПАРТИИ EXCEL (ПРОИЗВОДСТВЕННЫЕ ЗАПРОСЫ)
+    %% ============================================
+
+    production_requests {
+        uuid id PK "идентификатор"
+        uuid batch_id "уникальный идентификатор партии"
+        varchar source "excel_upload"
+        uuid uploaded_by FK "кто загрузил"
+        text client_name "общий клиент (опционально)"
+        date valid_from "начало действия"
+        date valid_to "окончание действия"
+        varchar status "active / archived / cancelled"
+        timestamp created_at "дата создания"
+        timestamp updated_at "дата обновления"
+        timestamp deleted_at "дата удаления (soft delete)"
+    }
+
+    production_request_items {
+        uuid id PK "идентификатор"
+        uuid production_request_id FK "партия"
+        int product_code FK "артикул"
+        int warehouse_code FK "склад"
+        decimal quantity "объём"
+        varchar unit "шт / кг / т"
+        text client_name "итоговый клиент"
+        char category "снимок A/B/C"
+        timestamp created_at "дата создания"
+        timestamp updated_at "дата обновления"
+        timestamp deleted_at "дата удаления (soft delete)"
+    }
+
+    %% ============================================
     %% НОРМАТИВЫ И ОСТАТКИ
     %% ============================================
 
     normatives {
         uuid id PK "идентификатор"
-        uuid request_id FK "запрос-основание"
+        uuid request_id FK "запрос-основание (nullable)"
+        uuid production_request_item_id FK "позиция Excel-партии (nullable, unique)"
         int product_code FK "артикул"
         int warehouse_code FK "склад"
         decimal quantity "утвержденный объем"
-        varchar unit "шт / т"
+        varchar unit "шт / кг / т"
         text client_name "метка авторства"
         date expiry_date "срок действия"
         char category "A/B/C"
@@ -262,6 +295,12 @@ erDiagram
     requests }o--|| users : "pp_approved_by"
     requests }o--|| users : "economy_approved_by"
 
+    %% Production requests → Users / Items
+    users ||--o{ production_requests : "uploaded_by"
+    production_requests ||--o{ production_request_items : "содержит"
+    production_request_items }o--|| products : "product_code"
+    production_request_items }o--|| objects : "warehouse_code"
+
     %% Requests → Request Items
     requests ||--o{ request_items : "содержит"
 
@@ -275,8 +314,9 @@ erDiagram
     %% History → Users
     request_item_history }o--|| users : "changed_by"
 
-    %% Normatives → Requests / Products / Objects
-    normatives }o--|| requests : "request_id"
+    %% Normatives → Requests / Production items / Products / Objects
+    normatives }o--o| requests : "request_id"
+    production_request_items ||--o| normatives : "production_request_item_id"
     normatives }o--|| products : "product_code"
     normatives }o--|| objects : "warehouse_code"
 
@@ -678,16 +718,27 @@ changed_at	TIMESTAMP	✅	Дата изменения (по умолчанию NO
 comment	TEXT	❌	Комментарий
 5. ТАБЛИЦЫ ДЛЯ БИЗНЕС-ЛОГИКИ
 5.1. normatives — Активные нормативы
-Записывается после утверждения запроса. На одном складе и артикуле может быть несколько нормативов под разных клиентов. Расчет на дату суммирует все активные в интервале created_at — expiry_date.
+Записывается после утверждения коммерческого запроса или после загрузки Excel-партии. На одном складе и артикуле может быть несколько нормативов под разных клиентов.
+
+Расчёт на дату:
+- коммерческий норматив: активен в интервале `created_at` — `expiry_date`;
+- Excel-норматив: активен в интервале `production_requests.valid_from` — `normatives.expiry_date`.
+
+Норматив создаётся одним из двух путей:
+- согласование коммерческого запроса (`request_id` заполнен, `production_request_item_id` = NULL);
+- загрузка Excel-партии (`production_request_item_id` заполнен, `request_id` = NULL).
+
+Для Excel-нормативов начало действия — `production_requests.valid_from`, окончание — `normatives.expiry_date` (= `valid_to` партии).
 
 sql
 CREATE TABLE normatives (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    request_id UUID NOT NULL REFERENCES requests(id),
+    request_id UUID REFERENCES requests(id),
+    production_request_item_id UUID UNIQUE REFERENCES production_request_items(id) ON DELETE CASCADE,
     product_code INTEGER NOT NULL REFERENCES products(code),
     warehouse_code INTEGER NOT NULL REFERENCES objects(code),
     quantity DECIMAL(12,2) NOT NULL,
-    unit VARCHAR(10) NOT NULL CHECK (unit IN ('шт', 'т')),
+    unit VARCHAR(10) NOT NULL CHECK (unit IN ('шт', 'кг', 'т')),
     client_name TEXT NOT NULL,
     expiry_date DATE NOT NULL,
     category CHAR(1) NOT NULL CHECK (category IN ('A', 'B', 'C')),
@@ -703,15 +754,18 @@ CREATE INDEX idx_normatives_warehouse_code ON normatives(warehouse_code);
 CREATE INDEX idx_normatives_expiry_date ON normatives(expiry_date);
 CREATE INDEX idx_normatives_deleted_at ON normatives(deleted_at) WHERE deleted_at IS NULL;
 CREATE INDEX idx_normatives_created_at ON normatives(created_at);
+CREATE UNIQUE INDEX uq_normatives_production_request_item_id
+    ON normatives(production_request_item_id);
 Поля:
 
 Поле	Тип	Обязательное	Описание
 id	UUID	✅	Идентификатор (PK)
-request_id	UUID	✅	Запрос-основание → requests.id
+request_id	UUID	❌	Запрос-основание → requests.id (NULL для Excel-партий)
+production_request_item_id	UUID	❌	Позиция Excel-партии → production_request_items.id (UNIQUE, ON DELETE CASCADE; NULL для коммерческих запросов)
 product_code	INTEGER	✅	Артикул → products.code
 warehouse_code	INTEGER	✅	Склад → objects.code
 quantity	DECIMAL(12,2)	✅	Утвержденный объем
-unit	VARCHAR(10)	✅	шт или т
+unit	VARCHAR(10)	✅	шт / кг / т
 client_name	TEXT	✅	Метка авторства
 expiry_date	DATE	✅	Срок действия
 category	CHAR(1)	✅	A/B/C
@@ -770,6 +824,101 @@ last_balances_sync_at	TIMESTAMP	❌	Дата и время последней з
 last_balances_sync_by	UUID	❌	Кто загрузил → users.id
 updated_at	TIMESTAMP	✅	Дата обновления записи (по умолчанию NOW())
 При загрузке Excel: для складов из файла старые строки `available_balances` удаляются, затем вставляются только строки из файла. После этого обновляются `last_balances_sync_at` и `last_balances_sync_by`.
+
+5.4. production_requests — Партии загрузки нормативов (Excel)
+
+Метаданные одной загрузки нормативов из Excel. Обходит коммерческий цикл запросов: роли `pp`, `economist`, `logistics` создают активные нормативы напрямую.
+
+Правила:
+- `source` в MVP только `excel_upload`;
+- `status` ∈ `active` / `archived` / `cancelled` (при создании всегда `active`);
+- `valid_to >= valid_from`; исторический `valid_from` разрешён;
+- `client_name` — общий клиент партии, необязателен;
+- API `DELETE /production-requests/{id}` удаляет партию **физически**; позиции и связанные нормативы удаляются каскадом (`ON DELETE CASCADE` на items и на `normatives.production_request_item_id`);
+- колонка `deleted_at` есть в схеме, но HTTP-удаление её не использует.
+
+sql
+CREATE TABLE production_requests (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    batch_id UUID NOT NULL DEFAULT gen_random_uuid(),
+    source VARCHAR(50) NOT NULL DEFAULT 'excel_upload',
+    uploaded_by UUID NOT NULL REFERENCES users(id),
+    client_name TEXT,
+    valid_from DATE NOT NULL,
+    valid_to DATE NOT NULL,
+    status VARCHAR(30) NOT NULL DEFAULT 'active',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted_at TIMESTAMP WITH TIME ZONE,
+
+    CONSTRAINT ck_production_requests_source CHECK (source IN ('excel_upload')),
+    CONSTRAINT ck_production_requests_status CHECK (status IN ('active', 'archived', 'cancelled')),
+    CONSTRAINT ck_production_requests_dates CHECK (valid_to >= valid_from)
+);
+
+CREATE UNIQUE INDEX uq_production_requests_batch_id ON production_requests(batch_id);
+CREATE INDEX idx_production_requests_uploaded_by ON production_requests(uploaded_by);
+CREATE INDEX idx_production_requests_status ON production_requests(status);
+CREATE INDEX idx_production_requests_deleted_at ON production_requests(deleted_at)
+    WHERE deleted_at IS NULL;
+Поля:
+
+Поле	Тип	Обязательное	Описание
+id	UUID	✅	Идентификатор (PK)
+batch_id	UUID	✅	Уникальный идентификатор партии
+source	VARCHAR(50)	✅	`excel_upload`
+uploaded_by	UUID	✅	Кто загрузил → users.id
+client_name	TEXT	❌	Общий клиент партии (если в строке Excel клиент пуст)
+valid_from	DATE	✅	Начало действия нормативов партии
+valid_to	DATE	✅	Окончание действия (≥ valid_from)
+status	VARCHAR(30)	✅	active / archived / cancelled (по умолчанию active)
+created_at	TIMESTAMP	✅	Дата создания
+updated_at	TIMESTAMP	✅	Дата обновления
+deleted_at	TIMESTAMP	❌	Дата удаления (soft delete; HTTP API использует физическое удаление)
+
+5.5. production_request_items — Строки Excel-партии
+
+Каждая валидная строка файла. Внутренний склад ищется по паре `objects.erp_plant_code` + `objects.erp_warehouse_code`; ERP-коды в позиции не сохраняются. Итоговый `client_name`: значение строки, иначе общий клиент партии.
+
+sql
+CREATE TABLE production_request_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    production_request_id UUID NOT NULL REFERENCES production_requests(id) ON DELETE CASCADE,
+    product_code INTEGER NOT NULL REFERENCES products(code),
+    warehouse_code INTEGER NOT NULL REFERENCES objects(code),
+    quantity DECIMAL(12,2) NOT NULL,
+    unit VARCHAR(10) NOT NULL,
+    client_name TEXT NOT NULL,
+    category CHAR(1) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted_at TIMESTAMP WITH TIME ZONE,
+
+    CONSTRAINT ck_production_request_items_unit CHECK (unit IN ('шт', 'кг', 'т')),
+    CONSTRAINT ck_production_request_items_category CHECK (category IN ('A', 'B', 'C')),
+    CONSTRAINT ck_production_request_items_quantity CHECK (quantity > 0)
+);
+
+CREATE INDEX idx_production_request_items_request
+    ON production_request_items(production_request_id);
+CREATE INDEX idx_production_request_items_product_warehouse
+    ON production_request_items(product_code, warehouse_code);
+Поля:
+
+Поле	Тип	Обязательное	Описание
+id	UUID	✅	Идентификатор (PK)
+production_request_id	UUID	✅	Партия → production_requests.id (ON DELETE CASCADE)
+product_code	INTEGER	✅	Артикул → products.code
+warehouse_code	INTEGER	✅	Склад → objects.code
+quantity	DECIMAL(12,2)	✅	Объём (> 0)
+unit	VARCHAR(10)	✅	шт / кг / т
+client_name	TEXT	✅	Итоговый клиент (строка или общий клиент партии)
+category	CHAR(1)	✅	Снимок категории продукта на момент загрузки
+created_at	TIMESTAMP	✅	Дата создания
+updated_at	TIMESTAMP	✅	Дата обновления
+deleted_at	TIMESTAMP	❌	Дата удаления (soft delete)
+
+При частично успешном импорте в таблицы попадают только валидные строки. Если валидных строк нет, партия не создаётся.
 6. ТАБЛИЦА ДЛЯ БУДУЩЕГО АГЕНТА
 6.1. events — События для агента логиста
 sql
@@ -950,6 +1099,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 8. ВЬЮ ДЛЯ ЛОГИСТА
+
+Дашборд API (`GET /logistics/normative/dashboard`) **не** читает `deficit_view`. Расчёт выполняется в `app.services.logistics_normative.collect_deficit_rows`: для Excel-нормативов дополнительно проверяются `production_requests.status = 'active'` и `valid_from <= CURRENT_DATE`. Представление ниже — SQL-задел из ранних миграций (без `valid_from`).
+
 8.1. Дефицит по складу
 sql
 CREATE OR REPLACE VIEW deficit_view AS
@@ -1142,6 +1294,7 @@ EXECUTE FUNCTION trigger_create_normative();
 | 14 | `0014_drop_rework_statuses.py` | Повторная очистка статусов `pp_rework` / `economy_rework` |
 | 15 | `0015_object_long_distance.py` | `objects.long_distance`; формула потребности в `calculate_normative` и `deficit_view` |
 | 16 | `0016_departments.py` | Таблица `departments`; `users.department_id`; `requests.department_id` |
+| 17 | `0017_production_requests.py` | `production_requests`, `production_request_items`; `normatives.request_id` nullable; `production_request_item_id`; unit `шт`/`кг`/`т` |
 
 Начальные пользователи и объекты заполняются скриптом `backend/scripts/seed_data.py`, а не миграцией.
 
@@ -1226,34 +1379,12 @@ GROUP BY warehouse_code, product_code;
 Функция expire_normatives()	✅ Нужна с первого дня
 Функция get_related_products()	✅ Для расчета по цепочке артикулов
 Коэффициент удаленности	✅ `objects.long_distance`: false → ×1, true → ×1,5
+Таблицы production_requests / production_request_items	✅ Excel-загрузка нормативов (роли pp, economist, logistics)
 
+14. ПРОИЗВОДСТВЕННЫЕ ЗАПРОСЫ — СМ. §5.4–5.5
 
-14. ПРОИЗВОДСТВЕННЫЕ ЗАПРОСЫ — ПАРТИИ EXCEL
+Полные DDL — в разделах 5.4 и 5.5. Кратко: партия Excel создаёт `production_requests` + `production_request_items` и активные `normatives` с `request_id IS NULL`. Удаление партии каскадно снимает позиции и нормативы. Миграция: `0017_production_requests.py`.
 
-`production_requests` хранит метаданные одной загрузки нормативов из Excel:
-`id`, уникальный `batch_id`, `source='excel_upload'`, `uploaded_by`,
-необязательный общий `client_name`, `valid_from`, `valid_to`, `status`,
-`created_at`, `updated_at`, `deleted_at`.
-
-`production_request_items` хранит строки файла: ссылка на партию с
-`ON DELETE CASCADE`, `product_code`, `warehouse_code`, `quantity`,
-`unit` (`шт`/`кг`/`т`), обязательный итоговый `client_name` и снимок категории.
-Итоговый клиент вычисляется при импорте: значение строки имеет приоритет над
-общим `production_requests.client_name`. ERP-коды завода и склада используются
-для поиска внутреннего `objects.code`, но отдельно в позиции не сохраняются.
-
-В `normatives`:
-- `request_id` становится nullable;
-- добавляется уникальный nullable FK `production_request_item_id` с
-  `ON DELETE CASCADE`;
-- единицы расширяются до `шт`/`кг`/`т`.
-
-Для нормативов из Excel начало действия определяется через
-`production_requests.valid_from`, окончание — через `normatives.expiry_date`.
-При частично успешном импорте в таблицы попадают только валидные строки.
-Если валидных строк нет, пустая партия не создаётся.
-Миграция: `0017_production_requests.py`.
-
-Версия: 2.6
+Версия: 2.7
 Дата: 25.08.2026
 Статус: Утверждена

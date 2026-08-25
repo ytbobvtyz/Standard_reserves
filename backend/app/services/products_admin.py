@@ -404,9 +404,11 @@ async def upload_products(
                     "parent_code",
                 ),
                 "children_code": _parse_int(
-                    row[headers["children_code"]]
-                    if "children_code" in headers
-                    else None,
+                    (
+                        row[headers["children_code"]]
+                        if "children_code" in headers
+                        else None
+                    ),
                     "children_code",
                 ),
                 "plant_id": _parse_int(
