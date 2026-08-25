@@ -28,4 +28,13 @@ export const adminApi = {
     api.post<ApiSuccess<PasswordResetData>>(`/admin/users/${id}/reset-password`),
 
   getDepartments: () => api.get<ApiSuccess<DepartmentListItem[]>>('/admin/departments'),
+
+  createDepartment: (data: { name: string }) =>
+    api.post<ApiSuccess<DepartmentListItem>>('/admin/departments', data),
+
+  updateDepartment: (id: string, data: { name: string }) =>
+    api.put<ApiSuccess<DepartmentListItem>>(`/admin/departments/${id}`, data),
+
+  deleteDepartment: (id: string) =>
+    api.delete<{ status: 'success'; message: string }>(`/admin/departments/${id}`),
 }

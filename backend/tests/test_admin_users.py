@@ -328,4 +328,4 @@ async def test_list_admin_departments(
     data = response.json()["data"]
     assert isinstance(data, list)
     assert data
-    assert {"id", "name", "is_active"} <= set(data[0].keys())
+    assert {"id", "name", "is_active", "users_count"} <= set(data[0].keys())

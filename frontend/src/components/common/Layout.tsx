@@ -97,9 +97,13 @@ export function AppLayout() {
     ...(showAdmin
       ? [
           {
-            key: '/admin/users',
+            key: 'admin',
             icon: <TeamOutlined />,
             label: 'Администрирование',
+            children: [
+              { key: '/admin/users', label: 'Пользователи' },
+              { key: '/admin/departments', label: 'Подразделения' },
+            ],
           },
         ]
       : []),
@@ -122,7 +126,12 @@ export function AppLayout() {
           theme="dark"
           mode="inline"
           selectedKeys={[selectedKey]}
-          onClick={({ key }) => navigate(key)}
+          defaultOpenKeys={showAdmin ? ['admin'] : []}
+          onClick={({ key }) => {
+            if (key.startsWith('/')) {
+              navigate(key)
+            }
+          }}
           items={menuItems}
         />
       </Sider>

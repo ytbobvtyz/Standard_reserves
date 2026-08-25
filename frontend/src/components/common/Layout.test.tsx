@@ -37,9 +37,11 @@ describe('AppLayout admin menu', () => {
     })
   })
 
-  it('shows administration item for logistics', () => {
+  it('shows administration submenu for logistics', () => {
     renderLayout('logistics')
     expect(screen.getByText('Администрирование')).toBeTruthy()
+    expect(screen.getByText('Пользователи')).toBeTruthy()
+    expect(screen.getByText('Подразделения')).toBeTruthy()
   })
 
   it('hides administration item for commercial', () => {

@@ -281,6 +281,7 @@ export interface DepartmentListItem {
   id: string
   name: string
   is_active: boolean
+  users_count?: number
 }
 
 export interface ProductListParams {

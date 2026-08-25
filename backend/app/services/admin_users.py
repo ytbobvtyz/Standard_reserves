@@ -17,7 +17,9 @@ from app.models.department import Department
 from app.models.session import Session
 from app.models.user import User
 from app.schemas.admin import (
+    DepartmentCreate,
     DepartmentOption,
+    DepartmentUpdate,
     UserCreate,
     UserResponse,
     UserUpdate,
@@ -332,17 +334,161 @@ async def reset_password(db: AsyncSession, user_id: UUID, actor: User) -> str:
     return new_password
 
 
+async def _department_name_taken(
+    db: AsyncSession, name: str, *, exclude_id: UUID | None = None
+) -> bool:
+    stmt = select(Department.id).where(
+        Department.name == name,
+        Department.deleted_at.is_(None),
+    )
+    if exclude_id is not None:
+        stmt = stmt.where(Department.id != exclude_id)
+    return await db.scalar(stmt) is not None
+
+
+async def _department_users_count(db: AsyncSession, department_id: UUID) -> int:
+    count = await db.scalar(
+        select(func.count())
+        .select_from(User)
+        .where(User.department_id == department_id, User.deleted_at.is_(None))
+    )
+    return int(count or 0)
+
+
+async def _to_department_option(
+    db: AsyncSession, department: Department
+) -> DepartmentOption:
+    return DepartmentOption(
+        id=department.id,
+        name=department.name,
+        is_active=department.is_active,
+        users_count=await _department_users_count(db, department.id),
+    )
+
+
+async def _require_department(db: AsyncSession, department_id: UUID) -> Department:
+    department = await db.scalar(
+        select(Department).where(
+            Department.id == department_id,
+            Department.deleted_at.is_(None),
+        )
+    )
+    if department is None:
+        raise APIError(404, "NOT_FOUND", "Подразделение не найдено")
+    return department
+
+
 async def list_departments(db: AsyncSession) -> list[DepartmentOption]:
     result = await db.execute(
         select(Department)
-        .where(Department.deleted_at.is_(None), Department.is_active.is_(True))
+        .where(Department.deleted_at.is_(None))
         .order_by(Department.name)
     )
-    return [DepartmentOption.model_validate(item) for item in result.scalars().all()]
+    departments = list(result.scalars().all())
+    counts_result = await db.execute(
+        select(User.department_id, func.count())
+        .where(User.deleted_at.is_(None), User.department_id.is_not(None))
+        .group_by(User.department_id)
+    )
+    counts = {row[0]: int(row[1]) for row in counts_result.all()}
+    return [
+        DepartmentOption(
+            id=item.id,
+            name=item.name,
+            is_active=item.is_active,
+            users_count=counts.get(item.id, 0),
+        )
+        for item in departments
+    ]
+
+
+async def create_department(
+    db: AsyncSession, data: DepartmentCreate, actor: User
+) -> DepartmentOption:
+    if await _department_name_taken(db, data.name):
+        raise APIError(
+            409, "ALREADY_EXISTS", "Подразделение с таким названием уже существует"
+        )
+    department = Department(name=data.name, is_active=True)
+    db.add(department)
+    try:
+        await db.flush()
+        add_audit_log(
+            db,
+            entity_type="department",
+            entity_id=str(department.id),
+            action="create",
+            user=actor,
+            payload={"name": data.name},
+        )
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise APIError(
+            409, "ALREADY_EXISTS", "Подразделение с таким названием уже существует"
+        ) from exc
+    created = await _require_department(db, department.id)
+    return await _to_department_option(db, created)
+
+
+async def update_department(
+    db: AsyncSession, department_id: UUID, data: DepartmentUpdate, actor: User
+) -> DepartmentOption:
+    department = await _require_department(db, department_id)
+    if await _department_name_taken(db, data.name, exclude_id=department.id):
+        raise APIError(
+            409, "ALREADY_EXISTS", "Подразделение с таким названием уже существует"
+        )
+    before = department.name
+    department.name = data.name
+    await db.execute(
+        update(User)
+        .where(User.department_id == department.id)
+        .values(department=data.name)
+    )
+    add_audit_log(
+        db,
+        entity_type="department",
+        entity_id=str(department.id),
+        action="update",
+        user=actor,
+        payload={"before": before, "name": data.name},
+    )
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise APIError(
+            409, "ALREADY_EXISTS", "Подразделение с таким названием уже существует"
+        ) from exc
+    updated = await _require_department(db, department_id)
+    return await _to_department_option(db, updated)
+
+
+async def delete_department(db: AsyncSession, department_id: UUID, actor: User) -> None:
+    department = await _require_department(db, department_id)
+    if await _department_users_count(db, department.id) > 0:
+        raise APIError(
+            409,
+            "HAS_RELATIONS",
+            "Нельзя удалить подразделение: есть назначенные пользователи",
+        )
+    department.deleted_at = datetime.now(UTC)
+    add_audit_log(
+        db,
+        entity_type="department",
+        entity_id=str(department.id),
+        action="delete",
+        user=actor,
+        payload={"name": department.name},
+    )
+    await db.commit()
 
 
 __all__ = [
+    "create_department",
     "create_user",
+    "delete_department",
     "delete_user",
     "generate_password",
     "get_user",
@@ -350,5 +496,6 @@ __all__ = [
     "list_users",
     "reset_password",
     "to_user_response",
+    "update_department",
     "update_user",
 ]

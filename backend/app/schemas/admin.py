@@ -76,3 +76,28 @@ class DepartmentOption(BaseModel):
     id: UUID
     name: str
     is_active: bool
+    users_count: int = 0
+
+
+class DepartmentCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=500)
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("Поле не может быть пустым")
+        return text
+
+
+class DepartmentUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=500)
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("Поле не может быть пустым")
+        return text

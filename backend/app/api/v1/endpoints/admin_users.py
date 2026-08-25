@@ -7,7 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db, require_roles
 from app.models.user import User
 from app.schemas.admin import (
+    DepartmentCreate,
     DepartmentOption,
+    DepartmentUpdate,
     PasswordResetResponse,
     UserCreate,
     UserResponse,
@@ -75,6 +77,46 @@ async def list_departments(
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[list[DepartmentOption]]:
     return SuccessResponse(data=await admin_users_service.list_departments(db))
+
+
+@router.post(
+    "/departments",
+    response_model=SuccessResponse[DepartmentOption],
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_department(
+    body: DepartmentCreate,
+    current_user: User = Depends(LOGISTICS_ONLY),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[DepartmentOption]:
+    created = await admin_users_service.create_department(db, body, current_user)
+    return SuccessResponse(data=created)
+
+
+@router.put(
+    "/departments/{department_id}",
+    response_model=SuccessResponse[DepartmentOption],
+)
+async def update_department(
+    department_id: UUID,
+    body: DepartmentUpdate,
+    current_user: User = Depends(LOGISTICS_ONLY),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[DepartmentOption]:
+    updated = await admin_users_service.update_department(
+        db, department_id, body, current_user
+    )
+    return SuccessResponse(data=updated)
+
+
+@router.delete("/departments/{department_id}", response_model=MessageResponse)
+async def delete_department(
+    department_id: UUID,
+    current_user: User = Depends(LOGISTICS_ONLY),
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponse:
+    await admin_users_service.delete_department(db, department_id, current_user)
+    return MessageResponse(message="Подразделение удалено")
 
 
 @router.get("/users/{user_id}", response_model=SuccessResponse[UserResponse])

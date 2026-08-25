@@ -1,7 +1,9 @@
 """Pydantic schemas."""
 
 from app.schemas.admin import (
+    DepartmentCreate,
     DepartmentOption,
+    DepartmentUpdate,
     PasswordResetResponse,
     UserCreate,
     UserResponse,
@@ -50,7 +52,9 @@ from app.schemas.user import ChangePasswordRequest, UserBrief, UserProfile
 
 __all__ = [
     "AccessTokenData",
+    "DepartmentCreate",
     "DepartmentOption",
+    "DepartmentUpdate",
     "PasswordResetResponse",
     "UserCreate",
     "UserResponse",
