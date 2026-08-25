@@ -18,6 +18,8 @@ class NormativeListItem(BaseModel):
     quantity: DecimalNumber
     unit: str
     client_name: str
+    department_id: UUID | None = None
+    department_name: str | None = None
     expiry_date: date
     created_at: datetime
 
@@ -26,6 +28,8 @@ class NormativeOnDateDetail(BaseModel):
     client_name: str
     quantity: DecimalNumber
     expiry_date: date
+    department_id: UUID | None = None
+    department_name: str | None = None
 
 
 class NormativeOnDateItem(BaseModel):

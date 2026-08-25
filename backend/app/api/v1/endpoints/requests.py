@@ -5,7 +5,6 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user, get_db
 from app.core.pagination import paginate
@@ -30,6 +29,7 @@ from app.schemas.request import (
     RequestUpdate,
 )
 from app.services.requests import (
+    LIST_OPTIONS,
     apply_own_requests_scope,
     create_request,
     ensure_draft_owner,
@@ -70,6 +70,7 @@ async def list_requests(
     initiator_id: UUID | None = Query(default=None),
     warehouse_code: int | None = Query(default=None),
     product_code: int | None = Query(default=None),
+    department_id: UUID | None = Query(default=None),
     from_date: date | None = Query(default=None),
     to_date: date | None = Query(default=None),
     page: int = Query(default=1, ge=1),
@@ -89,6 +90,8 @@ async def list_requests(
         conditions.append(Request.status == status)
     if client_name:
         conditions.append(Request.client_name.ilike(f"%{client_name.strip()}%"))
+    if department_id is not None:
+        conditions.append(Request.department_id == department_id)
     if from_date:
         conditions.append(func.date(Request.created_at) >= from_date)
     if to_date:
@@ -118,7 +121,7 @@ async def list_requests(
     result = await db.execute(
         paginate(
             select(Request)
-            .options(selectinload(Request.items), selectinload(Request.initiator))
+            .options(*LIST_OPTIONS)
             .where(*conditions)
             .order_by(Request.created_at.desc()),
             page,

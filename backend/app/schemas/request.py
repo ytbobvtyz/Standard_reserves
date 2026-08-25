@@ -107,6 +107,11 @@ class RequestItemCreated(BaseModel):
     quantity_approved: DecimalNumber | None = None
     unit: str
     comment: str | None = None
+    category: str | None = None
+    category_factor: DecimalNumber | None = None
+    long_distance: bool = False
+    distance_factor: DecimalNumber | None = None
+    requirement: DecimalNumber | None = None
 
 
 class RequestCreated(BaseModel):
@@ -117,6 +122,7 @@ class RequestCreated(BaseModel):
     status: str
     client_name: str
     initiator_id: UUID
+    department_id: UUID | None = None
     expiry_date: date | None = None
     items: list[RequestItemCreated]
     created_at: datetime
@@ -128,6 +134,8 @@ class RequestListItem(BaseModel):
     status: str
     client_name: str
     initiator: UserBrief
+    department_id: UUID | None = None
+    department_name: str | None = None
     items_count: int
     total_quantity: DecimalNumber
     expiry_date: date | None = None
@@ -148,6 +156,7 @@ class WarehouseBrief(BaseModel):
 
     code: int
     name: str
+    long_distance: bool = False
 
 
 class RequestItemDetail(BaseModel):
@@ -158,6 +167,10 @@ class RequestItemDetail(BaseModel):
     quantity_approved: DecimalNumber | None = None
     unit: str
     comment: str | None = None
+    category_factor: DecimalNumber
+    long_distance: bool = False
+    distance_factor: DecimalNumber
+    requirement: DecimalNumber
 
 
 class ApprovalActor(BaseModel):
@@ -199,6 +212,8 @@ class RequestDetail(BaseModel):
     status: str
     client_name: str
     initiator: UserBrief
+    department_id: UUID | None = None
+    department_name: str | None = None
     initiator_comment: str | None = None
     comment_pp: str | None = None
     comment_economy: str | None = None

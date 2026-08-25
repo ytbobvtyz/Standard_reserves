@@ -32,6 +32,7 @@ vi.mock('antd', async () => {
 
 const getOnDate = vi.fn()
 const getObjects = vi.fn()
+const getDepartments = vi.fn()
 
 vi.mock('../api/normatives', () => ({
   normativesApi: {
@@ -42,6 +43,7 @@ vi.mock('../api/normatives', () => ({
 vi.mock('../api/references', () => ({
   referencesApi: {
     getObjects: (...args: unknown[]) => getObjects(...args),
+    getDepartments: (...args: unknown[]) => getDepartments(...args),
   },
 }))
 
@@ -59,6 +61,7 @@ const onDateData: NormativeOnDateItem[] = [
         client_name: "ООО 'Ромашка'",
         quantity: 1000,
         expiry_date: '2026-12-31',
+        department_name: 'Коммерческий отдел',
       },
     ],
   },
@@ -103,6 +106,7 @@ describe('NormativesPage', () => {
   beforeEach(() => {
     getOnDate.mockReset()
     getObjects.mockReset()
+    getDepartments.mockReset()
     getOnDate.mockResolvedValue({
       data: { status: 'success', data: onDateData },
     })
@@ -120,6 +124,12 @@ describe('NormativesPage', () => {
         ],
       },
     })
+    getDepartments.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: [{ id: 'dept-1', name: 'Коммерческий отдел', is_active: true }],
+      },
+    })
   })
 
   it('loads normatives for today and shows warehouse totals', async () => {
@@ -135,6 +145,7 @@ describe('NormativesPage', () => {
     expect(getOnDate).toHaveBeenCalledWith({
       date: dayjs().format('YYYY-MM-DD'),
       warehouse_code: undefined,
+      department_id: undefined,
       search: undefined,
     })
     expect(screen.getByText('Корпус чугунный')).toBeTruthy()
@@ -142,6 +153,8 @@ describe('NormativesPage', () => {
     expect(screen.getByText(/Склад Ростов: 1\s?000 шт/)).toBeTruthy()
     expect(screen.getByText(/Склад Владивосток: 500 шт/)).toBeTruthy()
     expect(screen.getByLabelText('Срез на дату')).toBeTruthy()
+    expect(screen.getByRole('combobox', { name: 'Подразделение' })).toBeTruthy()
+    expect(screen.getAllByText('Коммерческий отдел').length).toBeGreaterThan(0)
   })
 
   it('sends product search after debounce', async () => {

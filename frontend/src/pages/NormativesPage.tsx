@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getApiErrorMessage } from '../api/client'
 import { normativesApi } from '../api/normatives'
 import { referencesApi } from '../api/references'
-import type { NormativeOnDateItem, ObjectListItem, Unit } from '../api/types'
+import type { DepartmentListItem, NormativeOnDateItem, ObjectListItem, Unit } from '../api/types'
 
 interface NormativeRow {
   key: string
@@ -18,6 +18,7 @@ interface NormativeRow {
   unit: Unit
   client_name: string
   category: string
+  department_name: string
 }
 
 function flattenOnDate(
@@ -45,6 +46,7 @@ function flattenOnDate(
         unit: item.unit,
         client_name: detail.client_name,
         category: item.category ?? '',
+        department_name: detail.department_name ?? '',
       })
     })
   })
@@ -65,6 +67,8 @@ export function NormativesPage() {
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [warehouses, setWarehouses] = useState<ObjectListItem[]>([])
+  const [departments, setDepartments] = useState<DepartmentListItem[]>([])
+  const [departmentId, setDepartmentId] = useState<string | undefined>()
   const [items, setItems] = useState<NormativeOnDateItem[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -81,6 +85,7 @@ export function NormativesPage() {
       const { data } = await normativesApi.getOnDate({
         date: sliceDate.format('YYYY-MM-DD'),
         warehouse_code: warehouseCode,
+        department_id: departmentId,
         search: search || undefined,
       })
       setItems(data.data)
@@ -89,7 +94,7 @@ export function NormativesPage() {
     } finally {
       setLoading(false)
     }
-  }, [sliceDate, warehouseCode, search])
+  }, [sliceDate, warehouseCode, search, departmentId])
 
   useEffect(() => {
     void load()
@@ -101,6 +106,12 @@ export function NormativesPage() {
       .then(({ data }) => setWarehouses(data.data))
       .catch((error) => {
         message.error(getApiErrorMessage(error, 'Не удалось загрузить склады'))
+      })
+    void referencesApi
+      .getDepartments({ is_active: true })
+      .then(({ data }) => setDepartments(data.data))
+      .catch((error) => {
+        message.error(getApiErrorMessage(error, 'Не удалось загрузить подразделения'))
       })
   }, [])
 
@@ -135,6 +146,11 @@ export function NormativesPage() {
       render: (_, record) => formatQty(record.quantity, record.unit),
     },
     { title: 'Клиент', dataIndex: 'client_name' },
+    {
+      title: 'Подразделение',
+      dataIndex: 'department_name',
+      render: (value: string) => value || '—',
+    },
   ]
 
   return (
@@ -184,6 +200,18 @@ export function NormativesPage() {
             { value: 'B', label: 'B' },
             { value: 'C', label: 'C' },
           ]}
+        />
+        <Select
+          allowClear
+          aria-label="Подразделение"
+          placeholder="Подразделение"
+          style={{ width: 240 }}
+          value={departmentId}
+          onChange={(value) => setDepartmentId(value)}
+          options={departments.map((item) => ({
+            value: item.id,
+            label: item.name,
+          }))}
         />
         <Input
           allowClear

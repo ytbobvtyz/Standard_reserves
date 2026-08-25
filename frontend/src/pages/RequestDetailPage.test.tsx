@@ -30,6 +30,7 @@ const request: RequestDetail = {
     username: 'commercial',
     full_name: 'Иванов Иван',
     role: 'commercial',
+    department: 'Коммерческий отдел',
   },
   initiator_comment: null,
   comment_pp: 'Снижаем объем',
@@ -44,11 +45,13 @@ const request: RequestDetail = {
         category: 'A',
         weight_kg: 0.25,
       },
-      warehouse: { code: 2001, name: 'Склад Ростов' },
+      warehouse: { code: 2001, name: 'Склад Ростов', long_distance: false },
       quantity_requested: 1000,
       quantity_approved: 800,
       unit: 'шт',
       comment: null,
+      long_distance: false,
+      requirement: 800,
     },
   ],
   history: [],
@@ -102,7 +105,10 @@ describe('RequestDetailPage', () => {
     await waitFor(() => {
       expect(screen.getByText("ООО 'Ромашка'")).toBeTruthy()
     })
+    expect(screen.getByText('Иванов И. (Коммерческий отдел)')).toBeTruthy()
     expect(screen.getByText('Утверждено: 800')).toBeTruthy()
+    expect(screen.getByText('A (×1,0)')).toBeTruthy()
+    expect(screen.getByText('Нет (×1,0)')).toBeTruthy()
   })
 
   it('shows item change history on the history tab', async () => {

@@ -12,6 +12,7 @@ class UserBrief(BaseModel):
     full_name: str
     role: str
     department: str | None = None
+    department_id: UUID | None = None
 
 
 class UserProfile(UserBrief):

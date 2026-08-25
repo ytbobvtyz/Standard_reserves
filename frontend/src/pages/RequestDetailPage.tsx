@@ -9,6 +9,7 @@ import {
   Table,
   Tabs,
   Timeline,
+  Tooltip,
   Typography,
   message,
 } from 'antd'
@@ -32,7 +33,13 @@ import {
   maxExpiryDate,
   minExpiryDate,
 } from '../utils/expiryDate'
-import { formatDateTime } from '../utils/format'
+import { formatDateTime, formatInitiator } from '../utils/format'
+import {
+  categoryLabel,
+  distanceLabel,
+  formatRequirementQty,
+  requirementTooltip,
+} from '../utils/requirement'
 import { canDeleteByStatus, DELETE_CONFIRM } from '../utils/requestActions'
 
 const TYPE_LABEL: Record<string, string> = {
@@ -202,8 +209,10 @@ export function RequestDetailPage() {
           </Descriptions.Item>
           <Descriptions.Item label="Клиент">{request.client_name}</Descriptions.Item>
           <Descriptions.Item label="Инициатор">
-            {request.initiator.full_name}
-            {request.initiator.department ? ` (${request.initiator.department})` : ''}
+            {formatInitiator(
+              request.initiator.full_name,
+              request.department_name ?? request.initiator.department,
+            )}
           </Descriptions.Item>
           <Descriptions.Item label="Создан">
             {new Date(request.created_at).toLocaleString('ru-RU')}
@@ -265,7 +274,7 @@ export function RequestDetailPage() {
             },
             { title: 'Название', dataIndex: ['product', 'name'] },
             { title: 'Склад', dataIndex: ['warehouse', 'name'] },
-            { title: 'Запрос', dataIndex: 'quantity_requested', width: 110 },
+            { title: 'Количество', dataIndex: 'quantity_requested', width: 110 },
             {
               title: 'Утверждено',
               dataIndex: 'quantity_approved',
@@ -274,6 +283,35 @@ export function RequestDetailPage() {
                 value == null ? '—' : `Утверждено: ${value}`,
             },
             { title: 'Ед.', dataIndex: 'unit', width: 70 },
+            {
+              title: 'Категория',
+              width: 110,
+              render: (_, item) => categoryLabel(item.product.category),
+            },
+            {
+              title: 'Удалённость',
+              width: 120,
+              render: (_, item) =>
+                distanceLabel(item.long_distance ?? item.warehouse.long_distance),
+            },
+            {
+              title: 'Потребность',
+              width: 140,
+              render: (_, item) => {
+                const qty = item.quantity_approved ?? item.quantity_requested
+                const longDistance = item.long_distance ?? item.warehouse.long_distance
+                const value = item.requirement
+                return (
+                  <Tooltip
+                    title={requirementTooltip(qty, item.unit, item.product.category, longDistance)}
+                  >
+                    <span>
+                      {formatRequirementQty(value ?? qty)} {item.unit}
+                    </span>
+                  </Tooltip>
+                )
+              },
+            },
           ]}
         />
       </Card>

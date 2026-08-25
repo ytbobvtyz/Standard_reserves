@@ -2,7 +2,16 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, String, Text, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -10,6 +19,7 @@ from app.models.base import Base, SoftDeleteMixin, TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.audit_log import AuditLog
+    from app.models.department import Department
     from app.models.object import Object
     from app.models.password_reset import PasswordResetToken
     from app.models.product import Product
@@ -29,6 +39,7 @@ class User(TimestampMixin, SoftDeleteMixin, Base):
         Index("idx_users_username", "username"),
         Index("idx_users_email", "email"),
         Index("idx_users_role", "role"),
+        Index("idx_users_department_id", "department_id"),
         Index(
             "idx_users_is_active",
             "is_active",
@@ -48,6 +59,10 @@ class User(TimestampMixin, SoftDeleteMixin, Base):
     full_name: Mapped[str] = mapped_column(Text, nullable=False)
     role: Mapped[str] = mapped_column(String(30), nullable=False)
     department: Mapped[str | None] = mapped_column(Text)
+    department_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("departments.id"),
+    )
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
@@ -56,6 +71,11 @@ class User(TimestampMixin, SoftDeleteMixin, Base):
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    assigned_department: Mapped["Department | None"] = relationship(
+        "Department",
+        back_populates="users",
+        foreign_keys=[department_id],
+    )
     sessions: Mapped[list["Session"]] = relationship(
         "Session",
         back_populates="user",

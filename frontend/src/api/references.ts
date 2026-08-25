@@ -13,6 +13,7 @@ import type {
   ProductUploadResult,
   RelatedProductsData,
   User,
+  DepartmentListItem,
 } from './types'
 
 export const referencesApi = {
@@ -73,4 +74,7 @@ export const referencesApi = {
     api.delete<{ status: 'success'; message: string }>(`/references/objects/${code}`),
 
   getUsers: () => api.get<ApiSuccess<User[]>>('/references/users'),
+
+  getDepartments: (params?: { is_active?: boolean }) =>
+    api.get<ApiSuccess<DepartmentListItem[]>>('/references/departments', { params }),
 }

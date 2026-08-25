@@ -19,6 +19,7 @@ export interface User {
   full_name: string
   role: UserRole
   department?: string | null
+  department_id?: string | null
   email?: string
   last_login_at?: string | null
   is_active?: boolean
@@ -66,6 +67,7 @@ export interface ProductListItem {
   weight_kg: number
   monthly_consumption: number | null
   is_active: boolean
+  is_analog?: boolean
   description?: string | null
   gtin?: string | null
   mark_control?: boolean
@@ -143,6 +145,8 @@ export interface RequestListItem {
   status: RequestStatus
   client_name: string
   initiator: User
+  department_id?: string | null
+  department_name?: string | null
   items_count: number
   total_quantity: number
   expiry_date: string | null
@@ -160,11 +164,16 @@ export interface RequestItemDetail {
   warehouse: {
     code: number
     name: string
+    long_distance?: boolean
   }
   quantity_requested: number
   quantity_approved: number | null
   unit: Unit
   comment: string | null
+  category_factor?: number
+  long_distance?: boolean
+  distance_factor?: number
+  requirement?: number
 }
 
 export interface RequestHistoryEntry {
@@ -180,6 +189,8 @@ export interface RequestDetail {
   status: RequestStatus
   client_name: string
   initiator: User
+  department_id?: string | null
+  department_name?: string | null
   initiator_comment: string | null
   comment_pp: string | null
   comment_economy: string | null
@@ -210,6 +221,11 @@ export interface ApprovalPendingItem {
   quantity_requested: number
   quantity_approved: number | null
   unit: Unit
+  category?: string
+  category_factor?: number
+  long_distance?: boolean
+  distance_factor?: number
+  requirement?: number
 }
 
 export interface ApprovalPendingRequest {
@@ -261,10 +277,17 @@ export interface RequestListParams {
   limit?: number
 }
 
+export interface DepartmentListItem {
+  id: string
+  name: string
+  is_active: boolean
+}
+
 export interface ProductListParams {
   search?: string
   category?: 'A' | 'B' | 'C'
   is_active?: boolean
+  include_analogs?: boolean
   page?: number
   limit?: number
 }
@@ -489,6 +512,7 @@ export interface NormativeListParams {
   product_code?: number
   client_name?: string
   category?: 'A' | 'B' | 'C'
+  department_id?: string
   search?: string
   page?: number
   limit?: number
@@ -504,6 +528,8 @@ export interface NormativeListItem {
   quantity: number
   unit: Unit
   client_name: string
+  department_id?: string | null
+  department_name?: string | null
   expiry_date: string
   created_at: string
 }
@@ -512,6 +538,7 @@ export interface NormativeOnDateParams {
   date: string
   warehouse_code?: number
   product_code?: number
+  department_id?: string
   search?: string
 }
 
@@ -519,6 +546,8 @@ export interface NormativeOnDateDetail {
   client_name: string
   quantity: number
   expiry_date: string
+  department_id?: string | null
+  department_name?: string | null
 }
 
 export interface NormativeOnDateItem {

@@ -15,3 +15,11 @@ export function formatShortName(fullName: string): string {
   }
   return `${parts[0]} ${parts[1].charAt(0)}.`
 }
+
+export function formatInitiator(
+  fullName: string,
+  department?: string | null,
+): string {
+  const name = formatShortName(fullName)
+  return department ? `${name} (${department})` : name
+}

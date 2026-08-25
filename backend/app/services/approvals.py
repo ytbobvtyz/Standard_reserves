@@ -26,6 +26,7 @@ from app.schemas.request import (
     validate_expiry_date_limit,
 )
 from app.schemas.user import UserBrief
+from app.services.coefficients import item_coefficient_fields
 from app.services.requests import load_request
 
 Stage = Literal["pp", "economy"]
@@ -62,8 +63,24 @@ def to_pending(request: Request) -> ApprovalPendingRequest:
                 quantity_requested=item.quantity_requested,
                 quantity_approved=item.quantity_approved,
                 unit=item.unit,
+                category=coeffs["category"],
+                category_factor=coeffs["category_factor"],
+                long_distance=coeffs["long_distance"],
+                distance_factor=coeffs["distance_factor"],
+                requirement=coeffs["requirement"],
             )
             for item in request.items
+            for coeffs in [
+                item_coefficient_fields(
+                    item.product,
+                    item.warehouse,
+                    (
+                        item.quantity_approved
+                        if item.quantity_approved is not None
+                        else item.quantity_requested
+                    ),
+                )
+            ]
         ],
         expiry_date=request.expiry_date,
         created_at=request.created_at,

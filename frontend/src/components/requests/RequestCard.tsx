@@ -30,12 +30,18 @@ export function RequestCard({ request, canDelete = false, onDelete }: RequestCar
           <Typography.Text strong>{request.client_name}</Typography.Text>
           <StatusBadge status={request.status} />
         </Space>
-        <Typography.Text type="secondary">
-          {TYPE_LABEL[request.request_type] ?? request.request_type} ·{' '}
-          {request.items_count}{' '}
-          {request.items_count === 1 ? 'позиция' : 'позиций'} ·{' '}
-          {new Date(request.created_at).toLocaleDateString('ru-RU')}
-        </Typography.Text>
+          <Typography.Text type="secondary">
+            {TYPE_LABEL[request.request_type] ?? request.request_type} ·{' '}
+            {request.items_count}{' '}
+            {request.items_count === 1 ? 'позиция' : 'позиций'} ·{' '}
+            {new Date(request.created_at).toLocaleDateString('ru-RU')}
+          </Typography.Text>
+          {request.department_name || request.initiator.department ? (
+            <Typography.Text type="secondary">
+              Подразделение:{' '}
+              {request.department_name ?? request.initiator.department}
+            </Typography.Text>
+          ) : null}
         <Space style={{ justifyContent: 'space-between', width: '100%' }}>
           <Typography.Text type="secondary">
             Инициатор: {request.initiator.full_name}

@@ -16,7 +16,9 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.execute("ALTER TABLE objects DROP CONSTRAINT IF EXISTS objects_erp_plant_code_key;")
+    op.execute(
+        "ALTER TABLE objects " "DROP CONSTRAINT IF EXISTS objects_erp_plant_code_key;"
+    )
     op.execute(
         "ALTER TABLE objects DROP CONSTRAINT IF EXISTS objects_erp_warehouse_code_key;"
     )

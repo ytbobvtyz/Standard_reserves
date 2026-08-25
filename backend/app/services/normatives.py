@@ -2,6 +2,7 @@ from collections import defaultdict
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from typing import Literal
+from uuid import UUID
 
 from sqlalchemy import String, cast, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +13,7 @@ from app.core.pagination import paginate
 from app.models.normative import Normative
 from app.models.object import Object
 from app.models.product import Product
+from app.models.request import Request
 from app.schemas.common import PaginationMeta
 from app.schemas.normative import (
     NormativeCalculateData,
@@ -49,7 +51,19 @@ def _product_search_condition(search: str | None):
     )
 
 
+def _department_fields(normative: Normative) -> tuple[UUID | None, str | None]:
+    request = normative.request
+    if request is None:
+        return None, None
+    department = request.department
+    if department is not None:
+        return request.department_id, department.name
+    initiator = request.initiator
+    return request.department_id, initiator.department if initiator else None
+
+
 def to_list_item(normative: Normative) -> NormativeListItem:
+    department_id, department_name = _department_fields(normative)
     return NormativeListItem(
         id=normative.id,
         product_code=normative.product_code,
@@ -60,6 +74,8 @@ def to_list_item(normative: Normative) -> NormativeListItem:
         quantity=normative.quantity,
         unit=normative.unit,
         client_name=normative.client_name,
+        department_id=department_id,
+        department_name=department_name,
         expiry_date=normative.expiry_date,
         created_at=normative.created_at,
     )
@@ -73,6 +89,7 @@ async def list_current_normatives(
     client_name: str | None,
     category: CategoryFilter | None,
     search: str | None,
+    department_id: UUID | None,
     page: int,
     limit: int,
 ) -> tuple[list[NormativeListItem], PaginationMeta]:
@@ -88,6 +105,15 @@ async def list_current_normatives(
         conditions.append(Normative.client_name.ilike(f"%{client_name.strip()}%"))
     if category:
         conditions.append(Normative.category == category)
+    if department_id is not None:
+        conditions.append(
+            exists(
+                select(1).where(
+                    Request.id == Normative.request_id,
+                    Request.department_id == department_id,
+                )
+            )
+        )
     search_condition = _product_search_condition(search)
     if search_condition is not None:
         conditions.append(search_condition)
@@ -101,6 +127,8 @@ async def list_current_normatives(
             .options(
                 selectinload(Normative.product),
                 selectinload(Normative.warehouse),
+                selectinload(Normative.request).selectinload(Request.department),
+                selectinload(Normative.request).selectinload(Request.initiator),
             )
             .where(*conditions)
             .order_by(
@@ -123,6 +151,7 @@ async def list_normatives_on_date(
     warehouse_code: int | None,
     product_code: int | None,
     search: str | None = None,
+    department_id: UUID | None = None,
 ) -> list[NormativeOnDateItem]:
     conditions = [
         Normative.created_at <= _end_of_day(on_date),
@@ -132,6 +161,15 @@ async def list_normatives_on_date(
         conditions.append(Normative.warehouse_code == warehouse_code)
     if product_code is not None:
         conditions.append(Normative.product_code == product_code)
+    if department_id is not None:
+        conditions.append(
+            exists(
+                select(1).where(
+                    Request.id == Normative.request_id,
+                    Request.department_id == department_id,
+                )
+            )
+        )
     search_condition = _product_search_condition(search)
     if search_condition is not None:
         conditions.append(search_condition)
@@ -141,6 +179,8 @@ async def list_normatives_on_date(
         .options(
             selectinload(Normative.product),
             selectinload(Normative.warehouse),
+            selectinload(Normative.request).selectinload(Request.department),
+            selectinload(Normative.request).selectinload(Request.initiator),
         )
         .where(*conditions)
         .order_by(
@@ -171,6 +211,8 @@ async def list_normatives_on_date(
                         client_name=row.client_name,
                         quantity=row.quantity,
                         expiry_date=row.expiry_date,
+                        department_id=_department_fields(row)[0],
+                        department_name=_department_fields(row)[1],
                     )
                     for row in rows
                 ],

@@ -1,6 +1,7 @@
 from app.models.audit_log import AuditLog
 from app.models.available_balance import AvailableBalance
 from app.models.base import Base
+from app.models.department import Department
 from app.models.event import Event
 from app.models.normative import Normative
 from app.models.object import Object
@@ -17,6 +18,7 @@ __all__ = [
     "AuditLog",
     "AvailableBalance",
     "Base",
+    "Department",
     "Event",
     "Normative",
     "Object",

@@ -38,6 +38,7 @@ from app.schemas.request import (
     validate_expiry_date_limit,
 )
 from app.schemas.user import UserBrief
+from app.services.coefficients import item_coefficient_fields
 
 VIEW_ALL_ROLES = {"pp", "economist", "logistics"}
 
@@ -131,6 +132,40 @@ def _build_items(items: list[RequestItemCreate]) -> list[RequestItem]:
     ]
 
 
+def _item_quantity(item: RequestItem) -> Decimal:
+    if item.quantity_approved is not None:
+        return item.quantity_approved
+    return item.quantity_requested
+
+
+def _item_created(item: RequestItem) -> RequestItemCreated:
+    coeffs = item_coefficient_fields(
+        item.product, item.warehouse, item.quantity_requested
+    )
+    return RequestItemCreated(
+        id=item.id,
+        product_code=item.product_code,
+        warehouse_code=item.warehouse_code,
+        quantity_requested=item.quantity_requested,
+        quantity_approved=item.quantity_approved,
+        unit=item.unit,
+        comment=item.comment,
+        category=coeffs["category"],
+        category_factor=coeffs["category_factor"],
+        long_distance=coeffs["long_distance"],
+        distance_factor=coeffs["distance_factor"],
+        requirement=coeffs["requirement"],
+    )
+
+
+def _department_name(request: Request) -> str | None:
+    if request.department is not None:
+        return request.department.name
+    if request.initiator is not None:
+        return request.initiator.department
+    return None
+
+
 def _created_schema(request: Request) -> RequestCreated:
     return RequestCreated(
         id=request.id,
@@ -138,8 +173,9 @@ def _created_schema(request: Request) -> RequestCreated:
         status=request.status,
         client_name=request.client_name,
         initiator_id=request.initiator_id,
+        department_id=request.department_id,
         expiry_date=request.expiry_date,
-        items=[RequestItemCreated.model_validate(item) for item in request.items],
+        items=[_item_created(item) for item in request.items],
         created_at=request.created_at,
     )
 
@@ -155,6 +191,8 @@ def to_list_item(request: Request) -> RequestListItem:
         status=request.status,
         client_name=request.client_name,
         initiator=UserBrief.model_validate(request.initiator),
+        department_id=request.department_id,
+        department_name=_department_name(request),
         items_count=len(request.items),
         total_quantity=total,
         expiry_date=request.expiry_date,
@@ -231,6 +269,8 @@ def to_detail(request: Request) -> RequestDetail:
         status=request.status,
         client_name=request.client_name,
         initiator=UserBrief.model_validate(request.initiator),
+        department_id=request.department_id,
+        department_name=_department_name(request),
         initiator_comment=request.initiator_comment,
         comment_pp=request.comment_pp,
         comment_economy=request.comment_economy,
@@ -250,13 +290,26 @@ def to_detail(request: Request) -> RequestDetail:
                     category=item.product.category.strip(),
                     weight_kg=item.product.weight_kg,
                 ),
-                warehouse=WarehouseBrief.model_validate(item.warehouse),
+                warehouse=WarehouseBrief(
+                    code=item.warehouse.code,
+                    name=item.warehouse.name,
+                    long_distance=bool(item.warehouse.long_distance),
+                ),
                 quantity_requested=item.quantity_requested,
                 quantity_approved=item.quantity_approved,
                 unit=item.unit,
                 comment=item.comment,
+                category_factor=coeffs["category_factor"],
+                long_distance=coeffs["long_distance"],
+                distance_factor=coeffs["distance_factor"],
+                requirement=coeffs["requirement"],
             )
             for item in request.items
+            for coeffs in [
+                item_coefficient_fields(
+                    item.product, item.warehouse, _item_quantity(item)
+                )
+            ]
         ],
         approvals=RequestApprovals(
             pp=ApprovalActor(
@@ -288,6 +341,7 @@ DETAIL_OPTIONS = (
     selectinload(Request.items).selectinload(RequestItem.product),
     selectinload(Request.items).selectinload(RequestItem.warehouse),
     selectinload(Request.initiator),
+    selectinload(Request.department),
     selectinload(Request.pp_approver),
     selectinload(Request.economy_approver),
     selectinload(Request.executor),
@@ -296,6 +350,7 @@ DETAIL_OPTIONS = (
 LIST_OPTIONS = (
     selectinload(Request.items),
     selectinload(Request.initiator),
+    selectinload(Request.department),
 )
 
 
@@ -392,6 +447,7 @@ async def create_request(
         status="draft",
         client_name=body.client_name,
         initiator_id=user.id,
+        department_id=user.department_id,
         initiator_comment=body.comment,
         expiry_date=body.expiry_date,
         items=_build_items(body.items),

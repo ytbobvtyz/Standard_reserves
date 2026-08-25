@@ -8,9 +8,11 @@ import {
   Radio,
   Select,
   Space,
+  Tooltip,
   Typography,
   message,
 } from 'antd'
+import type { FormListFieldData } from 'antd'
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons'
 import { type Dayjs } from 'dayjs'
 import { useEffect, useState } from 'react'
@@ -31,12 +33,22 @@ import {
   maxExpiryDate,
   minExpiryDate,
 } from '../utils/expiryDate'
+import { formatInitiator } from '../utils/format'
+import {
+  calculateRequirement,
+  categoryLabel,
+  distanceLabel,
+  formatRequirementQty,
+  requirementTooltip,
+} from '../utils/requirement'
 
 interface ItemFormValue {
   product_code?: number
+  product_name?: string
   warehouse_code?: number
   quantity_requested?: number
   unit?: 'шт' | 'т'
+  category?: string
 }
 
 interface FormValues {
@@ -45,6 +57,127 @@ interface FormValues {
   expiry_date?: Dayjs
   comment?: string
   items: ItemFormValue[]
+}
+
+const ITEM_GRID =
+  'minmax(220px, 1.5fr) minmax(140px, 1.1fr) minmax(180px, 1.2fr) 110px 80px 110px 120px 150px 28px'
+
+function RequestItemRow({
+  field,
+  warehouses,
+  canRemove,
+  onRemove,
+}: {
+  field: FormListFieldData
+  warehouses: ObjectListItem[]
+  canRemove: boolean
+  onRemove: () => void
+}) {
+  const form = Form.useFormInstance<FormValues>()
+  const productName = Form.useWatch(['items', field.name, 'product_name'], form)
+  const category = Form.useWatch(['items', field.name, 'category'], form)
+  const quantity = Form.useWatch(['items', field.name, 'quantity_requested'], form)
+  const unit = Form.useWatch(['items', field.name, 'unit'], form) ?? 'шт'
+  const warehouseCode = Form.useWatch(['items', field.name, 'warehouse_code'], form)
+  const warehouse = warehouses.find((item) => item.code === warehouseCode)
+  const longDistance = warehouse == null ? undefined : Boolean(warehouse.long_distance)
+  const requirement = calculateRequirement(quantity, category, longDistance)
+
+  return (
+    <>
+      <div style={{ display: 'none' }}>
+        <Form.Item name={[field.name, 'product_name']}>
+          <Input />
+        </Form.Item>
+        <Form.Item name={[field.name, 'category']}>
+          <Input />
+        </Form.Item>
+      </div>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: ITEM_GRID,
+          gap: 8,
+          alignItems: 'start',
+          marginBottom: 8,
+          minWidth: 1100,
+        }}
+      >
+        <Form.Item
+          {...field}
+          name={[field.name, 'product_code']}
+          rules={[{ required: true, message: 'Выберите продукт' }]}
+          style={{ marginBottom: 0 }}
+        >
+        <ProductAutocomplete
+          includeAnalogs
+          onChange={(_code, product) => {
+            form.setFieldValue(['items', field.name, 'product_name'], product?.name)
+            form.setFieldValue(['items', field.name, 'category'], product?.category)
+          }}
+        />
+      </Form.Item>
+      <Typography.Text style={{ paddingTop: 5 }} ellipsis>
+        {productName || '—'}
+      </Typography.Text>
+      <Form.Item
+        {...field}
+        name={[field.name, 'warehouse_code']}
+        rules={[{ required: true, message: 'Выберите склад' }]}
+        style={{ marginBottom: 0 }}
+      >
+        <Select
+          placeholder="Склад"
+          options={warehouses.map((item) => ({
+            value: item.code,
+            label: `${item.name} (${item.city})`,
+          }))}
+        />
+      </Form.Item>
+      <Form.Item
+        {...field}
+        name={[field.name, 'quantity_requested']}
+        rules={[{ required: true, message: 'Укажите количество' }]}
+        style={{ marginBottom: 0 }}
+      >
+        <InputNumber min={0.01} placeholder="Кол-во" style={{ width: '100%' }} />
+      </Form.Item>
+      <Form.Item
+        {...field}
+        name={[field.name, 'unit']}
+        initialValue="шт"
+        style={{ marginBottom: 0 }}
+      >
+        <Select
+          options={[
+            { value: 'шт', label: 'шт' },
+            { value: 'т', label: 'т' },
+          ]}
+        />
+      </Form.Item>
+      <Typography.Text style={{ paddingTop: 5 }}>{categoryLabel(category)}</Typography.Text>
+      <Typography.Text style={{ paddingTop: 5 }}>
+        {warehouseCode == null ? '—' : distanceLabel(Boolean(longDistance))}
+      </Typography.Text>
+      {requirement == null || !unit ? (
+        <Typography.Text type="secondary" style={{ paddingTop: 5 }}>
+          —
+        </Typography.Text>
+      ) : (
+        <Tooltip title={requirementTooltip(quantity ?? 0, unit, category, Boolean(longDistance))}>
+          <Typography.Text style={{ paddingTop: 5 }}>
+            {formatRequirementQty(requirement)} {unit}
+          </Typography.Text>
+        </Tooltip>
+      )}
+      {canRemove ? (
+        <MinusCircleOutlined style={{ marginTop: 8 }} onClick={onRemove} />
+      ) : (
+        <span />
+      )}
+      </div>
+    </>
+  )
 }
 
 export function CreateRequestPage() {
@@ -134,6 +267,13 @@ export function CreateRequestPage() {
           >
             <Input placeholder="ООО Ромашка" />
           </Form.Item>
+          {user ? (
+            <Form.Item label="Инициатор">
+              <Typography.Text>
+                {formatInitiator(user.full_name, user.department)}
+              </Typography.Text>
+            </Form.Item>
+          ) : null}
           {requestType === 'normative' ? (
             <Form.Item
               name="expiry_date"
@@ -179,71 +319,45 @@ export function CreateRequestPage() {
             ]}
           >
             {(fields, { add, remove }) => (
-              <>
+              <div style={{ overflowX: 'auto' }}>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: ITEM_GRID,
+                    gap: 8,
+                    marginBottom: 8,
+                    fontWeight: 600,
+                    minWidth: 1100,
+                  }}
+                >
+                  <span>Артикул</span>
+                  <span>Название</span>
+                  <span>Склад</span>
+                  <span>Кол-во</span>
+                  <span>Ед</span>
+                  <span>Категория</span>
+                  <span>Удалённость</span>
+                  <span>Потребность</span>
+                  <span />
+                </div>
                 {fields.map((field) => (
-                  <Space
+                  <RequestItemRow
                     key={field.key}
-                    align="baseline"
-                    style={{ display: 'flex', marginBottom: 8 }}
-                    wrap
-                  >
-                    <Form.Item
-                      {...field}
-                      name={[field.name, 'product_code']}
-                      rules={[{ required: true, message: 'Выберите продукт' }]}
-                      style={{ minWidth: 280, marginBottom: 8 }}
-                    >
-                      <ProductAutocomplete />
-                    </Form.Item>
-                    <Form.Item
-                      {...field}
-                      name={[field.name, 'warehouse_code']}
-                      rules={[{ required: true, message: 'Выберите склад' }]}
-                      style={{ minWidth: 220, marginBottom: 8 }}
-                    >
-                      <Select
-                        placeholder="Склад"
-                        options={warehouses.map((item) => ({
-                          value: item.code,
-                          label: `${item.name} (${item.city})`,
-                        }))}
-                      />
-                    </Form.Item>
-                    <Form.Item
-                      {...field}
-                      name={[field.name, 'quantity_requested']}
-                      rules={[{ required: true, message: 'Укажите количество' }]}
-                      style={{ width: 140, marginBottom: 8 }}
-                    >
-                      <InputNumber min={0.01} placeholder="Кол-во" style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item
-                      {...field}
-                      name={[field.name, 'unit']}
-                      initialValue="шт"
-                      style={{ width: 90, marginBottom: 8 }}
-                    >
-                      <Select
-                        options={[
-                          { value: 'шт', label: 'шт' },
-                          { value: 'т', label: 'т' },
-                        ]}
-                      />
-                    </Form.Item>
-                    {fields.length > 1 ? (
-                      <MinusCircleOutlined onClick={() => remove(field.name)} />
-                    ) : null}
-                  </Space>
+                    field={field}
+                    warehouses={warehouses}
+                    canRemove={fields.length > 1}
+                    onRemove={() => remove(field.name)}
+                  />
                 ))}
                 <Button
                   type="dashed"
-                  onClick={() => add()}
+                  onClick={() => add({ unit: 'шт' })}
                   icon={<PlusOutlined />}
                   style={{ marginBottom: 16 }}
                 >
                   Добавить позицию
                 </Button>
-              </>
+              </div>
             )}
           </Form.List>
           <Form.Item name="comment" label="Комментарий">

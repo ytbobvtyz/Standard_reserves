@@ -154,10 +154,10 @@ def _convert_row(
     stock_unit: str,
     long_distance: bool | None = None,
 ) -> DeficitRow:
-    is_remote = bool(warehouse.long_distance if long_distance is None else long_distance)
-    requirement_pcs = calculate_requirement(
-        normative_pcs, product.category, is_remote
+    is_remote = bool(
+        warehouse.long_distance if long_distance is None else long_distance
     )
+    requirement_pcs = calculate_requirement(normative_pcs, product.category, is_remote)
     deficit_pcs = requirement_pcs - plan_pcs
     status: Literal["warning", "ok"] = "warning" if deficit_pcs > 0 else "ok"
     return DeficitRow(

@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import get_current_user, get_db, require_roles
 from app.core.exceptions import APIError
 from app.core.pagination import paginate
+from app.models.department import Department
 from app.models.object import Object
 from app.models.product import Product
 from app.models.user import User
@@ -19,6 +20,7 @@ from app.schemas.common import (
     SuccessResponse,
 )
 from app.schemas.reference import (
+    DepartmentListItem,
     ObjectCreate,
     ObjectDetail,
     ObjectListItem,
@@ -31,6 +33,7 @@ from app.schemas.reference import (
 )
 from app.services import objects_admin, products_admin
 from app.services.references import (
+    expand_with_analogs,
     to_object_list_item,
     to_product_detail,
     to_product_list_item,
@@ -46,6 +49,7 @@ async def list_products(
     search: str | None = Query(default=None),
     category: Literal["A", "B", "C"] | None = Query(default=None),
     is_active: bool | None = Query(default=None),
+    include_analogs: bool = Query(default=False),
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=50, ge=1, le=200),
     _user: User = Depends(get_current_user),
@@ -79,9 +83,14 @@ async def list_products(
             limit,
         )
     )
-    products = result.scalars().all()
+    products = list(result.scalars().all())
+    data = (
+        await expand_with_analogs(db, products)
+        if include_analogs
+        else [to_product_list_item(product) for product in products]
+    )
     return PaginatedResponse(
-        data=[to_product_list_item(product) for product in products],
+        data=data,
         meta=PaginationMeta(page=page, limit=limit, total=total or 0),
     )
 
@@ -285,3 +294,21 @@ async def list_users(
     )
     users = result.scalars().all()
     return SuccessResponse(data=[UserReference.model_validate(user) for user in users])
+
+
+@router.get("/departments", response_model=SuccessResponse[list[DepartmentListItem]])
+async def list_departments(
+    is_active: bool | None = Query(default=True),
+    _user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[list[DepartmentListItem]]:
+    conditions = [Department.deleted_at.is_(None)]
+    if is_active is not None:
+        conditions.append(Department.is_active == is_active)
+    result = await db.execute(
+        select(Department).where(*conditions).order_by(Department.name)
+    )
+    departments = result.scalars().all()
+    return SuccessResponse(
+        data=[DepartmentListItem.model_validate(item) for item in departments]
+    )

@@ -15,6 +15,7 @@ from app.main import app
 from app.models import (
     AuditLog,
     Base,
+    Department,
     Event,
     Normative,
     Object,
@@ -147,6 +148,22 @@ async def db_ready() -> AsyncGenerator[None, None]:
         await connection.execute(
             text("UPDATE objects SET long_distance = false WHERE long_distance IS NULL")
         )
+        await connection.execute(text("""
+                CREATE TABLE IF NOT EXISTS departments (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    name TEXT NOT NULL,
+                    is_active BOOLEAN DEFAULT true,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    deleted_at TIMESTAMP WITH TIME ZONE
+                )
+                """))
+        await connection.execute(
+            text("ALTER TABLE users " "ADD COLUMN IF NOT EXISTS department_id UUID")
+        )
+        await connection.execute(
+            text("ALTER TABLE requests " "ADD COLUMN IF NOT EXISTS department_id UUID")
+        )
         await connection.execute(
             text(
                 "ALTER TABLE objects "
@@ -234,6 +251,7 @@ async def _create_user(
     password: str = DEFAULT_PASSWORD,
 ) -> AuthUser:
     suffix = uuid.uuid4().hex[:10]
+    department = "Тесты"
     auth_user = AuthUser(
         id=uuid.uuid4(),
         username=f"user_{suffix}",
@@ -243,6 +261,18 @@ async def _create_user(
         full_name=f"Test User {suffix}",
     )
     async with AsyncSessionLocal() as session:
+        department_id = None
+        if department:
+            existing = await session.scalar(
+                select(Department).where(Department.name == department)
+            )
+            if existing is None:
+                dept = Department(name=department, is_active=True)
+                session.add(dept)
+                await session.flush()
+                department_id = dept.id
+            else:
+                department_id = existing.id
         session.add(
             User(
                 id=auth_user.id,
@@ -251,7 +281,8 @@ async def _create_user(
                 password_hash=hash_password(password),
                 full_name=auth_user.full_name,
                 role=role,
-                department="Тесты",
+                department=department,
+                department_id=department_id,
                 is_active=is_active,
             )
         )

@@ -84,6 +84,15 @@ erDiagram
         timestamp deleted_at "дата удаления (soft delete)"
     }
 
+    departments {
+        uuid id PK "идентификатор"
+        text name "наименование (уникальное)"
+        boolean is_active "активное"
+        timestamp created_at "дата создания"
+        timestamp updated_at "дата обновления"
+        timestamp deleted_at "дата удаления (soft delete)"
+    }
+
     users {
         uuid id PK "идентификатор"
         varchar username "логин (уникальный)"
@@ -91,7 +100,8 @@ erDiagram
         text password_hash "хэш пароля"
         text full_name "ФИО"
         varchar role "commercial/pp/economist/logistics/guest"
-        text department "отдел"
+        text department "название отдела (денормализация)"
+        uuid department_id FK "подразделение"
         boolean is_active "активный"
         timestamp last_login_at "последний вход"
         timestamp created_at "дата создания"
@@ -129,6 +139,7 @@ erDiagram
         varchar status "draft/pp_approved/economy_check/active/approved/rejected/expired/executed (без pp_rework/economy_rework)"
         text client_name "метка авторства"
         uuid initiator_id FK "инициатор"
+        uuid department_id FK "подразделение инициатора (снимок)"
         text initiator_comment "комментарий инициатора"
         text comment_pp "комментарий ПП"
         text comment_economy "комментарий экономиста"
@@ -237,6 +248,10 @@ erDiagram
     products }o--o| users : "last_modified_by"
     objects }o--o| users : "last_modified_by"
     users ||--o{ audit_log : "changed_by"
+
+    %% Departments → Users / Requests
+    departments ||--o{ users : "department_id"
+    departments ||--o{ requests : "department_id"
 
     %% Users → Sessions
     users ||--o{ sessions : "имеет"
@@ -398,7 +413,32 @@ last_modified_at	TIMESTAMP	❌	Когда изменили
 created_at	TIMESTAMP	✅	Дата создания
 updated_at	TIMESTAMP	✅	Дата обновления
 deleted_at	TIMESTAMP	❌	Дата удаления (soft delete)
-3.3. users — Пользователи
+3.3. departments — Подразделения
+Справочник подразделений компании. При создании запроса `department_id` копируется с пользователя-инициатора (снимок на момент создания).
+
+sql
+CREATE TABLE departments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE UNIQUE INDEX uq_departments_name ON departments(name) WHERE deleted_at IS NULL;
+CREATE INDEX idx_departments_is_active ON departments(is_active) WHERE is_active = true;
+
+
+Поле	Тип	Обязательное	Описание
+id	UUID	✅	Идентификатор (PK)
+name	TEXT	✅	Наименование (уникально среди неудалённых)
+is_active	BOOLEAN	✅	Активное (по умолчанию true)
+created_at	TIMESTAMP	✅	Дата создания
+updated_at	TIMESTAMP	✅	Дата обновления
+deleted_at	TIMESTAMP	❌	Дата удаления (soft delete)
+
+3.4. users — Пользователи
 sql
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -410,6 +450,7 @@ CREATE TABLE users (
         'commercial', 'pp', 'economist', 'logistics', 'guest'
     )),
     department TEXT,
+    department_id UUID REFERENCES departments(id),
     is_active BOOLEAN DEFAULT true,
     last_login_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -420,6 +461,7 @@ CREATE TABLE users (
 CREATE INDEX idx_users_username ON users(username);
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_role ON users(role);
+CREATE INDEX idx_users_department_id ON users(department_id);
 CREATE INDEX idx_users_is_active ON users(is_active) WHERE is_active = true;
 
 
@@ -430,14 +472,15 @@ email	VARCHAR(255)	✅	Email (уникальный)
 password_hash	TEXT	✅	Хэш пароля (bcrypt/argon2)
 full_name	TEXT	✅	ФИО
 role	VARCHAR(30)	✅	commercial / pp / economist / logistics / guest
-department	TEXT	❌	Отдел
+department	TEXT	❌	Название отдела (денормализация для API; синхронизируется с `departments.name`)
+department_id	UUID	❌	Подразделение → departments.id
 is_active	BOOLEAN	✅	Активный (по умолчанию true)
 last_login_at	TIMESTAMP	❌	Последний вход
 created_at	TIMESTAMP	✅	Дата создания
 updated_at	TIMESTAMP	✅	Дата обновления
 deleted_at	TIMESTAMP	❌	Дата удаления (soft delete)
 
-3.4. sessions — сессии пользователей
+3.5. sessions — сессии пользователей
 sql
 CREATE TABLE sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -466,7 +509,7 @@ expires_at	TIMESTAMP	✅	Срок действия
 created_at	TIMESTAMP	✅	Дата создания
 revoked_at	TIMESTAMP	❌	Дата отзыва (logout)
 
-3.5. password_reset_tokens — сброс пароля
+3.6. password_reset_tokens — сброс пароля
 sql
 CREATE TABLE password_reset_tokens (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -492,7 +535,8 @@ created_at	TIMESTAMP	✅	Дата создания
 
 ИТОГОВАЯ СВОДКА ПОЛЬЗОВАТЕЛЬСКИХ ТАБЛИЦ
 Таблица	Назначение
-users	Хранит логины, пароли, роли
+departments	Справочник подразделений
+users	Хранит логины, пароли, роли, подразделение
 sessions	Активные сессии (JWT или токены)
 password_reset_tokens	Токены для восстановления пароля
 
@@ -514,6 +558,7 @@ CREATE TABLE requests (
     )),
     client_name TEXT NOT NULL,
     initiator_id UUID NOT NULL REFERENCES users(id),
+    department_id UUID REFERENCES departments(id),
     initiator_comment TEXT,
     comment_pp TEXT,
     comment_economy TEXT,
@@ -537,6 +582,7 @@ CREATE TABLE requests (
 -- Индексы
 CREATE INDEX idx_requests_status_type ON requests(status, request_type);
 CREATE INDEX idx_requests_initiator_id ON requests(initiator_id);
+CREATE INDEX idx_requests_department_id ON requests(department_id);
 CREATE INDEX idx_requests_client_name ON requests(client_name);
 CREATE INDEX idx_requests_created_at ON requests(created_at);
 CREATE INDEX idx_requests_expiry_date ON requests(expiry_date) WHERE expiry_date IS NOT NULL;
@@ -548,6 +594,7 @@ request_type	VARCHAR(20)	✅	normative / one_time
 status	VARCHAR(30)	✅	Статус (по умолчанию draft)
 client_name	TEXT	✅	Метка авторства
 initiator_id	UUID	✅	Инициатор → users.id
+department_id	UUID	❌	Подразделение инициатора на момент создания → departments.id
 initiator_comment	TEXT	❌	Комментарий инициатора
 comment_pp	TEXT	❌	Комментарий ПП
 comment_economy	TEXT	❌	Комментарий экономиста
@@ -1094,6 +1141,7 @@ EXECUTE FUNCTION trigger_create_normative();
 | 13 | `0013_seed_users_objects.py` | Начальные пользователи и объекты |
 | 14 | `0014_drop_rework_statuses.py` | Повторная очистка статусов `pp_rework` / `economy_rework` |
 | 15 | `0015_object_long_distance.py` | `objects.long_distance`; формула потребности в `calculate_normative` и `deficit_view` |
+| 16 | `0016_departments.py` | Таблица `departments`; `users.department_id`; `requests.department_id` |
 
 Начальные пользователи и объекты заполняются скриптом `backend/scripts/seed_data.py`, а не миграцией.
 
@@ -1103,13 +1151,20 @@ EXECUTE FUNCTION trigger_create_normative();
 Пароль всех пользователей: `password`.
 
 sql
+-- Подразделения
+INSERT INTO departments (id, name) VALUES
+('66111111-1111-1111-1111-111111111111', 'Коммерческий отдел'),
+('66222222-2222-2222-2222-222222222222', 'Планирование производства'),
+('66333333-3333-3333-3333-333333333333', 'Экономический отдел'),
+('66444444-4444-4444-4444-444444444444', 'Логистика');
+
 -- Пользователи
-INSERT INTO users (id, username, email, full_name, role, department) VALUES
-('11111111-1111-1111-1111-111111111111', 'commercial', 'commercial@company.ru', 'Иванов Иван', 'commercial', 'Коммерческий отдел'),
-('22222222-2222-2222-2222-222222222222', 'pp', 'pp@company.ru', 'Петров Петр', 'pp', 'Планирование производства'),
-('33333333-3333-3333-3333-333333333333', 'economist', 'economist@company.ru', 'Сидоров Сидор', 'economist', 'Экономический отдел'),
-('44444444-4444-4444-4444-444444444444', 'logistics', 'logistics@company.ru', 'Кузнецов Кузьма', 'logistics', 'Логистика'),
-('55555555-5555-5555-5555-555555555555', 'guest', 'guest@company.ru', 'Смирнов Гость', 'guest', NULL);
+INSERT INTO users (id, username, email, full_name, role, department, department_id) VALUES
+('11111111-1111-1111-1111-111111111111', 'commercial', 'commercial@company.ru', 'Иванов Иван', 'commercial', 'Коммерческий отдел', '66111111-1111-1111-1111-111111111111'),
+('22222222-2222-2222-2222-222222222222', 'pp', 'pp@company.ru', 'Петров Петр', 'pp', 'Планирование производства', '66222222-2222-2222-2222-222222222222'),
+('33333333-3333-3333-3333-333333333333', 'economist', 'economist@company.ru', 'Сидоров Сидор', 'economist', 'Экономический отдел', '66333333-3333-3333-3333-333333333333'),
+('44444444-4444-4444-4444-444444444444', 'logistics', 'logistics@company.ru', 'Кузнецов Кузьма', 'logistics', 'Логистика', '66444444-4444-4444-4444-444444444444'),
+('55555555-5555-5555-5555-555555555555', 'guest', 'guest@company.ru', 'Смирнов Гость', 'guest', NULL, NULL);
 
 -- Заводы
 INSERT INTO objects (code, name, city, region, type, erp_plant_code, erp_warehouse_code, loading_point) VALUES
@@ -1173,6 +1228,6 @@ GROUP BY warehouse_code, product_code;
 Коэффициент удаленности	✅ `objects.long_distance`: false → ×1, true → ×1,5
 
 
-Версия: 2.3
-Дата: 24.08.2026
+Версия: 2.4
+Дата: 25.08.2026
 Статус: Утверждена

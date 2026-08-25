@@ -1,4 +1,4 @@
-import { Button, DatePicker, Input, InputNumber, Modal, Space, Table, Typography, message } from 'antd'
+import { Button, DatePicker, Input, InputNumber, Modal, Space, Table, Tooltip, Typography, message } from 'antd'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
@@ -21,6 +21,13 @@ import {
   maxExpiryDate,
   minExpiryDate,
 } from '../../utils/expiryDate'
+import {
+  calculateRequirement,
+  categoryLabel,
+  distanceLabel,
+  formatRequirementQty,
+  requirementTooltip,
+} from '../../utils/requirement'
 
 const TYPE_LABEL: Record<RequestType, string> = {
   normative: 'Норматив',
@@ -129,7 +136,7 @@ export function ApprovalModal({
       }
       open={Boolean(request)}
       onCancel={onCancel}
-      width={860}
+      width={1100}
       footer={
         <Space>
           <Button danger loading={submitting} onClick={() => void submitAction('reject')}>
@@ -208,7 +215,7 @@ export function ApprovalModal({
               { title: 'Склад', dataIndex: 'warehouse_name', width: 140 },
               { title: 'Запрос', dataIndex: 'quantity_requested', width: 90 },
               {
-                title: 'Утверждено',
+                title: 'Количество',
                 dataIndex: 'quantity_approved_input',
                 width: 140,
                 render: (_value, record, index) => (
@@ -231,6 +238,44 @@ export function ApprovalModal({
                 ),
               },
               { title: 'Ед', dataIndex: 'unit', width: 70 },
+              {
+                title: 'Категория',
+                width: 110,
+                render: (_, record) => categoryLabel(record.category),
+              },
+              {
+                title: 'Удалённость',
+                width: 120,
+                render: (_, record) => distanceLabel(Boolean(record.long_distance)),
+              },
+              {
+                title: 'Потребность',
+                width: 140,
+                render: (_, record) => {
+                  const qty = record.quantity_approved_input
+                  const requirement = calculateRequirement(
+                    qty,
+                    record.category,
+                    record.long_distance,
+                  )
+                  return (
+                    <Tooltip
+                      title={requirementTooltip(
+                        qty,
+                        record.unit,
+                        record.category,
+                        record.long_distance,
+                      )}
+                    >
+                      <span>
+                        {requirement == null
+                          ? '—'
+                          : `${formatRequirementQty(requirement)} ${record.unit}`}
+                      </span>
+                    </Tooltip>
+                  )
+                },
+              },
             ]}
           />
           <Input.TextArea

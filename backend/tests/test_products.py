@@ -167,3 +167,39 @@ async def test_related_products_empty_chain(
         assert data["related_products"] == []
     finally:
         await _cleanup_related()
+
+
+async def test_products_include_analogs(
+    client: AsyncClient, test_user: AuthUser, catalog: dict[str, int]
+) -> None:
+    await _seed_related_chain(catalog)
+    token = await login_token(client, test_user)
+    try:
+        response = await client.get(
+            "/api/v1/references/products",
+            headers=auth_header(token),
+            params={
+                "search": str(MIDDLE_CODE),
+                "include_analogs": True,
+                "is_active": True,
+            },
+        )
+        assert response.status_code == 200, response.text
+        items = response.json()["data"]
+        by_code = {item["code"]: item for item in items}
+        assert MIDDLE_CODE in by_code
+        assert by_code[MIDDLE_CODE]["is_analog"] is False
+        assert CHILD_CODE in by_code
+        assert by_code[CHILD_CODE]["is_analog"] is True
+        assert PARENT_CODE not in by_code
+
+        without = await client.get(
+            "/api/v1/references/products",
+            headers=auth_header(token),
+            params={"search": str(MIDDLE_CODE), "is_active": True},
+        )
+        codes = [item["code"] for item in without.json()["data"]]
+        assert MIDDLE_CODE in codes
+        assert CHILD_CODE not in codes
+    finally:
+        await _cleanup_related()

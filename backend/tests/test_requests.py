@@ -78,7 +78,16 @@ async def test_create_request_normative_success(
     assert data["request_type"] == "normative"
     assert data["client_name"] == "ООО Ромашка"
     assert data["initiator_id"] == str(test_user.id)
+    assert data["department_id"] is not None
     assert len(data["items"]) == 2
+    first = next(
+        item
+        for item in data["items"]
+        if item["product_code"] == catalog["product_code"]
+    )
+    assert first["requirement"] == 1000
+    assert first["category_factor"] == 1
+    assert first["long_distance"] is False
     await delete_request(data["id"])
 
 
@@ -482,3 +491,61 @@ async def test_update_draft_expiry_too_far_fails(
     assert response.status_code == 400, response.text
     assert response.json()["error"]["code"] == "INVALID_EXPIRY_DATE"
     await delete_request(request_id)
+
+
+async def test_create_request_copies_department_and_requirement(
+    client: AsyncClient, test_user: AuthUser, catalog: dict[str, int]
+) -> None:
+    token = await login_token(client, test_user)
+    profile = await client.get("/api/v1/auth/profile", headers=auth_header(token))
+    assert profile.status_code == 200
+    department_id = profile.json()["data"]["department_id"]
+    assert department_id is not None
+
+    from app.core.database import AsyncSessionLocal
+    from app.models.object import Object
+
+    async with AsyncSessionLocal() as session:
+        warehouse = await session.get(Object, catalog["warehouse_code_2"])
+        assert warehouse is not None
+        warehouse.long_distance = True
+        await session.commit()
+
+    try:
+        status, body = await _create(
+            client,
+            token,
+            items=[
+                {
+                    "product_code": catalog["product_code_2"],
+                    "warehouse_code": catalog["warehouse_code_2"],
+                    "quantity_requested": 500,
+                    "unit": "шт",
+                }
+            ],
+        )
+        assert status == 201, body
+        data = body["data"]
+        assert data["department_id"] == department_id
+        item = data["items"][0]
+        assert item["category"] == "B"
+        assert item["category_factor"] == 1.5
+        assert item["long_distance"] is True
+        assert item["distance_factor"] == 1.5
+        assert item["requirement"] == 1125
+
+        detail = await client.get(
+            f"/api/v1/requests/{data['id']}",
+            headers=auth_header(token),
+        )
+        assert detail.status_code == 200
+        detail_item = detail.json()["data"]["items"][0]
+        assert detail_item["requirement"] == 1125
+        assert detail.json()["data"]["department_id"] == department_id
+        await delete_request(data["id"])
+    finally:
+        async with AsyncSessionLocal() as session:
+            warehouse = await session.get(Object, catalog["warehouse_code_2"])
+            if warehouse is not None:
+                warehouse.long_distance = False
+                await session.commit()

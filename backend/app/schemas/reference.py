@@ -18,6 +18,7 @@ class ProductListItem(BaseModel):
     weight_kg: DecimalNumber
     monthly_consumption: DecimalNumber | None = None
     is_active: bool
+    is_analog: bool = False
     gtin: str | None = None
     mark_control: bool = False
     last_modified_at: datetime | None = None
@@ -170,4 +171,13 @@ class UserReference(BaseModel):
     full_name: str
     role: str
     department: str | None = None
+    department_id: UUID | None = None
+    is_active: bool
+
+
+class DepartmentListItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
     is_active: bool

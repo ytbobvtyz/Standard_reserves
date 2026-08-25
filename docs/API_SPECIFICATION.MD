@@ -94,7 +94,8 @@ json
             "username": "ivanov",
             "full_name": "Иванов Иван",
             "role": "commercial",
-            "department": "Отдел продаж"
+            "department": "Коммерческий отдел",
+            "department_id": "66111111-1111-1111-1111-111111111111"
         }
     }
 }
@@ -155,7 +156,8 @@ json
         "email": "ivanov@company.ru",
         "full_name": "Иванов Иван",
         "role": "commercial",
-        "department": "Отдел продаж",
+        "department": "Коммерческий отдел",
+        "department_id": "66111111-1111-1111-1111-111111111111",
         "last_login_at": "2026-08-18T09:00:00Z"
     }
 }
@@ -238,6 +240,7 @@ json
         "status": "draft",
         "client_name": "ООО 'Ромашка'",
         "initiator_id": "11111111-1111-1111-1111-111111111111",
+        "department_id": "66111111-1111-1111-1111-111111111111",
         "expiry_date": "2026-12-31",
         "items": [
             {
@@ -246,12 +249,22 @@ json
                 "warehouse_code": 2001,
                 "quantity_requested": 1000,
                 "quantity_approved": null,
-                "unit": "шт"
+                "unit": "шт",
+                "category": "A",
+                "category_factor": 1,
+                "long_distance": false,
+                "distance_factor": 1,
+                "requirement": 1000
             }
         ],
         "created_at": "2026-08-18T09:00:00Z"
     }
 }
+
+`department_id` в запрос **не передаётся** клиентом: при создании копируется `users.department_id` инициатора.
+
+`requirement` в каждой позиции = эффективное количество (`quantity_approved`, если задано, иначе `quantity_requested`) × коэффициент категории (A=1, B=1.5, C=2) × коэффициент удалённости склада (`long_distance` false=1, true=1.5). Результат округляется до 32 знаков после запятой.
+
 Errors:
 
 400 — Невалидные данные
@@ -276,6 +289,7 @@ client_name	string	Клиент (частичное совпадение)	Ром
 initiator_id	uuid	Инициатор	11111111-...
 warehouse_code	integer	Склад (фильтр по позициям)	2001
 product_code	integer	Артикул (фильтр по позициям)	10001
+department_id	uuid	Подразделение инициатора	66111111-...
 from_date	date	Создан с	2026-08-01
 to_date	date	Создан по	2026-08-18
 page	integer	Страница	1
@@ -293,8 +307,12 @@ json
             "client_name": "ООО 'Ромашка'",
             "initiator": {
                 "id": "11111111-1111-1111-1111-111111111111",
-                "full_name": "Иванов Иван"
+                "full_name": "Иванов Иван",
+                "department": "Коммерческий отдел",
+                "department_id": "66111111-1111-1111-1111-111111111111"
             },
+            "department_id": "66111111-1111-1111-1111-111111111111",
+            "department_name": "Коммерческий отдел",
             "items_count": 2,
             "total_quantity": 1500,
             "expiry_date": "2026-12-31",
@@ -326,8 +344,12 @@ json
         "client_name": "ООО 'Ромашка'",
         "initiator": {
             "id": "11111111-1111-1111-1111-111111111111",
-            "full_name": "Иванов Иван"
+            "full_name": "Иванов Иван",
+            "department": "Коммерческий отдел",
+            "department_id": "66111111-1111-1111-1111-111111111111"
         },
+        "department_id": "66111111-1111-1111-1111-111111111111",
+        "department_name": "Коммерческий отдел",
         "initiator_comment": "Срочная потребность",
         "comment_pp": "Объем подтвержден, 20% резерв",
         "comment_economy": null,
@@ -343,11 +365,16 @@ json
                 },
                 "warehouse": {
                     "code": 2001,
-                    "name": "Склад Ростов"
+                    "name": "Склад Ростов",
+                    "long_distance": false
                 },
                 "quantity_requested": 1000,
                 "quantity_approved": 800,
                 "unit": "шт",
+                "category_factor": 1,
+                "long_distance": false,
+                "distance_factor": 1,
+                "requirement": 800,
                 "comment": null
             }
         ],
@@ -566,7 +593,12 @@ json
                     "warehouse_code": 2001,
                     "warehouse_name": "Склад Ростов",
                     "quantity_requested": 1000,
-                    "unit": "шт"
+                    "unit": "шт",
+                    "category": "A",
+                    "category_factor": 1,
+                    "long_distance": false,
+                    "distance_factor": 1,
+                    "requirement": 1000
                 }
             ],
             "created_at": "2026-08-18T09:00:00Z"
@@ -1039,6 +1071,7 @@ warehouse_code	integer	Склад
 product_code	integer	Артикул
 client_name	string	Клиент (частичное совпадение)
 category	string	A/B/C
+department_id	uuid	Подразделение инициатора запроса-основания
 search	string	Поиск по коду или названию продукта
 page	integer	Страница
 limit	integer	Записей на страницу
@@ -1058,6 +1091,8 @@ json
             "quantity": 1000,
             "unit": "шт",
             "client_name": "ООО 'Ромашка'",
+            "department_id": "66111111-1111-1111-1111-111111111111",
+            "department_name": "Коммерческий отдел",
             "expiry_date": "2026-12-31",
             "created_at": "2026-08-18T10:00:00Z"
         }
@@ -1081,6 +1116,7 @@ Query параметры:
 date	date	✅	Дата среза
 warehouse_code	integer	❌	Склад
 product_code	integer	❌	Артикул
+department_id	uuid	❌	Подразделение инициатора запроса-основания
 search	string	❌	Поиск по коду или названию продукта
 Response (200):
 
@@ -1099,7 +1135,9 @@ json
                 {
                     "client_name": "ООО 'Ромашка'",
                     "quantity": 1000,
-                    "expiry_date": "2026-12-31"
+                    "expiry_date": "2026-12-31",
+                    "department_id": "66111111-1111-1111-1111-111111111111",
+                    "department_name": "Коммерческий отдел"
                 }
             ]
         }
@@ -1202,6 +1240,7 @@ Query параметры:
 search	string	Поиск по коду или названию
 category	string	A/B/C
 is_active	boolean	Только активные
+include_analogs	boolean	Если true — к найденным продуктам добавить активные аналоги по цепочке parent_code/children_code
 page	integer	Страница
 limit	integer	Записей на страницу
 Response (200):
@@ -1219,6 +1258,21 @@ json
             "weight_kg": 0.250,
             "monthly_consumption": 1000,
             "is_active": true,
+            "is_analog": false,
+            "gtin": "4601234567890",
+            "mark_control": false,
+            "last_modified_at": "2026-08-20T12:00:00Z"
+        },
+        {
+            "code": 10101,
+            "name": "Подшипник 6204ZZ (новая этикетка)",
+            "category": "A",
+            "plant_id": 1001,
+            "plant_name": "Завод Московский",
+            "weight_kg": 0.250,
+            "monthly_consumption": 800,
+            "is_active": true,
+            "is_analog": true,
             "gtin": "4601234567890",
             "mark_control": false,
             "last_modified_at": "2026-08-20T12:00:00Z"
@@ -1230,6 +1284,9 @@ json
         "total": 500
     }
 }
+
+`include_analogs=true`: в `data` сначала идут продукты, совпавшие с поиском (`is_analog: false`), затем активные аналоги по цепочке parent/children (`is_analog: true`). Неактивные аналоги не возвращаются. Продукт, который сам совпал с поиском, не дублируется как аналог. `meta.total` считает только совпадения поиска (без раздувания аналогами).
+
 8.2. Получить список объектов (склады/заводы)
 text
 GET /references/objects
@@ -1300,12 +1357,37 @@ json
             "email": "ivanov@company.ru",
             "full_name": "Иванов Иван",
             "role": "commercial",
-            "department": "Отдел продаж",
+            "department": "Коммерческий отдел",
+            "department_id": "66111111-1111-1111-1111-111111111111",
             "is_active": true
         }
     ]
 }
-8.4. Скачать Excel-шаблон продуктов
+8.4. Получить список подразделений
+text
+GET /references/departments
+Headers:
+
+text
+Authorization: Bearer <token>
+Права: все авторизованные.
+
+Query параметры: `is_active` (boolean, по умолчанию true).
+
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": [
+        {
+            "id": "66111111-1111-1111-1111-111111111111",
+            "name": "Коммерческий отдел",
+            "is_active": true
+        }
+    ]
+}
+8.5. Скачать Excel-шаблон продуктов
 text
 GET /references/products/template
 Headers:
@@ -1318,7 +1400,7 @@ Response (200): файл application/vnd.openxmlformats-officedocument.spreadshe
 
 Колонки шаблона: code, name, status, children_code, parent_code, category, mark_control, gtin, plant_id, weight_kg
 
-8.5. Загрузить продукты из Excel
+8.6. Загрузить продукты из Excel
 text
 POST /references/products/upload
 Headers:
@@ -1353,7 +1435,7 @@ json
         ]
     }
 }
-8.6. Получить продукт для редактирования
+8.7. Получить продукт для редактирования
 text
 GET /references/products/{code}/edit
 Headers:
@@ -1390,7 +1472,7 @@ json
         "last_modified_at": "2026-08-20T12:00:00Z"
     }
 }
-8.7. Обновить продукт
+8.8. Обновить продукт
 text
 PUT /references/products/{code}
 Headers:
@@ -1421,7 +1503,7 @@ json
 
 Response (200): тот же объект, что GET .../edit. last_modified_by/at обновляются.
 
-8.8. Удалить продукт
+8.9. Удалить продукт
 text
 DELETE /references/products/{code}
 Headers:
@@ -1447,7 +1529,7 @@ json
     "status": "success",
     "message": "Продукт удален"
 }
-8.9. Создать объект
+8.10. Создать объект
 text
 POST /references/objects
 Headers:
@@ -1487,7 +1569,7 @@ json
 
 Response (200): тот же объект, что GET .../edit.
 
-8.10. Получить объект для редактирования
+8.11. Получить объект для редактирования
 text
 GET /references/objects/{code}/edit
 Headers:
@@ -1520,7 +1602,7 @@ json
         "last_modified_at": "2026-08-20T12:00:00Z"
     }
 }
-8.11. Обновить объект
+8.12. Обновить объект
 text
 PUT /references/objects/{code}
 Headers:
@@ -1547,7 +1629,7 @@ json
 
 Response (200): тот же объект, что GET .../edit. last_modified_by/at обновляются.
 
-8.12. Удалить объект
+8.13. Удалить объект
 text
 DELETE /references/objects/{code}
 Headers:
@@ -1624,7 +1706,8 @@ json
 Справочники продукты	list, template, upload, get, edit, put, delete	7
 Справочники объекты	list, create, get, edit, put, delete	6
 Справочники пользователи	/references/users	1
-ИТОГО реализовано		~45
+Справочники подразделения	/references/departments	1
+ИТОГО реализовано		~46
 Не реализовано (задел)	/inventory/*, /tariffs/*, /agent/*, /auth/register	—
 13.2. Ролевой доступ
 Роль	Доступные эндпоинты
@@ -1656,6 +1739,6 @@ text
 6. Экономист: POST /approvals/economy/{id}/action (approve) → утверждает → статус approved
 7. Логист: GET /logistics/one-time/list → видит запрос
 8. Логист: POST /logistics/one-time/{id}/execute → отмечает исполненным
-Версия: 1.3
-Дата: 24.08.2026
+Версия: 1.4
+Дата: 25.08.2026
 Статус: Утверждена

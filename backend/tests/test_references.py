@@ -100,3 +100,16 @@ async def test_guest_cannot_list_users(
         headers=auth_header(token),
     )
     assert response.status_code == 403
+
+
+async def test_departments_list(
+    client: AsyncClient, test_user: AuthUser, catalog: dict[str, int]
+) -> None:
+    token = await login_token(client, test_user)
+    response = await client.get(
+        "/api/v1/references/departments",
+        headers=auth_header(token),
+    )
+    assert response.status_code == 200, response.text
+    names = {item["name"] for item in response.json()["data"]}
+    assert "Тесты" in names

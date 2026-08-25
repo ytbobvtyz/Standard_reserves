@@ -1,6 +1,6 @@
 """Drop unused request statuses from CHECK constraint.
 
-Revision ID: 0012_drop_unused_request_statuses
+Revision ID: 0012_drop_unused_statuses
 Revises: 0011_sync_metadata
 Create Date: 2026-08-22
 """
@@ -9,7 +9,7 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "0012_drop_unused_request_statuses"
+revision: str = "0012_drop_unused_statuses"
 down_revision: str | Sequence[str] | None = "0011_sync_metadata"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
@@ -38,8 +38,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute("ALTER TABLE requests DROP CONSTRAINT IF EXISTS ck_requests_status")
-    op.execute(
-        """
+    op.execute("""
         ALTER TABLE requests ADD CONSTRAINT requests_status_check CHECK (status IN (
             'draft',
             'pp_approved',
@@ -52,5 +51,4 @@ def downgrade() -> None:
             'expired',
             'executed'
         ))
-        """
-    )
+        """)

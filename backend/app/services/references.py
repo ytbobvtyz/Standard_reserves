@@ -1,5 +1,6 @@
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import APIError
 from app.models.object import Object
@@ -15,7 +16,9 @@ from app.schemas.reference import (
 )
 
 
-def to_product_list_item(product: Product) -> ProductListItem:
+def to_product_list_item(
+    product: Product, *, is_analog: bool = False
+) -> ProductListItem:
     return ProductListItem(
         code=product.code,
         name=product.name,
@@ -25,6 +28,7 @@ def to_product_list_item(product: Product) -> ProductListItem:
         weight_kg=product.weight_kg,
         monthly_consumption=product.monthly_consumption,
         is_active=product.is_active,
+        is_analog=is_analog,
         gtin=product.gtin,
         mark_control=bool(product.mark_control),
         last_modified_at=product.last_modified_at,
@@ -141,3 +145,43 @@ async def get_related_products(db: AsyncSession, code: int) -> RelatedProductsDa
         product_name=product.name,
         related_products=related,
     )
+
+
+async def collect_active_analog_codes(
+    db: AsyncSession, seed_codes: list[int]
+) -> set[int]:
+    analog_codes: set[int] = set()
+    seeds = set(seed_codes)
+    for code in seed_codes:
+        result = await db.execute(RELATED_PRODUCTS_SQL, {"code": code})
+        for row in result:
+            if row.is_active and row.code not in seeds:
+                analog_codes.add(row.code)
+    return analog_codes
+
+
+async def expand_with_analogs(
+    db: AsyncSession, products: list[Product]
+) -> list[ProductListItem]:
+    items = [to_product_list_item(product, is_analog=False) for product in products]
+    analog_codes = await collect_active_analog_codes(
+        db, [product.code for product in products]
+    )
+    analog_codes -= {product.code for product in products}
+    if not analog_codes:
+        return items
+
+    result = await db.execute(
+        select(Product)
+        .options(selectinload(Product.plant))
+        .where(
+            Product.code.in_(analog_codes),
+            Product.deleted_at.is_(None),
+            Product.is_active.is_(True),
+        )
+        .order_by(Product.code)
+    )
+    items.extend(
+        to_product_list_item(product, is_analog=True) for product in result.scalars()
+    )
+    return items

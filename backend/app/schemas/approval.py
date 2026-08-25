@@ -32,6 +32,11 @@ class ApprovalPendingItem(BaseModel):
     quantity_requested: DecimalNumber
     quantity_approved: DecimalNumber | None = None
     unit: str
+    category: str
+    category_factor: DecimalNumber
+    long_distance: bool = False
+    distance_factor: DecimalNumber
+    requirement: DecimalNumber
 
 
 class ApprovalPendingRequest(BaseModel):

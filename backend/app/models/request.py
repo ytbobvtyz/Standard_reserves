@@ -22,6 +22,7 @@ MIN_EXPIRY_MONTHS = 3
 MAX_EXPIRY_MONTHS = 6
 
 if TYPE_CHECKING:
+    from app.models.department import Department
     from app.models.event import Event
     from app.models.normative import Normative
     from app.models.request_item import RequestItem
@@ -53,6 +54,7 @@ class Request(TimestampMixin, SoftDeleteMixin, Base):
         ),
         Index("idx_requests_status_type", "status", "request_type"),
         Index("idx_requests_initiator_id", "initiator_id"),
+        Index("idx_requests_department_id", "department_id"),
         Index("idx_requests_client_name", "client_name"),
         Index("idx_requests_created_at", "created_at"),
         Index(
@@ -80,6 +82,10 @@ class Request(TimestampMixin, SoftDeleteMixin, Base):
         UUID(as_uuid=True),
         ForeignKey("users.id"),
         nullable=False,
+    )
+    department_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("departments.id"),
     )
     initiator_comment: Mapped[str | None] = mapped_column(Text)
     comment_pp: Mapped[str | None] = mapped_column(Text)
@@ -112,6 +118,11 @@ class Request(TimestampMixin, SoftDeleteMixin, Base):
         "User",
         foreign_keys=[initiator_id],
         back_populates="initiated_requests",
+    )
+    department: Mapped["Department | None"] = relationship(
+        "Department",
+        back_populates="requests",
+        foreign_keys=[department_id],
     )
     pp_approver: Mapped["User | None"] = relationship(
         "User",
