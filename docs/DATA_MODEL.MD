@@ -1237,7 +1237,10 @@ GROUP BY warehouse_code, product_code;
 
 `production_request_items` хранит строки файла: ссылка на партию с
 `ON DELETE CASCADE`, `product_code`, `warehouse_code`, `quantity`,
-`unit` (`шт`/`кг`/`т`), необязательный клиент строки и снимок категории.
+`unit` (`шт`/`кг`/`т`), обязательный итоговый `client_name` и снимок категории.
+Итоговый клиент вычисляется при импорте: значение строки имеет приоритет над
+общим `production_requests.client_name`. ERP-коды завода и склада используются
+для поиска внутреннего `objects.code`, но отдельно в позиции не сохраняются.
 
 В `normatives`:
 - `request_id` становится nullable;
@@ -1247,8 +1250,10 @@ GROUP BY warehouse_code, product_code;
 
 Для нормативов из Excel начало действия определяется через
 `production_requests.valid_from`, окончание — через `normatives.expiry_date`.
+При частично успешном импорте в таблицы попадают только валидные строки.
+Если валидных строк нет, пустая партия не создаётся.
 Миграция: `0017_production_requests.py`.
 
-Версия: 2.5
+Версия: 2.6
 Дата: 25.08.2026
 Статус: Утверждена
