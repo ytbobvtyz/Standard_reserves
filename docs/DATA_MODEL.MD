@@ -1228,6 +1228,27 @@ GROUP BY warehouse_code, product_code;
 Коэффициент удаленности	✅ `objects.long_distance`: false → ×1, true → ×1,5
 
 
-Версия: 2.4
+14. ПРОИЗВОДСТВЕННЫЕ ЗАПРОСЫ — ПАРТИИ EXCEL
+
+`production_requests` хранит метаданные одной загрузки нормативов из Excel:
+`id`, уникальный `batch_id`, `source='excel_upload'`, `uploaded_by`,
+необязательный общий `client_name`, `valid_from`, `valid_to`, `status`,
+`created_at`, `updated_at`, `deleted_at`.
+
+`production_request_items` хранит строки файла: ссылка на партию с
+`ON DELETE CASCADE`, `product_code`, `warehouse_code`, `quantity`,
+`unit` (`шт`/`кг`/`т`), необязательный клиент строки и снимок категории.
+
+В `normatives`:
+- `request_id` становится nullable;
+- добавляется уникальный nullable FK `production_request_item_id` с
+  `ON DELETE CASCADE`;
+- единицы расширяются до `шт`/`кг`/`т`.
+
+Для нормативов из Excel начало действия определяется через
+`production_requests.valid_from`, окончание — через `normatives.expiry_date`.
+Миграция: `0017_production_requests.py`.
+
+Версия: 2.5
 Дата: 25.08.2026
 Статус: Утверждена

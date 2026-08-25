@@ -8,7 +8,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from openpyxl import Workbook, load_workbook
-from sqlalchemy import case, delete, select, tuple_
+from sqlalchemy import case, delete, exists, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -17,6 +17,7 @@ from app.models.available_balance import AvailableBalance
 from app.models.normative import Normative
 from app.models.object import Object
 from app.models.product import Product
+from app.models.production_request import ProductionRequest, ProductionRequestItem
 from app.models.sync_metadata import SyncMetadata
 from app.models.user import User
 from app.schemas.logistics import (
@@ -243,6 +244,23 @@ async def collect_deficit_rows(
     conditions = [
         Normative.deleted_at.is_(None),
         Normative.expiry_date >= today,
+        or_(
+            Normative.production_request_item_id.is_(None),
+            exists(
+                select(1)
+                .select_from(ProductionRequestItem)
+                .join(
+                    ProductionRequest,
+                    ProductionRequest.id == ProductionRequestItem.production_request_id,
+                )
+                .where(
+                    ProductionRequestItem.id == Normative.production_request_item_id,
+                    ProductionRequest.deleted_at.is_(None),
+                    ProductionRequest.status == "active",
+                    ProductionRequest.valid_from <= today,
+                )
+            ),
+        ),
         Product.deleted_at.is_(None),
         Object.deleted_at.is_(None),
     ]

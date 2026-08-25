@@ -7,6 +7,7 @@ from app.models.normative import Normative
 from app.models.object import Object
 from app.models.password_reset import PasswordResetToken
 from app.models.product import Product
+from app.models.production_request import ProductionRequest, ProductionRequestItem
 from app.models.request import Request
 from app.models.request_item import RequestItem
 from app.models.request_item_history import RequestItemHistory
@@ -24,6 +25,8 @@ __all__ = [
     "Object",
     "PasswordResetToken",
     "Product",
+    "ProductionRequest",
+    "ProductionRequestItem",
     "Request",
     "RequestItem",
     "RequestItemHistory",

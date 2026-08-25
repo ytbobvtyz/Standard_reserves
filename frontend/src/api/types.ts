@@ -10,7 +10,7 @@ export type RequestStatus =
   | 'rejected'
   | 'expired'
   | 'executed'
-export type Unit = 'шт' | 'т'
+export type Unit = 'шт' | 'кг' | 'т'
 export type ObjectType = 'plant' | 'warehouse'
 
 export interface User {
@@ -559,6 +559,50 @@ export interface NormativeOnDateItem {
   unit: Unit
   category?: string
   details: NormativeOnDateDetail[]
+}
+
+export interface ProductionRequestListItem {
+  id: string
+  batch_id: string
+  source: 'excel_upload'
+  uploaded_by: User
+  client_name?: string | null
+  valid_from: string
+  valid_to: string
+  status: 'active' | 'archived' | 'cancelled'
+  items_count: number
+  created_at: string
+}
+
+export interface ProductionRequestItem {
+  id: string
+  product_code: number
+  warehouse_code: number
+  quantity: number
+  unit: Unit
+  client_name: string
+  category: string
+}
+
+export interface ProductionRequestDetail extends ProductionRequestListItem {
+  items: ProductionRequestItem[]
+}
+
+export interface ProductionRequestUploadResult {
+  production_request?: ProductionRequestDetail | null
+  total_rows: number
+  imported_count: number
+  error_count: number
+  message: string
+  error_details: Array<{
+    row: number
+    message: string
+  }>
+}
+
+export interface ProductionRequestDatesPayload {
+  valid_from: string
+  valid_to: string
 }
 
 export interface RequestItemHistoryEntry {

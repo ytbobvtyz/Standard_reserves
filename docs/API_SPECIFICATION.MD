@@ -1739,6 +1739,28 @@ text
 6. Экономист: POST /approvals/economy/{id}/action (approve) → утверждает → статус approved
 7. Логист: GET /logistics/one-time/list → видит запрос
 8. Логист: POST /logistics/one-time/{id}/execute → отмечает исполненным
-Версия: 1.4
+15. ПРОИЗВОДСТВЕННЫЕ ЗАПРОСЫ
+
+Доступ: `logistics`, `economist`, `pp`.
+
+- `GET /production-requests` — список партий загрузки.
+- `GET /production-requests/template` — Excel-шаблон с колонками
+  `Завод ERP`, `Склад ERP`, `Артикул`, `Количество`, `Ед.`, `Клиент`.
+- `POST /production-requests/upload` — multipart-поля `file`, `valid_from`,
+  `valid_to`, необязательный `client_name`. Создаёт одну партию, её позиции
+  и активные нормативы. Клиент строки имеет приоритет над общим клиентом.
+  Строки обрабатываются независимо: валидные загружаются, невалидные
+  возвращаются в `error_details` как `{row, message}`. Ответ содержит
+  `total_rows`, `imported_count`, `error_count` и сообщение
+  «Загружено X строк из Y».
+- `PATCH /production-requests/{id}/dates` — тело `{valid_from, valid_to}`;
+  обновляет период партии и `expiry_date` всех связанных нормативов.
+- `DELETE /production-requests/{id}` — физически удаляет партию, позиции и
+  связанные нормативы каскадом.
+
+Разрешены исторические `valid_from`; обязательное правило —
+`valid_from <= valid_to`.
+
+Версия: 1.5
 Дата: 25.08.2026
 Статус: Утверждена

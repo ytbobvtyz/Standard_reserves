@@ -4,7 +4,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import String, cast, exists, func, or_, select
+from sqlalchemy import String, and_, cast, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -13,7 +13,9 @@ from app.core.pagination import paginate
 from app.models.normative import Normative
 from app.models.object import Object
 from app.models.product import Product
+from app.models.production_request import ProductionRequest, ProductionRequestItem
 from app.models.request import Request
+from app.models.user import User
 from app.schemas.common import PaginationMeta
 from app.schemas.normative import (
     NormativeCalculateData,
@@ -53,13 +55,84 @@ def _product_search_condition(search: str | None):
 
 def _department_fields(normative: Normative) -> tuple[UUID | None, str | None]:
     request = normative.request
-    if request is None:
+    if request is not None:
+        department = request.department
+        if department is not None:
+            return request.department_id, department.name
+        initiator = request.initiator
+        return request.department_id, initiator.department if initiator else None
+
+    production_item = normative.production_request_item
+    if production_item is None:
         return None, None
-    department = request.department
+    uploader = production_item.production_request.uploader
+    department = uploader.assigned_department
     if department is not None:
-        return request.department_id, department.name
-    initiator = request.initiator
-    return request.department_id, initiator.department if initiator else None
+        return uploader.department_id, department.name
+    return uploader.department_id, uploader.department
+
+
+def _production_valid_from_condition(on_date: date):
+    return exists(
+        select(1)
+        .select_from(ProductionRequestItem)
+        .join(
+            ProductionRequest,
+            ProductionRequest.id == ProductionRequestItem.production_request_id,
+        )
+        .where(
+            ProductionRequestItem.id == Normative.production_request_item_id,
+            ProductionRequest.deleted_at.is_(None),
+            ProductionRequest.status == "active",
+            ProductionRequest.valid_from <= on_date,
+        )
+    )
+
+
+def _valid_on_condition(on_date: date):
+    return or_(
+        and_(
+            Normative.production_request_item_id.is_(None),
+            Normative.created_at <= _end_of_day(on_date),
+        ),
+        _production_valid_from_condition(on_date),
+    )
+
+
+def _department_condition(department_id: UUID):
+    regular_request = exists(
+        select(1).where(
+            Request.id == Normative.request_id,
+            Request.department_id == department_id,
+        )
+    )
+    production_upload = exists(
+        select(1)
+        .select_from(ProductionRequestItem)
+        .join(
+            ProductionRequest,
+            ProductionRequest.id == ProductionRequestItem.production_request_id,
+        )
+        .join(User, User.id == ProductionRequest.uploaded_by)
+        .where(
+            ProductionRequestItem.id == Normative.production_request_item_id,
+            User.department_id == department_id,
+        )
+    )
+    return or_(regular_request, production_upload)
+
+
+def _load_options():
+    return (
+        selectinload(Normative.product),
+        selectinload(Normative.warehouse),
+        selectinload(Normative.request).selectinload(Request.department),
+        selectinload(Normative.request).selectinload(Request.initiator),
+        selectinload(Normative.production_request_item)
+        .selectinload(ProductionRequestItem.production_request)
+        .selectinload(ProductionRequest.uploader)
+        .selectinload(User.assigned_department),
+    )
 
 
 def to_list_item(normative: Normative) -> NormativeListItem:
@@ -96,6 +169,7 @@ async def list_current_normatives(
     conditions = [
         Normative.deleted_at.is_(None),
         Normative.expiry_date >= date.today(),
+        _valid_on_condition(date.today()),
     ]
     if warehouse_code is not None:
         conditions.append(Normative.warehouse_code == warehouse_code)
@@ -106,14 +180,7 @@ async def list_current_normatives(
     if category:
         conditions.append(Normative.category == category)
     if department_id is not None:
-        conditions.append(
-            exists(
-                select(1).where(
-                    Request.id == Normative.request_id,
-                    Request.department_id == department_id,
-                )
-            )
-        )
+        conditions.append(_department_condition(department_id))
     search_condition = _product_search_condition(search)
     if search_condition is not None:
         conditions.append(search_condition)
@@ -124,12 +191,7 @@ async def list_current_normatives(
     result = await db.execute(
         paginate(
             select(Normative)
-            .options(
-                selectinload(Normative.product),
-                selectinload(Normative.warehouse),
-                selectinload(Normative.request).selectinload(Request.department),
-                selectinload(Normative.request).selectinload(Request.initiator),
-            )
+            .options(*_load_options())
             .where(*conditions)
             .order_by(
                 Normative.warehouse_code,
@@ -154,7 +216,8 @@ async def list_normatives_on_date(
     department_id: UUID | None = None,
 ) -> list[NormativeOnDateItem]:
     conditions = [
-        Normative.created_at <= _end_of_day(on_date),
+        Normative.deleted_at.is_(None),
+        _valid_on_condition(on_date),
         Normative.expiry_date >= on_date,
     ]
     if warehouse_code is not None:
@@ -162,26 +225,14 @@ async def list_normatives_on_date(
     if product_code is not None:
         conditions.append(Normative.product_code == product_code)
     if department_id is not None:
-        conditions.append(
-            exists(
-                select(1).where(
-                    Request.id == Normative.request_id,
-                    Request.department_id == department_id,
-                )
-            )
-        )
+        conditions.append(_department_condition(department_id))
     search_condition = _product_search_condition(search)
     if search_condition is not None:
         conditions.append(search_condition)
 
     result = await db.execute(
         select(Normative)
-        .options(
-            selectinload(Normative.product),
-            selectinload(Normative.warehouse),
-            selectinload(Normative.request).selectinload(Request.department),
-            selectinload(Normative.request).selectinload(Request.initiator),
-        )
+        .options(*_load_options())
         .where(*conditions)
         .order_by(
             Normative.warehouse_code,

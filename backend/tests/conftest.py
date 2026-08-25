@@ -20,6 +20,7 @@ from app.models import (
     Normative,
     Object,
     Product,
+    ProductionRequest,
     Request,
     RequestItem,
     RequestItemHistory,
@@ -163,6 +164,46 @@ async def db_ready() -> AsyncGenerator[None, None]:
         )
         await connection.execute(
             text("ALTER TABLE requests " "ADD COLUMN IF NOT EXISTS department_id UUID")
+        )
+        await connection.execute(
+            text("ALTER TABLE normatives ALTER COLUMN request_id DROP NOT NULL")
+        )
+        await connection.execute(
+            text(
+                "ALTER TABLE normatives "
+                "ADD COLUMN IF NOT EXISTS production_request_item_id UUID"
+            )
+        )
+        await connection.execute(text("""
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint
+                        WHERE conname = 'fk_normatives_production_request_item_id'
+                    ) THEN
+                        ALTER TABLE normatives
+                        ADD CONSTRAINT fk_normatives_production_request_item_id
+                        FOREIGN KEY (production_request_item_id)
+                        REFERENCES production_request_items(id)
+                        ON DELETE CASCADE;
+                    END IF;
+                END $$;
+                """))
+        await connection.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS "
+                "uq_normatives_production_request_item_id "
+                "ON normatives(production_request_item_id)"
+            )
+        )
+        await connection.execute(
+            text("ALTER TABLE normatives DROP CONSTRAINT IF EXISTS ck_normatives_unit")
+        )
+        await connection.execute(
+            text(
+                "ALTER TABLE normatives ADD CONSTRAINT ck_normatives_unit "
+                "CHECK (unit IN ('шт', 'кг', 'т'))"
+            )
         )
         await connection.execute(
             text(
@@ -345,6 +386,9 @@ async def _delete_user(user_id: uuid.UUID) -> None:
             .where(Object.last_modified_by == user_id)
             .values(last_modified_by=None)
         )
+        await session.execute(
+            delete(ProductionRequest).where(ProductionRequest.uploaded_by == user_id)
+        )
         await _purge_requests(session, list(request_ids))
         await session.execute(delete(Session).where(Session.user_id == user_id))
         await session.execute(delete(User).where(User.id == user_id))
@@ -430,6 +474,7 @@ async def catalog(db_ready: None) -> dict[str, int]:
                 city="Ростов-на-Дону",
                 region="Ростовская область",
                 type="warehouse",
+                erp_plant_code=2401,
                 erp_warehouse_code="F005",
                 is_active=True,
             ),
@@ -439,6 +484,7 @@ async def catalog(db_ready: None) -> dict[str, int]:
                 city="Владивосток",
                 region="Приморский край",
                 type="warehouse",
+                erp_plant_code=2402,
                 erp_warehouse_code="F006",
                 is_active=True,
             ),
@@ -500,7 +546,9 @@ async def catalog(db_ready: None) -> dict[str, int]:
         "warehouse_code_2": 2002,
         "plant_code": 1001,
         "erp_plant_code": 2401,
+        "erp_plant_code_2": 2402,
         "erp_warehouse_code": "F005",
+        "erp_warehouse_code_2": "F006",
     }
 
 

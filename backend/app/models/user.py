@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from app.models.object import Object
     from app.models.password_reset import PasswordResetToken
     from app.models.product import Product
+    from app.models.production_request import ProductionRequest
     from app.models.request import Request
     from app.models.request_item_history import RequestItemHistory
     from app.models.session import Session
@@ -90,6 +91,11 @@ class User(TimestampMixin, SoftDeleteMixin, Base):
         "Request",
         back_populates="initiator",
         foreign_keys="Request.initiator_id",
+    )
+    production_requests: Mapped[list["ProductionRequest"]] = relationship(
+        "ProductionRequest",
+        back_populates="uploader",
+        foreign_keys="ProductionRequest.uploaded_by",
     )
     pp_approved_requests: Mapped[list["Request"]] = relationship(
         "Request",

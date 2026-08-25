@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import dayjs from 'dayjs'
 import { NormativesPage } from './NormativesPage'
 import type { NormativeOnDateItem } from '../api/types'
+import { useAuthStore } from '../stores/auth'
 
 vi.mock('antd', async () => {
   const actual = await vi.importActual<typeof import('antd')>('antd')
@@ -33,6 +34,17 @@ vi.mock('antd', async () => {
 const getOnDate = vi.fn()
 const getObjects = vi.fn()
 const getDepartments = vi.fn()
+const listProductionRequests = vi.fn()
+
+vi.mock('../api/productionRequests', () => ({
+  productionRequestsApi: {
+    list: (...args: unknown[]) => listProductionRequests(...args),
+    upload: vi.fn(),
+    updateDates: vi.fn(),
+    remove: vi.fn(),
+    downloadTemplate: vi.fn(),
+  },
+}))
 
 vi.mock('../api/normatives', () => ({
   normativesApi: {
@@ -107,6 +119,13 @@ describe('NormativesPage', () => {
     getOnDate.mockReset()
     getObjects.mockReset()
     getDepartments.mockReset()
+    listProductionRequests.mockReset()
+    useAuthStore.setState({
+      user: null,
+      token: null,
+      isAuthenticated: false,
+      isLoading: false,
+    })
     getOnDate.mockResolvedValue({
       data: { status: 'success', data: onDateData },
     })
@@ -128,6 +147,13 @@ describe('NormativesPage', () => {
       data: {
         status: 'success',
         data: [{ id: 'dept-1', name: 'Коммерческий отдел', is_active: true }],
+      },
+    })
+    listProductionRequests.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: [],
+        meta: { page: 1, limit: 200, total: 0 },
       },
     })
   })
@@ -235,5 +261,31 @@ describe('NormativesPage', () => {
     await waitFor(() => {
       expect(screen.queryByText('Подшипник 6204ZZ')).toBeNull()
     })
+  })
+
+  it('shows upload batches and actions to an authorized role', async () => {
+    useAuthStore.setState({
+      user: {
+        id: '44444444-4444-4444-4444-444444444444',
+        username: 'logistics',
+        full_name: 'Кузнецов Кузьма',
+        role: 'logistics',
+      },
+      token: 'token',
+      isAuthenticated: true,
+    })
+    render(
+      <MemoryRouter>
+        <NormativesPage />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getByText('Партии загрузки'))
+    await waitFor(() => {
+      expect(listProductionRequests).toHaveBeenCalledWith({ limit: 200 })
+    })
+    expect(screen.getByRole('button', { name: /Загрузить НЗ/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Изменить даты/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Удалить партию/ })).toBeTruthy()
   })
 })

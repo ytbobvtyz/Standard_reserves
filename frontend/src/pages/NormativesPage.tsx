@@ -1,4 +1,14 @@
-import { Card, DatePicker, Input, Select, Space, Table, Typography, message } from 'antd'
+import {
+  Card,
+  DatePicker,
+  Input,
+  Select,
+  Space,
+  Table,
+  Tabs,
+  Typography,
+  message,
+} from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
@@ -7,6 +17,8 @@ import { getApiErrorMessage } from '../api/client'
 import { normativesApi } from '../api/normatives'
 import { referencesApi } from '../api/references'
 import type { DepartmentListItem, NormativeOnDateItem, ObjectListItem, Unit } from '../api/types'
+import { ProductionRequestsTab } from '../components/normatives/ProductionRequestsTab'
+import { useAuthStore } from '../stores/auth'
 
 interface NormativeRow {
   key: string
@@ -60,6 +72,7 @@ function formatQty(quantity: number, unit: Unit): string {
 const SEARCH_DEBOUNCE_MS = 400
 
 export function NormativesPage() {
+  const user = useAuthStore((state) => state.user)
   const [sliceDate, setSliceDate] = useState<Dayjs>(() => dayjs())
   const [warehouseCode, setWarehouseCode] = useState<number | undefined>()
   const [category, setCategory] = useState<'A' | 'B' | 'C' | undefined>()
@@ -153,9 +166,11 @@ export function NormativesPage() {
     },
   ]
 
-  return (
+  const canManageBatches =
+    user?.role === 'logistics' || user?.role === 'economist' || user?.role === 'pp'
+
+  const normativesContent = (
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-      <Typography.Title level={3}>Нормативы</Typography.Title>
       <Space wrap>
         <Input
           allowClear
@@ -242,6 +257,30 @@ export function NormativesPage() {
           </Space>
         )}
       </Card>
+    </Space>
+  )
+
+  return (
+    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+      <Typography.Title level={3}>Нормативы</Typography.Title>
+      <Tabs
+        items={[
+          {
+            key: 'normatives',
+            label: 'Нормативы',
+            children: normativesContent,
+          },
+          ...(canManageBatches
+            ? [
+                {
+                  key: 'production-requests',
+                  label: 'Партии загрузки',
+                  children: <ProductionRequestsTab onNormativesChanged={load} />,
+                },
+              ]
+            : []),
+        ]}
+      />
     </Space>
   )
 }
