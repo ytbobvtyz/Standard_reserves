@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,6 +13,7 @@ class Settings(BaseSettings):
 
     app_name: str = "Standart Reserve"
     debug: bool = False
+    log_level: str = "INFO"
     secret_key: str = "change-me-in-production"
     database_url: str = "postgresql://postgres:postgres@postgres:5432/standart_reserve"
     backend_cors_origins: list[str] = [
@@ -31,6 +33,14 @@ class Settings(BaseSettings):
         if url.startswith("postgres://"):
             return url.replace("postgres://", "postgresql+asyncpg://", 1)
         return url
+
+    @model_validator(mode="after")
+    def reject_cors_wildcard_in_production(self) -> "Settings":
+        if not self.debug and any(
+            origin.strip() == "*" for origin in self.backend_cors_origins
+        ):
+            raise ValueError("BACKEND_CORS_ORIGINS cannot include '*' when DEBUG=false")
+        return self
 
 
 @lru_cache

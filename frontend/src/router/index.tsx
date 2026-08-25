@@ -16,6 +16,7 @@ import { ObjectsPage } from '../pages/ObjectsPage'
 import { ReferencesPage } from '../pages/ReferencesPage'
 import { AdminUsersPage } from '../pages/AdminUsersPage'
 import { AdminDepartmentsPage } from '../pages/AdminDepartmentsPage'
+import { NotFoundPage } from '../pages/NotFoundPage'
 
 export function AppRouter() {
   return (
@@ -52,7 +53,7 @@ export function AppRouter() {
             </Route>
           </Route>
         </Route>
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </BrowserRouter>
   )

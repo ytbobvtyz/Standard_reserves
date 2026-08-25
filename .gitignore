@@ -1,4 +1,7 @@
 .env
+certs/*.pem
+certs/*.key
+backups/
 .venv/
 venv/
 __pycache__/

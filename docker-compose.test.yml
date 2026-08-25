@@ -1,6 +1,6 @@
 services:
   postgres-test:
-    image: postgres:15
+    image: postgres:15-alpine
     environment:
       POSTGRES_DB: standart_reserve_test
       POSTGRES_USER: postgres

@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { ErrorBoundary } from './components/common/ErrorBoundary'
 import { AppRouter } from './router'
 import { useAuthStore } from './stores/auth'
 
@@ -9,5 +10,9 @@ export default function App() {
     void fetchProfile()
   }, [fetchProfile])
 
-  return <AppRouter />
+  return (
+    <ErrorBoundary>
+      <AppRouter />
+    </ErrorBoundary>
+  )
 }
