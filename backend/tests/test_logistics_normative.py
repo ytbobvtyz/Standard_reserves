@@ -443,6 +443,7 @@ async def test_generate_orders_returns_correct_structure(
     assert product["product_name"] == "Тестовый подшипник логистики"
     assert product["deficit"] == 400
     assert product["unit"] == "шт"
+    assert product["weight_kg"] == pytest.approx(0.25)
     ok_codes = {
         item["product_code"] for order in data["orders"] for item in order["items"]
     }

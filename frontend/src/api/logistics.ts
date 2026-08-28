@@ -1,6 +1,7 @@
 import api from './client'
 import type {
   ApiSuccess,
+  B2BExportRequest,
   BalanceSyncInfo,
   BalanceUploadResult,
   ExecuteOneTimeData,
@@ -34,6 +35,11 @@ export const logisticsApi = {
   exportOrders: (params?: LogisticsDashboardParams & { product_codes?: string }) =>
     api.get<Blob>('/logistics/normative/export', {
       params,
+      responseType: 'blob',
+    }),
+
+  exportB2B: (data: B2BExportRequest) =>
+    api.post<Blob>('/logistics/normative/export-b2b', data, {
       responseType: 'blob',
     }),
 

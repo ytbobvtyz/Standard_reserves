@@ -87,6 +87,7 @@ const getDashboard = vi.fn()
 const generateOrders = vi.fn()
 const generateOrdersBulk = vi.fn()
 const exportOrders = vi.fn()
+const exportB2B = vi.fn()
 const uploadBalances = vi.fn()
 const getSyncInfo = vi.fn()
 const getObjects = vi.fn()
@@ -97,8 +98,22 @@ vi.mock('../api/logistics', () => ({
     generateOrders: (...args: unknown[]) => generateOrders(...args),
     generateOrdersBulk: (...args: unknown[]) => generateOrdersBulk(...args),
     exportOrders: (...args: unknown[]) => exportOrders(...args),
+    exportB2B: (...args: unknown[]) => exportB2B(...args),
     uploadBalances: (...args: unknown[]) => uploadBalances(...args),
     getSyncInfo: (...args: unknown[]) => getSyncInfo(...args),
+  },
+}))
+
+const downloadBlob = vi.fn()
+
+vi.mock('../utils/download', () => ({
+  downloadBlob: (...args: unknown[]) => downloadBlob(...args),
+  filenameFromContentDisposition: (header?: string) => {
+    if (!header) {
+      return null
+    }
+    const match = /filename="?([^";]+)"?/i.exec(header)
+    return match?.[1] ?? null
   },
 }))
 
@@ -138,6 +153,8 @@ describe('LogisticsDashboardPage', () => {
     generateOrders.mockReset()
     generateOrdersBulk.mockReset()
     exportOrders.mockReset()
+    exportB2B.mockReset()
+    downloadBlob.mockReset()
     uploadBalances.mockReset()
     getSyncInfo.mockReset()
     getObjects.mockReset()
@@ -182,6 +199,7 @@ describe('LogisticsDashboardPage', () => {
                   product_name: 'Подшипник 6204ZZ',
                   deficit: 400,
                   unit: 'шт',
+                  weight_kg: 0.25,
                 },
               ],
             },
@@ -191,6 +209,10 @@ describe('LogisticsDashboardPage', () => {
           total_quantity: 400,
         },
       },
+    })
+    exportB2B.mockResolvedValue({
+      data: new Blob(['zip']),
+      headers: { 'content-disposition': 'attachment; filename="b2b_orders_20260828.zip"' },
     })
     setRole('logistics')
   })
@@ -286,11 +308,52 @@ describe('LogisticsDashboardPage', () => {
       })
     })
     await waitFor(() => {
-      expect(screen.getByText('Сформировать заказы')).toBeTruthy()
+      expect(screen.getByText('📦 Предпросмотр заказов')).toBeTruthy()
       expect(screen.getByText(/Завод Московский/)).toBeTruthy()
+      expect(screen.getByRole('checkbox', { name: 'Выбрать все маршруты' })).toBeTruthy()
       expect(screen.getByRole('button', { name: /Подтвердить/ })).toBeTruthy()
-      expect(screen.getByRole('button', { name: /Скачать Excel/ })).toBeTruthy()
+      expect(screen.getByRole('button', { name: /Выгрузить для B2B/ })).toBeTruthy()
     })
+  })
+
+  it('downloads a B2B zip for selected routes', async () => {
+    render(
+      <MemoryRouter>
+        <LogisticsDashboardPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByText('Склад Ростов')).toBeTruthy()
+    })
+    fireEvent.click(
+      screen.getByRole('button', { name: /Сформировать заказы на все склады/ }),
+    )
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Выгрузить для B2B/ })).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Выгрузить для B2B/ }))
+    await waitFor(() => {
+      expect(exportB2B).toHaveBeenCalledWith({
+        routes: [
+          {
+            plant_code: 1001,
+            plant_name: 'Завод Московский',
+            warehouse_code: 2001,
+            warehouse_name: 'Склад Ростов',
+            items: [
+              {
+                product_code: 10001,
+                product_name: 'Подшипник 6204ZZ',
+                deficit: 400,
+                unit: 'шт',
+              },
+            ],
+          },
+        ],
+      })
+    })
+    expect(downloadBlob).toHaveBeenCalled()
+    expect(downloadBlob.mock.calls[0][1]).toBe('b2b_orders_20260828.zip')
   })
 
   it('keeps selected orders button disabled until a warehouse is checked', async () => {

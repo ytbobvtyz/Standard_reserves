@@ -354,6 +354,7 @@ export interface GeneratedOrderItem {
   product_name: string
   deficit: number
   unit: Unit
+  weight_kg?: number
 }
 
 export interface GeneratedOrder {
@@ -379,6 +380,25 @@ export interface GenerateOrdersPayload {
 export interface GenerateOrdersBulkPayload {
   warehouse_codes: number[]
   product_codes?: number[]
+}
+
+export interface B2BRouteItem {
+  product_code: number
+  product_name: string
+  deficit: number
+  unit: Unit
+}
+
+export interface B2BRoute {
+  plant_code: number
+  plant_name: string
+  warehouse_code: number
+  warehouse_name: string
+  items: B2BRouteItem[]
+}
+
+export interface B2BExportRequest {
+  routes: B2BRoute[]
 }
 
 export interface OneTimeListParams {

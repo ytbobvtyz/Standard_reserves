@@ -37,11 +37,13 @@ import type {
 } from '../api/types'
 import { DeficitIndicator } from '../components/logistics/DeficitIndicator'
 import { FilterToggle } from '../components/logistics/FilterToggle'
+import { OrderPreviewModal } from '../components/logistics/OrderPreviewModal'
 import { UnitToggle } from '../components/logistics/UnitToggle'
 import { useAuthStore } from '../stores/auth'
-import { downloadBlob } from '../utils/download'
+import { downloadBlob, filenameFromContentDisposition } from '../utils/download'
 import { formatShortName } from '../utils/format'
 import { categoryFactor, formatFactor } from '../utils/requirement'
+import { todayStamp } from '../utils/b2b'
 
 function formatQty(value: number, unit: Unit): string {
   return new Intl.NumberFormat('ru-RU', {
@@ -158,6 +160,7 @@ export function LogisticsDashboardPage() {
   const [activeKeys, setActiveKeys] = useState<string[]>([])
   const [generating, setGenerating] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [exportingB2B, setExportingB2B] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -365,6 +368,38 @@ export function LogisticsDashboardPage() {
       message.error(getApiErrorMessage(error, 'Не удалось выгрузить Excel'))
     } finally {
       setExporting(false)
+    }
+  }
+
+  const handleExportB2B = async (selected: GeneratedOrder[]) => {
+    if (selected.length === 0) {
+      return
+    }
+    setExportingB2B(true)
+    try {
+      const response = await logisticsApi.exportB2B({
+        routes: selected.map((order) => ({
+          plant_code: order.plant_code,
+          plant_name: order.plant_name,
+          warehouse_code: order.warehouse_code,
+          warehouse_name: order.warehouse_name,
+          items: order.items.map((item) => ({
+            product_code: item.product_code,
+            product_name: item.product_name,
+            deficit: item.deficit,
+            unit: item.unit,
+          })),
+        })),
+      })
+      const filename =
+        filenameFromContentDisposition(
+          response.headers['content-disposition'] as string | undefined,
+        ) ?? `b2b_orders_${todayStamp()}.zip`
+      downloadBlob(response.data, filename)
+    } catch (error) {
+      message.error(getApiErrorMessage(error, 'Не удалось выгрузить разнарядки B2B'))
+    } finally {
+      setExportingB2B(false)
     }
   }
 
@@ -619,65 +654,20 @@ export function LogisticsDashboardPage() {
           </Button>
         </Space>
       ) : null}
-      <Modal
-        title="Сформировать заказы"
+      <OrderPreviewModal
         open={modalOpen}
-        onCancel={() => setModalOpen(false)}
-        width={820}
-        footer={
-          <Space>
-            <Button
-              icon={<DownloadOutlined />}
-              loading={exporting}
-              onClick={() =>
-                void handleExport([...new Set(orders.map((item) => item.warehouse_code))])
-              }
-            >
-              Скачать Excel
-            </Button>
-            <Button
-              type="primary"
-              onClick={() => {
-                setConfirmedOrders(orders)
-                setModalOpen(false)
-                message.success('Заказы подтверждены')
-              }}
-            >
-              Подтвердить
-            </Button>
-          </Space>
-        }
-      >
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          {orders.map((order) => (
-            <div key={`${order.plant_code}-${order.warehouse_code}`}>
-              <Typography.Text strong>
-                {order.plant_name} → {order.warehouse_name}
-              </Typography.Text>
-              <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
-                Срок поставки: {order.estimated_delivery_days} дн.
-              </Typography.Paragraph>
-              <Table
-                rowKey="product_code"
-                pagination={false}
-                size="small"
-                dataSource={order.items}
-                columns={[
-                  { title: 'Артикул', dataIndex: 'product_code', width: 110 },
-                  { title: 'Название', dataIndex: 'product_name' },
-                  {
-                    title: 'Дефицит',
-                    dataIndex: 'deficit',
-                    width: 120,
-                    render: (value: number) => formatQty(value, 'шт'),
-                  },
-                  { title: 'Ед', dataIndex: 'unit', width: 70 },
-                ]}
-              />
-            </div>
-          ))}
-        </Space>
-      </Modal>
+        routes={orders}
+        exporting={exportingB2B}
+        onClose={() => setModalOpen(false)}
+        onConfirm={() => {
+          setConfirmedOrders(orders)
+          setModalOpen(false)
+          message.success('Заказы подтверждены')
+        }}
+        onExportB2B={(selected) => {
+          void handleExportB2B(selected)
+        }}
+      />
       <Modal
         title="Загрузить актуальные остатки"
         open={uploadOpen}

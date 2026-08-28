@@ -91,6 +91,26 @@ class OrderItem(BaseModel):
     product_name: str
     deficit: DecimalNumber
     unit: str
+    weight_kg: DecimalNumber = Decimal("0")
+
+
+class B2BRouteItem(BaseModel):
+    product_code: int
+    product_name: str = ""
+    deficit: DecimalNumber
+    unit: str
+
+
+class B2BRoute(BaseModel):
+    plant_code: int
+    plant_name: str = ""
+    warehouse_code: int
+    warehouse_name: str = ""
+    items: list[B2BRouteItem]
+
+
+class B2BExportRequest(BaseModel):
+    routes: list[B2BRoute]
 
 
 class PlantOrder(BaseModel):

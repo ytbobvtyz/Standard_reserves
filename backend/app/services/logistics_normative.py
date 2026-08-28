@@ -565,6 +565,7 @@ async def generate_orders_for_warehouses(
                         product_name=item.product_name,
                         deficit=item.deficit,
                         unit=item.unit,
+                        weight_kg=item.weight_kg,
                     )
                     for item in items
                 ],

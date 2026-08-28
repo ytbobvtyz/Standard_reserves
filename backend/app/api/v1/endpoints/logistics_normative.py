@@ -1,3 +1,6 @@
+import zipfile
+from datetime import datetime
+from io import BytesIO
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile
@@ -8,6 +11,7 @@ from app.api.deps import get_current_user, get_db, require_roles
 from app.models.user import User
 from app.schemas.common import SuccessResponse
 from app.schemas.logistics import (
+    B2BExportRequest,
     BalanceSyncInfo,
     BalanceUploadResult,
     DashboardResponse,
@@ -15,6 +19,7 @@ from app.schemas.logistics import (
     GenerateOrdersData,
     GenerateOrdersRequest,
 )
+from app.services import b2b_export
 from app.services import logistics_normative as service
 
 router = APIRouter(prefix="/logistics/normative", tags=["Логистика — нормативы"])
@@ -97,6 +102,28 @@ async def export_orders(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         ),
         headers={"Content-Disposition": 'attachment; filename="orders.xlsx"'},
+    )
+
+
+@router.post("/export-b2b")
+async def export_b2b(
+    body: B2BExportRequest,
+    _current_user: User = Depends(LOGISTICS_ONLY),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Экспорт разнарядок B2B: ZIP с Excel-файлами по маршрутам."""
+    exports = await b2b_export.generate_b2b_exports(db, body.routes)
+    zip_buffer = BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for filename, content in exports.items():
+            archive.writestr(filename, content)
+    stamp = datetime.now().strftime("%Y%m%d")
+    return Response(
+        content=zip_buffer.getvalue(),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="b2b_orders_{stamp}.zip"'
+        },
     )
 
 

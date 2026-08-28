@@ -972,6 +972,89 @@ warehouse_code	integer	Склад
 product_codes	array	Артикулы (через запятую)
 Response: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
 
+6.4.1. Выгрузить разнарядки в формате B2B
+text
+POST /logistics/normative/export-b2b
+Headers:
+
+text
+Authorization: Bearer <token>
+Права: только `logistics`. Остальные роли — 403 FORBIDDEN.
+
+Принимает список маршрутов (завод → склад) с позициями дефицита. Возвращает ZIP-архив: один Excel-файл на каждый маршрут.
+
+Request:
+
+json
+{
+    "routes": [
+        {
+            "plant_code": 1001,
+            "plant_name": "Завод Московский",
+            "warehouse_code": 2001,
+            "warehouse_name": "Склад Ростов",
+            "items": [
+                {
+                    "product_code": 10001,
+                    "product_name": "Подшипник 6204ZZ",
+                    "deficit": 400,
+                    "unit": "шт"
+                }
+            ]
+        }
+    ]
+}
+
+Поля маршрута:
+
+| Поле | Тип | Обязательное | Описание |
+|------|-----|--------------|----------|
+| `plant_code` | integer | ✅ | Код завода → `objects.code` |
+| `plant_name` | string | ❌ | Имя завода (для имени файла; если пусто — из справочника) |
+| `warehouse_code` | integer | ✅ | Код склада → `objects.code` |
+| `warehouse_name` | string | ❌ | Имя склада (для имени файла; если пусто — из справочника) |
+| `items` | array | ✅ | Позиции маршрута (хотя бы одна) |
+
+Поля позиции:
+
+| Поле | Тип | Обязательное | Описание |
+|------|-----|--------------|----------|
+| `product_code` | integer | ✅ | Артикул → `products.code` |
+| `product_name` | string | ❌ | Подпись с фронта (в Excel пишется `products.name`) |
+| `deficit` | number | ✅ | Дефицит в единицах `unit` |
+| `unit` | string | ✅ | `шт` / `кг` / `т` (допускаются `ШТ`, `КГ`) |
+
+Пересчёт дефицита в килограммы (`products.weight_kg` — вес 1 шт в кг нетто):
+
+| `unit` | Формула |
+|--------|---------|
+| `шт` | `deficit × products.weight_kg` |
+| `т` | `deficit × 1000` |
+| `кг` | `deficit` |
+
+Значение округляется до 2 знаков после запятой.
+
+Response (200): ZIP-архив.
+
+- `Content-Type: application/zip`
+- `Content-Disposition: attachment; filename="b2b_orders_YYYYMMDD.zip"`
+- Каждый файл: `{plant_name} → {warehouse_name}.xlsx`
+- Лист `Разнарядка`, колонки:
+
+| Колонка | Описание |
+|---------|----------|
+| Артикул | `products.code` |
+| Наименование | `products.name` |
+| Дефицит (кг) | Пересчитанный дефицит в килограммах |
+
+Errors:
+
+400 VALIDATION_ERROR — пустой список маршрутов или нет данных для выгрузки
+
+400 NOT_FOUND / VALIDATION_ERROR — продукт не найден
+
+403 FORBIDDEN — не роль logistics
+
 6.5. Разовые перемещения — список
 text
 GET /logistics/one-time/list
@@ -1962,7 +2045,7 @@ json
 Запросы	/requests, /requests/{id}, submit, history, expiry-date	7
 Согласование (ПП)	/approvals/pp/pending, /approvals/pp/{id}/action	2
 Согласование (экономист)	/approvals/economy/pending, /approvals/economy/{id}/action	2
-Логистика нормативы	dashboard, upload, sync-info, export, generate-orders, /{wh}/generate-orders	6
+Логистика нормативы	dashboard, upload, sync-info, export, export-b2b, generate-orders, /{wh}/generate-orders	7
 Логистика разовые	list, initiators, clients, export, execute	5
 Нормативы	/normatives, on-date, calculate	3
 Продукты (related)	/products/{code}/related	1
@@ -1972,7 +2055,7 @@ json
 Справочники подразделения	/references/departments	1
 Администрирование	/admin/users, /admin/users/{id}, reset-password, /admin/departments	10
 Партии нормативов	/production-requests, template, upload, dates, delete	5
-ИТОГО реализовано		~61
+ИТОГО реализовано		~62
 Не реализовано (задел)	/inventory/*, /tariffs/*, /agent/*, /auth/register	—
 14.2. Ролевой доступ
 Роль	Доступные эндпоинты
@@ -1980,7 +2063,7 @@ guest	Просмотр справочников, нормативов и даш�
 commercial	Создание запросов (нормативные + разовые), просмотр своих запросов, просмотр логистики (только чтение)
 pp	Согласование (ПП), просмотр всех запросов, CRUD продуктов, Excel-загрузка, просмотр логистики, управление партиями нормативов
 economist	Согласование (экономист), просмотр всех запросов, CRUD продуктов, Excel-загрузка, просмотр логистики, управление партиями нормативов
-logistics	Дашборд, формирование заказов, исполнение разовых, выгрузка Excel, загрузка остатков, CRUD продуктов и объектов, управление партиями нормативов, администрирование пользователей и подразделений (`/admin/*`)
+logistics	Дашборд, формирование заказов, исполнение разовых, выгрузка Excel, выгрузка разнарядок B2B (ZIP), загрузка остатков, CRUD продуктов и объектов, управление партиями нормативов, администрирование пользователей и подразделений (`/admin/*`)
 15. ПРИМЕР ПОЛНОГО FLOW
 15.1. Нормативный запас — полный цикл
 text
@@ -1993,7 +2076,8 @@ text
 7. Автоматически: создается запись в normatives (сервис при approve экономиста; в БД также есть триггер)
 8. Логист: GET /logistics/normative/dashboard → видит дефицит
 9. Логист: POST /logistics/normative/generate-orders → формирует заказы
-10. Логист: GET /logistics/normative/export → выгружает Excel
+10. Логист: POST /logistics/normative/export-b2b → выгружает разнарядки B2B (ZIP Excel)
+11. Логист: GET /logistics/normative/export → выгружает Excel дашборда
 15.2. Разовое перемещение — полный цикл
 text
 1. Коммерция/Логист: POST /requests → создает разовый запрос (draft)
@@ -2171,6 +2255,6 @@ json
     "message": "Партия загрузки удалена"
 }
 
-Версия: 1.9
-Дата: 25.08.2026
+Версия: 1.10
+Дата: 28.08.2026
 Статус: Утверждена
