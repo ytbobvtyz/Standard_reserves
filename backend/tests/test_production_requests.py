@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 
 from app.core.database import AsyncSessionLocal
 from app.models.normative import Normative
+from app.models.object import Object
 from app.models.production_request import ProductionRequest, ProductionRequestItem
 from tests.conftest import AuthUser, auth_header, login_token
 
@@ -235,3 +236,70 @@ async def test_economist_and_planner_can_list_production_requests(
             headers=auth_header(token),
         )
         assert response.status_code == 200, response.text
+
+
+async def test_upload_accepts_erp_plant_code_on_warehouse_only(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    """LogLab-style data: 2401 lives on warehouses, not on a type=plant row."""
+    token = await login_token(client, logistics_user)
+    warehouse_code = catalog["warehouse_code"]
+    erp_plant_only_on_warehouse = 2410
+    previous_plant_code = None
+    async with AsyncSessionLocal() as session:
+        warehouse = await session.get(Object, warehouse_code)
+        assert warehouse is not None
+        previous_plant_code = warehouse.erp_plant_code
+        warehouse.erp_plant_code = erp_plant_only_on_warehouse
+        await session.commit()
+
+    batch_id: UUID | None = None
+    try:
+        valid_from = date.today() - timedelta(days=30)
+        valid_to = date.today() + timedelta(days=90)
+        content = _xlsx(
+            [
+                [
+                    erp_plant_only_on_warehouse,
+                    catalog["erp_warehouse_code"],
+                    catalog["product_code"],
+                    1000,
+                    "шт",
+                    "Клиент ERP на складе",
+                ]
+            ]
+        )
+        response = await client.post(
+            "/api/v1/production-requests/upload",
+            headers=auth_header(token),
+            files={
+                "file": (
+                    "normatives.xlsx",
+                    content,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+            data={
+                "valid_from": valid_from.isoformat(),
+                "valid_to": valid_to.isoformat(),
+            },
+        )
+        assert response.status_code == 201, response.text
+        result = response.json()["data"]
+        assert result["imported_count"] == 1
+        assert result["total_rows"] == 1
+        assert result["error_count"] == 0
+        assert result["error_details"] == []
+        batch_id = UUID(result["production_request"]["id"])
+    finally:
+        async with AsyncSessionLocal() as session:
+            warehouse = await session.get(Object, warehouse_code)
+            if warehouse is not None:
+                warehouse.erp_plant_code = previous_plant_code
+            if batch_id is not None:
+                remaining = await session.get(ProductionRequest, batch_id)
+                if remaining is not None:
+                    await session.delete(remaining)
+            await session.commit()

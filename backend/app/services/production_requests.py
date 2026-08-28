@@ -341,10 +341,10 @@ async def upload_batch(
             .order_by(Object.code)
         )
     ).all()
+    # ERP plant code often lives on warehouses (LogLab 2401) without a
+    # separate type=plant row — same rule as logistics balance upload.
     plants = {
-        item.erp_plant_code
-        for item in objects
-        if item.type == "plant" and item.erp_plant_code is not None
+        item.erp_plant_code for item in objects if item.erp_plant_code is not None
     }
     warehouses: dict[tuple[int, str], Object] = {}
     for item in objects:
