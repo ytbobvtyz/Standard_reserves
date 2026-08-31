@@ -325,6 +325,13 @@ export interface DeficitItem {
   status: DeficitStatus
   stock_unit?: string
   weight_kg?: number
+  is_active?: boolean
+  parent_code?: number | null
+  children_code?: number | null
+  group_key?: string
+  group_index?: number
+  is_group_main?: boolean
+  hide_group_metrics?: boolean
 }
 
 export interface WarehouseDeficit {

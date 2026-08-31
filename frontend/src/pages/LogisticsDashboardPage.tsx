@@ -107,12 +107,43 @@ function convertItem(item: DeficitItem, unit: Unit): DeficitItem {
   }
 }
 
-function matchesFilter(item: DeficitItem, filterMode: FilterMode): boolean {
+function isGroupMain(item: DeficitItem): boolean {
+  return item.is_group_main !== false
+}
+
+function itemGroupKey(item: DeficitItem): string {
+  return item.group_key || String(item.product_code)
+}
+
+function groupItems(items: DeficitItem[]): DeficitItem[][] {
+  const groups = new Map<string, DeficitItem[]>()
+  const order: string[] = []
+  for (const item of items) {
+    const key = itemGroupKey(item)
+    if (!groups.has(key)) {
+      groups.set(key, [])
+      order.push(key)
+    }
+    groups.get(key)!.push(item)
+  }
+  return order.map((key) => {
+    const members = groups.get(key)!
+    return [...members].sort((left, right) => {
+      if (isGroupMain(left) !== isGroupMain(right)) {
+        return isGroupMain(left) ? -1 : 1
+      }
+      return left.product_code - right.product_code
+    })
+  })
+}
+
+function matchesFilter(members: DeficitItem[], filterMode: FilterMode): boolean {
+  const main = members.find(isGroupMain) ?? members[0]
   if (filterMode === 'deficit_only') {
-    return item.deficit > 0
+    return (main?.deficit ?? 0) > 0
   }
   if (filterMode === 'with_normatives') {
-    return item.normative_quantity > 0
+    return (main?.normative_quantity ?? 0) > 0
   }
   return true
 }
@@ -133,6 +164,18 @@ function matchesSearch(item: DeficitItem, search: string): boolean {
   return (
     String(item.product_code).includes(term) ||
     item.product_name.toLowerCase().includes(term)
+  )
+}
+
+function groupMatchesSearch(members: DeficitItem[], search: string): boolean {
+  return members.some((item) => matchesSearch(item, search))
+}
+
+function hiddenGroupMetric() {
+  return (
+    <Typography.Text type="secondary" aria-label="общее для группы">
+      —
+    </Typography.Text>
   )
 }
 
@@ -214,12 +257,13 @@ export function LogisticsDashboardPage() {
           warehouseCode == null || warehouse.warehouse_code === warehouseCode,
       )
       .map((warehouse) => {
-        const deficitItems = warehouse.deficit_items
+        const deficitItems = groupItems(warehouse.deficit_items)
           .filter(
-            (item) =>
-              matchesFilter(item, filterMode) && matchesSearch(item, search),
+            (members) =>
+              matchesFilter(members, filterMode) &&
+              groupMatchesSearch(members, search),
           )
-          .map((item) => convertItem(item, unit))
+          .flatMap((members) => members.map((item) => convertItem(item, unit)))
         return {
           ...warehouse,
           deficit_items: deficitItems,
@@ -273,17 +317,21 @@ export function LogisticsDashboardPage() {
       title: 'Норматив',
       dataIndex: 'normative_quantity',
       width: 120,
-      render: (value: number) => formatQty(value, unit),
+      render: (value: number, record) =>
+        record.hide_group_metrics ? hiddenGroupMetric() : formatQty(value, unit),
     },
     {
       title: 'Потребность',
       dataIndex: 'requirement',
       width: 130,
-      render: (value: number, record) => (
-        <Tooltip title={requirementHint(record.category, longDistance)}>
-          <span>{formatQty(value, unit)}</span>
-        </Tooltip>
-      ),
+      render: (value: number, record) =>
+        record.hide_group_metrics ? (
+          hiddenGroupMetric()
+        ) : (
+          <Tooltip title={requirementHint(record.category, longDistance)}>
+            <span>{formatQty(value, unit)}</span>
+          </Tooltip>
+        ),
     },
     {
       title: 'Доступно',
@@ -301,9 +349,12 @@ export function LogisticsDashboardPage() {
       title: 'Дефицит',
       dataIndex: 'deficit',
       width: 140,
-      render: (value: number, record) => (
-        <DeficitIndicator deficit={value} status={record.status} unit={record.unit} />
-      ),
+      render: (value: number, record) =>
+        record.hide_group_metrics ? (
+          hiddenGroupMetric()
+        ) : (
+          <DeficitIndicator deficit={value} status={record.status} unit={record.unit} />
+        ),
     },
     {
       title: 'Ед',
@@ -606,11 +657,21 @@ export function LogisticsDashboardPage() {
                       />
                     ) : null}
                     <Table
+                      className="logistics-deficit-table"
                       rowKey={(item) => `${item.product_code}-${item.client_name}`}
                       pagination={false}
                       size="small"
                       columns={itemColumns(Boolean(warehouse.long_distance))}
                       dataSource={warehouse.deficit_items}
+                      rowClassName={(item) => {
+                        const stripe =
+                          (item.group_index ?? 0) % 2 === 0
+                            ? 'logistics-group-even'
+                            : 'logistics-group-odd'
+                        const start =
+                          item.is_group_main !== false ? ' logistics-group-start' : ''
+                        return `${stripe}${start}`
+                      }}
                     />
                   </Space>
                 ) : null,

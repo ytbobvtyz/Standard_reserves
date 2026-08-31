@@ -507,4 +507,98 @@ describe('LogisticsDashboardPage', () => {
     })
     expect(screen.getByText(/Строка 3/)).toBeTruthy()
   }, 15000)
+
+  it('keeps related articles visible and hides shared group metrics', async () => {
+    getDashboard.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: [
+          {
+            warehouse_code: 2001,
+            warehouse_name: 'Склад Ростов',
+            total_deficit: 300,
+            deficit_count: 1,
+            deficit_items: [
+              {
+                product_code: 10004,
+                product_name: 'Подшипник новый',
+                category: 'A',
+                normative_quantity: 1000,
+                requirement: 1000,
+                available: 100,
+                plan: 100,
+                unit: 'шт',
+                deficit: 300,
+                client_name: "ООО 'Ромашка'",
+                expiry_date: '2026-12-31',
+                status: 'warning',
+                stock_unit: 'ШТ',
+                weight_kg: 0.25,
+                is_active: true,
+                parent_code: 10001,
+                children_code: null,
+                group_key: '10004',
+                group_index: 0,
+                is_group_main: true,
+                hide_group_metrics: false,
+              },
+              {
+                product_code: 10001,
+                product_name: 'Подшипник старый',
+                category: 'A',
+                normative_quantity: 0,
+                requirement: 0,
+                available: 600,
+                plan: 600,
+                unit: 'шт',
+                deficit: 0,
+                client_name: "ООО 'Ромашка'",
+                expiry_date: '2026-12-31',
+                status: 'ok',
+                stock_unit: 'ШТ',
+                weight_kg: 0.25,
+                is_active: false,
+                parent_code: null,
+                children_code: 10004,
+                group_key: '10004',
+                group_index: 0,
+                is_group_main: false,
+                hide_group_metrics: true,
+              },
+            ],
+          },
+        ],
+        summary: {
+          total_deficit: 300,
+          deficit_warehouses: 1,
+          deficit_products: 1,
+        },
+      },
+    })
+
+    render(
+      <MemoryRouter>
+        <LogisticsDashboardPage />
+      </MemoryRouter>,
+    )
+    await expandWarehouse('Склад Ростов')
+    expect(screen.getByText('Подшипник новый')).toBeTruthy()
+    expect(screen.getByText('Подшипник старый')).toBeTruthy()
+    expect(screen.getAllByLabelText('общее для группы').length).toBe(3)
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Требуют пополнения' }))
+    await waitFor(() => {
+      expect(screen.getByText('Подшипник старый')).toBeTruthy()
+    })
+    expect(screen.getByText('Подшипник новый')).toBeTruthy()
+
+    fireEvent.change(screen.getByPlaceholderText('Поиск по артикулу или названию'), {
+      target: { value: '10001' },
+    })
+    fireEvent.click(document.querySelector('.ant-input-search-button') as HTMLElement)
+    await waitFor(() => {
+      expect(screen.getByText('Подшипник новый')).toBeTruthy()
+    })
+    expect(screen.getByText('Подшипник старый')).toBeTruthy()
+  })
 })

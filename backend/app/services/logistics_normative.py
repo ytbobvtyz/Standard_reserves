@@ -71,6 +71,13 @@ class DeficitRow:
     status: Literal["warning", "ok"]
     stock_unit: str
     long_distance: bool
+    is_active: bool = True
+    parent_code: int | None = None
+    children_code: int | None = None
+    group_key: str = ""
+    group_index: int = 0
+    is_group_main: bool = True
+    hide_group_metrics: bool = False
 
 
 def _quantize(value: Decimal, unit: Unit) -> Decimal:
@@ -117,6 +124,141 @@ def _item_key(warehouse_code: int, product_code: int) -> tuple[int, int]:
     return (warehouse_code, product_code)
 
 
+def _is_group_main(product: Product) -> bool:
+    return bool(product.is_active) and product.children_code is None
+
+
+def _pick_group_main(members: list[Product]) -> Product:
+    mains = [item for item in members if _is_group_main(item)]
+    if mains:
+        return min(mains, key=lambda item: item.code)
+    tips = [item for item in members if item.children_code is None]
+    if tips:
+        active = [item for item in tips if item.is_active]
+        return min(active or tips, key=lambda item: item.code)
+    return min(members, key=lambda item: item.code)
+
+
+def _member_to_main(products: dict[int, Product]) -> dict[int, int]:
+    if not products:
+        return {}
+    parent: dict[int, int] = {code: code for code in products}
+
+    def find(code: int) -> int:
+        while parent[code] != code:
+            parent[code] = parent[parent[code]]
+            code = parent[code]
+        return code
+
+    def union(left: int, right: int) -> None:
+        if left not in parent or right not in parent:
+            return
+        root_left, root_right = find(left), find(right)
+        if root_left != root_right:
+            parent[root_right] = root_left
+
+    for product in products.values():
+        if product.parent_code:
+            union(product.code, product.parent_code)
+        if product.children_code:
+            union(product.code, product.children_code)
+
+    families: dict[int, list[Product]] = defaultdict(list)
+    for product in products.values():
+        families[find(product.code)].append(product)
+
+    mapping: dict[int, int] = {}
+    for members in families.values():
+        main_code = _pick_group_main(members).code
+        for product in members:
+            mapping[product.code] = main_code
+    return mapping
+
+
+async def _load_product_map(
+    db: AsyncSession, seed_codes: set[int]
+) -> dict[int, Product]:
+    products: dict[int, Product] = {}
+    pending = set(seed_codes)
+    while pending:
+        result = await db.execute(
+            select(Product)
+            .options(selectinload(Product.plant))
+            .where(
+                Product.deleted_at.is_(None),
+                or_(
+                    Product.code.in_(pending),
+                    Product.parent_code.in_(pending),
+                    Product.children_code.in_(pending),
+                ),
+            )
+        )
+        pending = set()
+        for product in result.scalars().unique().all():
+            if product.code in products:
+                continue
+            products[product.code] = product
+            for related in (product.parent_code, product.children_code):
+                if related and related not in products:
+                    pending.add(related)
+    return products
+
+
+async def _expand_family_codes(db: AsyncSession, codes: list[int]) -> list[int]:
+    products = await _load_product_map(db, set(codes))
+    if not products:
+        return list(dict.fromkeys(codes))
+    mapping = _member_to_main(products)
+    mains = {mapping.get(code, code) for code in codes}
+    family = {code for code, main in mapping.items() if main in mains}
+    family.update(codes)
+    return sorted(family)
+
+
+async def _expand_related_members(
+    db: AsyncSession,
+    aggregated: dict[tuple[int, int], dict],
+    balances: dict[tuple[int, int], AvailableBalance],
+    products: dict[int, Product],
+) -> None:
+    if not aggregated or not products:
+        return
+    member_to_main = _member_to_main(products)
+    warehouses: dict[int, Object] = {}
+    present_by_warehouse: dict[int, set[int]] = defaultdict(set)
+    for (warehouse_code, product_code), bucket in aggregated.items():
+        warehouses[warehouse_code] = bucket["warehouse"]
+        present_by_warehouse[warehouse_code].add(product_code)
+
+    extra_keys: set[tuple[int, int]] = set()
+    for warehouse_code, codes in present_by_warehouse.items():
+        mains = {member_to_main.get(code, code) for code in codes}
+        family_codes = {
+            code for code, main in member_to_main.items() if main in mains
+        } | codes
+        for product_code in family_codes:
+            if (warehouse_code, product_code) not in aggregated:
+                extra_keys.add((warehouse_code, product_code))
+
+    if extra_keys:
+        balances.update(await _load_balances(db, keys=extra_keys))
+
+    for warehouse_code, product_code in extra_keys:
+        product = products.get(product_code)
+        if product is None:
+            continue
+        has_balance = (warehouse_code, product_code) in balances
+        if not _is_group_main(product) and not has_balance:
+            continue
+        aggregated[(warehouse_code, product_code)] = {
+            "warehouse": warehouses[warehouse_code],
+            "product": product,
+            "normative_pcs": Decimal("0"),
+            "clients": [],
+            "expiry_date": None,
+        }
+
+
 def _convert_row(
     *,
     warehouse: Object,
@@ -130,13 +272,28 @@ def _convert_row(
     expiry_date: date | None,
     stock_unit: str,
     long_distance: bool | None = None,
+    deficit_plan_pcs: Decimal | None = None,
+    group_key: str | None = None,
+    group_index: int = 0,
+    is_group_main: bool = True,
+    hide_group_metrics: bool = False,
 ) -> DeficitRow:
     is_remote = bool(
         warehouse.long_distance if long_distance is None else long_distance
     )
-    requirement_pcs = calculate_requirement(normative_pcs, product.category, is_remote)
-    deficit_pcs = requirement_pcs - plan_pcs
-    status: Literal["warning", "ok"] = "warning" if deficit_pcs > 0 else "ok"
+    if hide_group_metrics:
+        requirement_pcs = Decimal("0")
+        deficit_pcs = Decimal("0")
+        status: Literal["warning", "ok"] = "ok"
+        display_normative_pcs = Decimal("0")
+    else:
+        display_normative_pcs = normative_pcs
+        requirement_pcs = calculate_requirement(
+            display_normative_pcs, product.category, is_remote
+        )
+        plan_for_deficit = plan_pcs if deficit_plan_pcs is None else deficit_plan_pcs
+        deficit_pcs = requirement_pcs - plan_for_deficit
+        status = "warning" if deficit_pcs > 0 else "ok"
     return DeficitRow(
         warehouse_code=warehouse.code,
         warehouse_name=warehouse.name,
@@ -149,7 +306,7 @@ def _convert_row(
         plant_name=plant_name,
         weight_kg=product.weight_kg,
         normative_quantity=_quantize(
-            from_pieces(normative_pcs, unit, product.weight_kg), unit
+            from_pieces(display_normative_pcs, unit, product.weight_kg), unit
         ),
         requirement=_quantize(
             from_pieces(requirement_pcs, unit, product.weight_kg), unit
@@ -163,6 +320,13 @@ def _convert_row(
         status=status,
         stock_unit=stock_unit,
         long_distance=is_remote,
+        is_active=bool(product.is_active),
+        parent_code=product.parent_code,
+        children_code=product.children_code,
+        group_key=group_key or str(product.code),
+        group_index=group_index,
+        is_group_main=is_group_main,
+        hide_group_metrics=hide_group_metrics,
     )
 
 
@@ -216,6 +380,8 @@ async def collect_deficit_rows(
     unit: Unit = "шт",
     product_codes: list[int] | None = None,
 ) -> list[DeficitRow]:
+    if product_codes:
+        product_codes = await _expand_family_codes(db, product_codes)
     today = date.today()
     conditions = [
         Normative.deleted_at.is_(None),
@@ -345,6 +511,16 @@ async def collect_deficit_rows(
                 "expiry_date": None,
             }
 
+    products_by_code = {
+        bucket["product"].code: bucket["product"] for bucket in aggregated.values()
+    }
+    if any(
+        product.parent_code or product.children_code
+        for product in products_by_code.values()
+    ):
+        products_by_code = await _load_product_map(db, set(products_by_code))
+        await _expand_related_members(db, aggregated, balances, products_by_code)
+
     plant_ids = {resolve_plant_id(bucket["product"]) for bucket in aggregated.values()}
     plants = await _load_plants(db, plant_ids)
     warehouse_codes_used = {bucket["warehouse"].code for bucket in aggregated.values()}
@@ -357,45 +533,111 @@ async def collect_deficit_rows(
         )
         long_distance_by_code = {code: bool(flag) for code, flag in flags.all()}
 
+    member_to_main = _member_to_main(products_by_code)
+    groups: dict[tuple[int, int], list[tuple[int, int]]] = defaultdict(list)
+    for warehouse_code_key, product_code in aggregated:
+        main_code = member_to_main.get(product_code, product_code)
+        groups[(warehouse_code_key, main_code)].append(
+            (warehouse_code_key, product_code)
+        )
+
     rows: list[DeficitRow] = []
-    for warehouse_code_key, product_code in sorted(aggregated):
-        bucket = aggregated[(warehouse_code_key, product_code)]
-        product: Product = bucket["product"]
-        warehouse: Object = bucket["warehouse"]
-        balance = balances.get((warehouse_code_key, product_code))
-        available_pcs = (
-            to_pieces(balance.available, balance.unit, product.weight_kg)
-            if balance is not None
-            else Decimal("0")
+    group_index_by_warehouse: dict[int, int] = defaultdict(int)
+    for warehouse_code_key, main_code in sorted(groups):
+        member_keys = sorted(
+            groups[(warehouse_code_key, main_code)],
+            key=lambda item: (0 if item[1] == main_code else 1, item[1]),
         )
-        plan_pcs = (
-            to_pieces(balance.plan, balance.unit, product.weight_kg)
-            if balance is not None
-            else Decimal("0")
+        group_normative_pcs = sum(
+            (aggregated[key]["normative_pcs"] for key in member_keys),
+            Decimal("0"),
         )
-        plant = plants.get(resolve_plant_id(product))
-        row = _convert_row(
-            warehouse=warehouse,
-            product=product,
-            plant_name=plant.name if plant else f"Завод {resolve_plant_id(product)}",
-            normative_pcs=bucket["normative_pcs"],
-            available_pcs=available_pcs,
-            plan_pcs=plan_pcs,
-            unit=unit,
-            client_name=", ".join(bucket["clients"]),
-            expiry_date=bucket["expiry_date"],
-            stock_unit=(
-                _normalize_stock_unit(balance.unit) if balance is not None else "ШТ"
-            ),
-            long_distance=long_distance_by_code.get(
-                warehouse.code, bool(warehouse.long_distance)
-            ),
+        group_plan_pcs = Decimal("0")
+        group_clients: list[str] = []
+        group_expiry: date | None = None
+        for key in member_keys:
+            bucket = aggregated[key]
+            product = bucket["product"]
+            balance = balances.get(key)
+            if balance is not None:
+                group_plan_pcs += to_pieces(
+                    balance.plan, balance.unit, product.weight_kg
+                )
+            for client_name in bucket["clients"]:
+                if client_name and client_name not in group_clients:
+                    group_clients.append(client_name)
+            expiry = bucket["expiry_date"]
+            if expiry is not None and (group_expiry is None or expiry < group_expiry):
+                group_expiry = expiry
+
+        main_bucket = aggregated.get(
+            (warehouse_code_key, main_code), aggregated[member_keys[0]]
         )
-        if filter_mode == "deficit_only" and row.deficit <= 0:
+        main_product: Product = main_bucket["product"]
+        main_warehouse: Object = main_bucket["warehouse"]
+        is_remote = long_distance_by_code.get(
+            main_warehouse.code, bool(main_warehouse.long_distance)
+        )
+        group_requirement_pcs = calculate_requirement(
+            group_normative_pcs, main_product.category, is_remote
+        )
+        group_deficit_pcs = group_requirement_pcs - group_plan_pcs
+        if filter_mode == "with_normatives" and group_normative_pcs <= 0:
             continue
-        if filter_mode == "with_normatives" and bucket["normative_pcs"] <= 0:
+        if filter_mode == "deficit_only" and group_deficit_pcs <= 0:
             continue
-        rows.append(row)
+
+        group_index = group_index_by_warehouse[warehouse_code_key]
+        group_index_by_warehouse[warehouse_code_key] += 1
+        grouped = len(member_keys) > 1
+
+        for key in member_keys:
+            bucket = aggregated[key]
+            product = bucket["product"]
+            warehouse: Object = bucket["warehouse"]
+            balance = balances.get(key)
+            available_pcs = (
+                to_pieces(balance.available, balance.unit, product.weight_kg)
+                if balance is not None
+                else Decimal("0")
+            )
+            plan_pcs = (
+                to_pieces(balance.plan, balance.unit, product.weight_kg)
+                if balance is not None
+                else Decimal("0")
+            )
+            plant = plants.get(resolve_plant_id(product))
+            is_main = product.code == main_code
+            rows.append(
+                _convert_row(
+                    warehouse=warehouse,
+                    product=product,
+                    plant_name=(
+                        plant.name if plant else f"Завод {resolve_plant_id(product)}"
+                    ),
+                    normative_pcs=group_normative_pcs if is_main else Decimal("0"),
+                    available_pcs=available_pcs,
+                    plan_pcs=plan_pcs,
+                    unit=unit,
+                    client_name=", ".join(
+                        group_clients if is_main else bucket["clients"]
+                    ),
+                    expiry_date=group_expiry if is_main else bucket["expiry_date"],
+                    stock_unit=(
+                        _normalize_stock_unit(balance.unit)
+                        if balance is not None
+                        else "ШТ"
+                    ),
+                    long_distance=long_distance_by_code.get(
+                        warehouse.code, bool(warehouse.long_distance)
+                    ),
+                    deficit_plan_pcs=group_plan_pcs if is_main else Decimal("0"),
+                    group_key=str(main_code),
+                    group_index=group_index,
+                    is_group_main=is_main,
+                    hide_group_metrics=grouped and not is_main,
+                )
+            )
     return rows
 
 
@@ -415,6 +657,13 @@ def _to_deficit_item(row: DeficitRow) -> DeficitItem:
         status=row.status,
         stock_unit=row.stock_unit,
         weight_kg=row.weight_kg,
+        is_active=row.is_active,
+        parent_code=row.parent_code,
+        children_code=row.children_code,
+        group_key=row.group_key or str(row.product_code),
+        group_index=row.group_index,
+        is_group_main=row.is_group_main,
+        hide_group_metrics=row.hide_group_metrics,
     )
 
 
@@ -608,6 +857,8 @@ async def export_excel(
         ]
     )
     for row in rows:
+        if row.hide_group_metrics:
+            continue
         sheet.append(
             [
                 row.warehouse_name,

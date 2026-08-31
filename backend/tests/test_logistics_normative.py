@@ -335,7 +335,10 @@ async def test_dashboard_filter_deficit_only(
     codes = {item["product_code"] for item in warehouse["deficit_items"]}
     assert TEST_PRODUCT_DEFICIT in codes
     assert TEST_PRODUCT_OK not in codes
-    assert all(item["deficit"] > 0 for item in warehouse["deficit_items"])
+    assert all(
+        item["deficit"] > 0 or item.get("hide_group_metrics")
+        for item in warehouse["deficit_items"]
+    )
 
 
 async def test_dashboard_filter_all_includes_stock_without_normative(

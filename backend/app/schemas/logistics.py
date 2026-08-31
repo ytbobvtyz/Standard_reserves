@@ -36,6 +36,13 @@ class DeficitItem(BaseModel):
     status: Literal["warning", "ok"]
     stock_unit: str = "ШТ"
     weight_kg: DecimalNumber = Decimal("0")
+    is_active: bool = True
+    parent_code: int | None = None
+    children_code: int | None = None
+    group_key: str = ""
+    group_index: int = 0
+    is_group_main: bool = True
+    hide_group_metrics: bool = False
 
 
 class BalanceUploadError(BaseModel):

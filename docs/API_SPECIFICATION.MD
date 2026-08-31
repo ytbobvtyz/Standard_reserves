@@ -779,26 +779,54 @@ json
             "long_distance_message": null,
             "deficit_items": [
                 {
-                    "product_code": 10001,
+                    "product_code": 10004,
                     "product_name": "Подшипник 6204ZZ",
                     "category": "A",
                     "normative_quantity": 1000,
                     "requirement": 1000,
+                    "available": 100,
+                    "plan": 100,
+                    "unit": "шт",
+                    "deficit": 300,
+                    "client_name": "ООО 'Ромашка'",
+                    "expiry_date": "2026-12-31",
+                    "status": "warning",
+                    "is_active": true,
+                    "parent_code": 10001,
+                    "children_code": null,
+                    "group_key": "10004",
+                    "group_index": 0,
+                    "is_group_main": true,
+                    "hide_group_metrics": false
+                },
+                {
+                    "product_code": 10001,
+                    "product_name": "Подшипник 6204ZZ (стар.)",
+                    "category": "A",
+                    "normative_quantity": 0,
+                    "requirement": 0,
                     "available": 600,
                     "plan": 600,
                     "unit": "шт",
-                    "deficit": 400,
+                    "deficit": 0,
                     "client_name": "ООО 'Ромашка'",
                     "expiry_date": "2026-12-31",
-                    "status": "warning"
+                    "status": "ok",
+                    "is_active": false,
+                    "parent_code": null,
+                    "children_code": 10004,
+                    "group_key": "10004",
+                    "group_index": 0,
+                    "is_group_main": false,
+                    "hide_group_metrics": true
                 }
             ],
-            "total_deficit": 400,
+            "total_deficit": 300,
             "deficit_count": 1
         }
     ],
     "summary": {
-        "total_deficit": 400,
+        "total_deficit": 300,
         "deficit_warehouses": 1,
         "deficit_products": 1
     }
@@ -808,7 +836,15 @@ json
 
 `requirement` (Потребность) = `normative_quantity` × коэффициент категории (A=1, B=1.5, C=2) × коэффициент удалённости (`long_distance` false=1, true=1.5).
 
-`deficit` = `requirement` − `plan`.
+Родственные артикулы (`parent_code` / `children_code`) на одном складе склеиваются в группу:
+
+- главный — `is_active = true` и `children_code IS NULL`, идёт первым (`is_group_main: true`);
+- у главного `normative_quantity` / `requirement` — сумма по группе; `available` / `plan` — только свои;
+- `deficit` главного = потребность группы − сумма `plan` всех членов группы;
+- у остальных `hide_group_metrics: true`: норматив, потребность и дефицит в ответе 0 (на UI скрыты), свои `available` и `plan` сохраняются;
+- `generate-orders` создаёт позицию только на главный артикул с групповым дефицитом.
+
+`deficit` одиночной позиции без родственников = `requirement` − `plan`, как раньше.
 
 Для склада с `long_distance = true` возвращаются `long_distance: true` и сообщение:
 
@@ -2255,6 +2291,6 @@ json
     "message": "Партия загрузки удалена"
 }
 
-Версия: 1.10
-Дата: 28.08.2026
+Версия: 1.11
+Дата: 31.08.2026
 Статус: Утверждена
