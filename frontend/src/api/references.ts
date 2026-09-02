@@ -35,6 +35,9 @@ export const referencesApi = {
   downloadProductsTemplate: () =>
     api.get<Blob>('/references/products/template', { responseType: 'blob' }),
 
+  exportProducts: (params?: ProductListParams) =>
+    api.get<Blob>('/references/products/export', { params, responseType: 'blob' }),
+
   uploadProducts: (file: File, onProgress?: (percent: number) => void) => {
     const form = new FormData()
     form.append('file', file)

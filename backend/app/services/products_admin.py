@@ -4,10 +4,10 @@ import re
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
-from typing import Any
+from typing import Any, Literal
 
 from openpyxl import Workbook, load_workbook
-from sqlalchemy import exists, select
+from sqlalchemy import String, cast, exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -40,6 +40,22 @@ TEMPLATE_HEADERS = [
     "plant_id",
     "weight_kg",
 ]
+EXPORT_HEADERS = [
+    "code",
+    "name",
+    "category",
+    "weight_kg",
+    "gtin",
+    "is_active",
+    "parent_code",
+    "children_code",
+    "plant_id",
+    "second_plant_id",
+    "third_plant_id",
+    "mark_control",
+    "last_modified_at",
+    "last_modified_by",
+]
 EXAMPLE_ROW = [
     10020,
     "Подшипник 6205ZZ",
@@ -52,6 +68,72 @@ EXAMPLE_ROW = [
     1001,
     0.25,
 ]
+
+
+def product_list_conditions(
+    *,
+    search: str | None = None,
+    gtin: str | None = None,
+    category: Literal["A", "B", "C"] | None = None,
+    is_active: bool | None = None,
+    include_analogs: bool = False,
+) -> tuple[list, int | None]:
+    conditions = [Product.deleted_at.is_(None)]
+    exact_code: int | None = None
+    if search:
+        normalized_search = search.strip()
+        term = f"%{normalized_search}%"
+        search_filters = [
+            Product.name.ilike(term),
+            cast(Product.code, String).ilike(term),
+        ]
+        if normalized_search.isdigit():
+            exact_code = int(normalized_search)
+            search_filters.append(Product.code == exact_code)
+        conditions.append(or_(*search_filters))
+    if gtin and gtin.strip():
+        conditions.append(Product.gtin.ilike(f"%{gtin.strip()}%"))
+    if category:
+        conditions.append(Product.category == category)
+    if is_active is not None:
+        if include_analogs and is_active and exact_code is not None:
+            conditions.append(
+                or_(Product.is_active.is_(True), Product.code == exact_code)
+            )
+        else:
+            conditions.append(Product.is_active == is_active)
+    return conditions, exact_code
+
+
+def build_export_xlsx(products: list[Product]) -> bytes:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "products"
+    sheet.append(EXPORT_HEADERS)
+    for product in products:
+        sheet.append(
+            [
+                product.code,
+                product.name,
+                product.category.strip() if product.category else None,
+                float(product.weight_kg) if product.weight_kg is not None else None,
+                product.gtin,
+                bool(product.is_active),
+                product.parent_code,
+                product.children_code,
+                product.plant_id,
+                product.second_plant_id,
+                product.third_plant_id,
+                bool(product.mark_control),
+                product.last_modified_at.astimezone(UTC).replace(tzinfo=None)
+                if product.last_modified_at
+                else None,
+                str(product.last_modified_by) if product.last_modified_by else None,
+            ]
+        )
+    buffer = BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
 
 
 def build_template_xlsx() -> bytes:

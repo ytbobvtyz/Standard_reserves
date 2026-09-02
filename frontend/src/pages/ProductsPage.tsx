@@ -33,7 +33,7 @@ import type {
 } from '../api/types'
 import { ProductAutocomplete } from '../components/requests/ProductAutocomplete'
 import { useAuthStore } from '../stores/auth'
-import { downloadBlob } from '../utils/download'
+import { downloadBlob, filenameFromContentDisposition } from '../utils/download'
 import { formatDateTime } from '../utils/format'
 
 const PRODUCT_MANAGERS = new Set(['pp', 'economist', 'logistics'])
@@ -47,9 +47,11 @@ export function ProductsPage() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
+  const [gtin, setGtin] = useState('')
   const [category, setCategory] = useState<'A' | 'B' | 'C' | undefined>()
   const [page, setPage] = useState(1)
   const [error, setError] = useState<string | null>(null)
+  const [exporting, setExporting] = useState(false)
   const limit = 10
 
   const [uploadOpen, setUploadOpen] = useState(false)
@@ -71,6 +73,7 @@ export function ProductsPage() {
     try {
       const { data } = await referencesApi.getProducts({
         search: search || undefined,
+        gtin: gtin || undefined,
         category,
         page,
         limit,
@@ -82,7 +85,7 @@ export function ProductsPage() {
     } finally {
       setLoading(false)
     }
-  }, [search, category, page])
+  }, [search, gtin, category, page])
 
   useEffect(() => {
     void load()
@@ -96,6 +99,25 @@ export function ProductsPage() {
       setPlants(data.data)
     })
   }, [canManage])
+
+  const exportProducts = async () => {
+    setExporting(true)
+    try {
+      const { data, headers } = await referencesApi.exportProducts({
+        search: search || undefined,
+        gtin: gtin || undefined,
+        category,
+      })
+      const filename =
+        filenameFromContentDisposition(headers['content-disposition']) ??
+        `products_export_${new Date().toISOString().slice(0, 10)}.xlsx`
+      downloadBlob(data, filename)
+    } catch (err) {
+      message.error(getApiErrorMessage(err, 'Не удалось выгрузить продукты'))
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const downloadTemplate = async () => {
     try {
@@ -268,6 +290,15 @@ export function ProductsPage() {
             setSearch(value)
           }}
         />
+        <Input.Search
+          allowClear
+          placeholder="Поиск по GTIN"
+          style={{ width: 220 }}
+          onSearch={(value) => {
+            setPage(1)
+            setGtin(value.trim())
+          }}
+        />
         <Select
           allowClear
           placeholder="Категория"
@@ -283,6 +314,13 @@ export function ProductsPage() {
             { value: 'C', label: 'C' },
           ]}
         />
+        <Button
+          icon={<DownloadOutlined aria-hidden />}
+          loading={exporting}
+          onClick={() => void exportProducts()}
+        >
+          Выгрузить в Excel
+        </Button>
         {canManage ? (
           <>
             <Button icon={<DownloadOutlined aria-hidden />} onClick={() => void downloadTemplate()}>

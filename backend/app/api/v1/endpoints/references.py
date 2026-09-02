@@ -1,8 +1,9 @@
+from datetime import date
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 from fastapi.responses import Response
-from sqlalchemy import String, cast, func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -32,6 +33,7 @@ from app.schemas.reference import (
     UserReference,
 )
 from app.services import objects_admin, products_admin
+from app.services.products_admin import product_list_conditions
 from app.services.references import (
     expand_with_analogs,
     to_object_list_item,
@@ -47,6 +49,7 @@ OBJECT_MANAGERS = require_roles("logistics")
 @router.get("/products", response_model=PaginatedResponse[list[ProductListItem]])
 async def list_products(
     search: str | None = Query(default=None),
+    gtin: str | None = Query(default=None),
     category: Literal["A", "B", "C"] | None = Query(default=None),
     is_active: bool | None = Query(default=None),
     include_analogs: bool = Query(default=False),
@@ -55,30 +58,13 @@ async def list_products(
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> PaginatedResponse[list[ProductListItem]]:
-    conditions = [Product.deleted_at.is_(None)]
-    exact_code: int | None = None
-    if search:
-        normalized_search = search.strip()
-        term = f"%{normalized_search}%"
-        search_filters = [
-            Product.name.ilike(term),
-            cast(Product.code, String).ilike(term),
-        ]
-        if normalized_search.isdigit():
-            exact_code = int(normalized_search)
-            search_filters.append(Product.code == exact_code)
-        conditions.append(or_(*search_filters))
-    if category:
-        conditions.append(Product.category == category)
-    if is_active is not None:
-        if include_analogs and is_active and exact_code is not None:
-            # An inactive exact match must remain a traversal seed so its active
-            # replacements can be returned as analogs.
-            conditions.append(
-                or_(Product.is_active.is_(True), Product.code == exact_code)
-            )
-        else:
-            conditions.append(Product.is_active == is_active)
+    conditions, _exact_code = product_list_conditions(
+        search=search,
+        gtin=gtin,
+        category=category,
+        is_active=is_active,
+        include_analogs=include_analogs,
+    )
 
     total = await db.scalar(
         select(func.count()).select_from(Product).where(*conditions)
@@ -118,6 +104,35 @@ async def download_products_template(
         headers={
             "Content-Disposition": 'attachment; filename="products_template.xlsx"'
         },
+    )
+
+
+@router.get("/products/export")
+async def export_products(
+    search: str | None = Query(default=None),
+    gtin: str | None = Query(default=None),
+    category: Literal["A", "B", "C"] | None = Query(default=None),
+    is_active: bool | None = Query(default=None),
+    _user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    conditions, _ = product_list_conditions(
+        search=search,
+        gtin=gtin,
+        category=category,
+        is_active=is_active,
+    )
+    result = await db.execute(
+        select(Product).where(*conditions).order_by(Product.code)
+    )
+    content = products_admin.build_export_xlsx(list(result.scalars().all()))
+    filename = f"products_export_{date.today().isoformat()}.xlsx"
+    return Response(
+        content=content,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

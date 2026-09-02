@@ -1333,6 +1333,7 @@ json
 |-------|----------|----------|-------|
 | GET | `/references/products` | Список продуктов | все авторизованные |
 | GET | `/references/products/{code}` | Карточка продукта | все авторизованные |
+| GET | `/references/products/export` | Выгрузить продукты в Excel | все авторизованные |
 | GET | `/references/products/template` | Скачать Excel-шаблон | pp, economist, logistics |
 | POST | `/references/products/upload` | Загрузить продукты из Excel | pp, economist, logistics |
 | GET | `/references/products/{code}/edit` | Получить продукт для редактирования | pp, economist, logistics |
@@ -1363,6 +1364,7 @@ Query параметры:
 
 Параметр	Тип	Описание
 search	string	Поиск по коду или названию
+gtin	string	Поиск по GTIN (ILIKE, частичное совпадение)
 category	string	A/B/C
 is_active	boolean	Только активные
 include_analogs	boolean	Если true — к найденным продуктам добавить активные аналоги по цепочке parent_code/children_code
@@ -1554,6 +1556,22 @@ Authorization: Bearer <token>
 Response (200): файл application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
 
 Колонки шаблона: code, name, status, children_code, parent_code, category, mark_control, gtin, plant_id, weight_kg
+
+8.5.1. Выгрузить продукты в Excel
+text
+GET /references/products/export
+Headers:
+
+text
+Authorization: Bearer <token>
+Права: все авторизованные
+
+Query параметры те же, что у списка (`search`, `gtin`, `category`, `is_active`). Пагинация не применяется — выгружаются все совпадения.
+
+Response (200): файл `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
+`Content-Disposition: attachment; filename="products_export_YYYY-MM-DD.xlsx"`
+
+Колонки: code, name, category, weight_kg, gtin, is_active, parent_code, children_code, plant_id, second_plant_id, third_plant_id, mark_control, last_modified_at, last_modified_by
 
 8.6. Загрузить продукты из Excel
 text
@@ -2085,13 +2103,13 @@ json
 Логистика разовые	list, initiators, clients, export, execute	5
 Нормативы	/normatives, on-date, calculate	3
 Продукты (related)	/products/{code}/related	1
-Справочники продукты	list, template, upload, get, edit, put, delete	7
+Справочники продукты	list, export, template, upload, get, edit, put, delete	8
 Справочники объекты	list, create, get, edit, put, delete	6
 Справочники пользователи	/references/users	1
 Справочники подразделения	/references/departments	1
 Администрирование	/admin/users, /admin/users/{id}, reset-password, /admin/departments	10
 Партии нормативов	/production-requests, template, upload, dates, delete	5
-ИТОГО реализовано		~62
+ИТОГО реализовано		~63
 Не реализовано (задел)	/inventory/*, /tariffs/*, /agent/*, /auth/register	—
 14.2. Ролевой доступ
 Роль	Доступные эндпоинты
@@ -2291,6 +2309,6 @@ json
     "message": "Партия загрузки удалена"
 }
 
-Версия: 1.11
+Версия: 1.12
 Дата: 31.08.2026
 Статус: Утверждена

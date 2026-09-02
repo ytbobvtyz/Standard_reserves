@@ -1,5 +1,7 @@
 from httpx import AsyncClient
 
+from app.core.database import AsyncSessionLocal
+from app.models.product import Product
 from tests.conftest import AuthUser, auth_header, login_token
 
 
@@ -36,6 +38,39 @@ async def test_products_search(
     names = [item["name"].lower() for item in response.json()["data"]]
     assert names
     assert all("подшипник" in name for name in names)
+
+
+async def test_products_search_by_gtin(
+    client: AsyncClient, test_user: AuthUser, catalog: dict[str, int]
+) -> None:
+    gtin = "4609988776655"
+    async with AsyncSessionLocal() as session:
+        product = await session.get(Product, catalog["product_code"])
+        assert product is not None
+        product.gtin = gtin
+        await session.commit()
+    token = await login_token(client, test_user)
+    partial = await client.get(
+        "/api/v1/references/products",
+        headers=auth_header(token),
+        params={"gtin": "4609988"},
+    )
+    assert partial.status_code == 200, partial.text
+    codes = {item["code"] for item in partial.json()["data"]}
+    assert catalog["product_code"] in codes
+    assert all(
+        (item.get("gtin") or "").find("4609988") >= 0
+        for item in partial.json()["data"]
+    )
+
+    exact = await client.get(
+        "/api/v1/references/products",
+        headers=auth_header(token),
+        params={"gtin": gtin},
+    )
+    assert exact.status_code == 200, exact.text
+    exact_codes = {item["code"] for item in exact.json()["data"]}
+    assert catalog["product_code"] in exact_codes
 
 
 async def test_product_by_code(

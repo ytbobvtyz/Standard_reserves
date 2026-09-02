@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 from io import BytesIO
 
@@ -107,6 +108,67 @@ async def test_template_download_for_pp(
     ]
     assert "plant_id" in headers
     assert "weight_kg" in headers
+
+
+async def test_products_export_allowed_for_commercial(
+    client: AsyncClient, test_user: AuthUser, catalog: dict[str, int]
+) -> None:
+    token = await login_token(client, test_user)
+    response = await client.get(
+        "/api/v1/references/products/export",
+        headers=auth_header(token),
+        params={"search": "подшипник"},
+    )
+    assert response.status_code == 200, response.text
+    assert "spreadsheetml" in response.headers["content-type"]
+    filename = f'filename="products_export_{date.today().isoformat()}.xlsx"'
+    assert filename in response.headers.get("content-disposition", "")
+    workbook = load_workbook(BytesIO(response.content))
+    headers = [cell.value for cell in next(workbook.active.iter_rows(max_row=1))]
+    assert headers == [
+        "code",
+        "name",
+        "category",
+        "weight_kg",
+        "gtin",
+        "is_active",
+        "parent_code",
+        "children_code",
+        "plant_id",
+        "second_plant_id",
+        "third_plant_id",
+        "mark_control",
+        "last_modified_at",
+        "last_modified_by",
+    ]
+    rows = list(workbook.active.iter_rows(min_row=2, values_only=True))
+    assert rows
+    codes = {row[0] for row in rows}
+    assert catalog["product_code"] in codes
+    assert catalog["product_code_2"] not in codes
+
+
+async def test_products_export_filters_by_gtin(
+    client: AsyncClient, test_user: AuthUser, catalog: dict[str, int]
+) -> None:
+    gtin = "4601122334455"
+    async with AsyncSessionLocal() as session:
+        product = await session.get(Product, catalog["product_code"])
+        assert product is not None
+        product.gtin = gtin
+        await session.commit()
+    token = await login_token(client, test_user)
+    response = await client.get(
+        "/api/v1/references/products/export",
+        headers=auth_header(token),
+        params={"gtin": gtin},
+    )
+    assert response.status_code == 200, response.text
+    workbook = load_workbook(BytesIO(response.content))
+    rows = list(workbook.active.iter_rows(min_row=2, values_only=True))
+    assert rows
+    assert all(row[4] and gtin in str(row[4]) for row in rows)
+    assert catalog["product_code"] in {row[0] for row in rows}
 
 
 async def test_template_allowed_for_economist_and_logistics(

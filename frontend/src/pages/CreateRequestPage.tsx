@@ -1,4 +1,5 @@
 import {
+  Alert,
   Button,
   Card,
   DatePicker,
@@ -41,6 +42,9 @@ import {
   formatRequirementQty,
   requirementTooltip,
 } from '../utils/requirement'
+
+const PALLET_NORM_HINT =
+  'Пополнение возможно только кратно поддонной норме. Если вы укажете количество не кратное поддонной норме, перемещение будет выдано с округлением вашей потребности до поддонной нормы'
 
 interface ItemFormValue {
   product_code?: number
@@ -306,6 +310,12 @@ export function CreateRequestPage() {
             </Form.Item>
           ) : null}
           <Typography.Title level={5}>Позиции</Typography.Title>
+          <Alert
+            type="info"
+            showIcon
+            message={PALLET_NORM_HINT}
+            style={{ marginBottom: 12 }}
+          />
           <Form.List
             name="items"
             rules={[

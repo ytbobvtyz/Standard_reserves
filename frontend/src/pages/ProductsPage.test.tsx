@@ -24,6 +24,7 @@ const getProductForEdit = vi.fn()
 const updateProduct = vi.fn()
 const deleteProduct = vi.fn()
 const downloadProductsTemplate = vi.fn()
+const exportProducts = vi.fn()
 const uploadProducts = vi.fn()
 const getObjects = vi.fn()
 const getProduct = vi.fn()
@@ -35,9 +36,21 @@ vi.mock('../api/references', () => ({
     updateProduct: (...args: unknown[]) => updateProduct(...args),
     deleteProduct: (...args: unknown[]) => deleteProduct(...args),
     downloadProductsTemplate: (...args: unknown[]) => downloadProductsTemplate(...args),
+    exportProducts: (...args: unknown[]) => exportProducts(...args),
     uploadProducts: (...args: unknown[]) => uploadProducts(...args),
     getObjects: (...args: unknown[]) => getObjects(...args),
     getProduct: (...args: unknown[]) => getProduct(...args),
+  },
+}))
+
+vi.mock('../utils/download', () => ({
+  downloadBlob: vi.fn(),
+  filenameFromContentDisposition: (header?: string) => {
+    if (!header) {
+      return null
+    }
+    const match = /filename="?([^";]+)"?/i.exec(header)
+    return match?.[1] ?? null
   },
 }))
 
@@ -62,6 +75,7 @@ describe('ProductsPage', () => {
     updateProduct.mockReset()
     deleteProduct.mockReset()
     downloadProductsTemplate.mockReset()
+    exportProducts.mockReset()
     uploadProducts.mockReset()
     getObjects.mockReset()
     getProduct.mockReset()
@@ -118,6 +132,12 @@ describe('ProductsPage', () => {
     downloadProductsTemplate.mockResolvedValue({
       data: new Blob(['xlsx']),
     })
+    exportProducts.mockResolvedValue({
+      data: new Blob(['xlsx']),
+      headers: {
+        'content-disposition': 'attachment; filename="products_export_2026-08-31.xlsx"',
+      },
+    })
     uploadProducts.mockResolvedValue({
       data: {
         status: 'success',
@@ -143,6 +163,8 @@ describe('ProductsPage', () => {
     await waitFor(() => {
       expect(screen.getByText('Подшипник 6204ZZ')).toBeTruthy()
     })
+    expect(screen.getByRole('button', { name: /Выгрузить в Excel/ })).toBeTruthy()
+    expect(screen.getByPlaceholderText('Поиск по GTIN')).toBeTruthy()
     expect(screen.getByRole('button', { name: /Выгрузить шаблон/ })).toBeTruthy()
     expect(screen.getByRole('button', { name: /Загрузить из Excel/ })).toBeTruthy()
     expect(screen.getByText('GTIN')).toBeTruthy()
@@ -164,6 +186,34 @@ describe('ProductsPage', () => {
     expect(screen.queryByRole('button', { name: /Выгрузить шаблон/ })).toBeNull()
     expect(screen.queryByRole('button', { name: /Загрузить из Excel/ })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Редактировать' })).toBeNull()
+    expect(screen.getByRole('button', { name: /Выгрузить в Excel/ })).toBeTruthy()
+    expect(screen.getByPlaceholderText('Поиск по GTIN')).toBeTruthy()
+  })
+
+  it('searches by GTIN and exports filtered products', async () => {
+    render(
+      <MemoryRouter>
+        <ProductsPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByText('Подшипник 6204ZZ')).toBeTruthy()
+    })
+    fireEvent.change(screen.getByPlaceholderText('Поиск по GTIN'), {
+      target: { value: '460123' },
+    })
+    fireEvent.click(document.querySelectorAll('.ant-input-search-button')[1] as HTMLElement)
+    await waitFor(() => {
+      expect(getProducts).toHaveBeenCalledWith(
+        expect.objectContaining({ gtin: '460123' }),
+      )
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Выгрузить в Excel/ }))
+    await waitFor(() => {
+      expect(exportProducts).toHaveBeenCalledWith(
+        expect.objectContaining({ gtin: '460123' }),
+      )
+    })
   })
 
   it('opens upload modal and shows report', async () => {

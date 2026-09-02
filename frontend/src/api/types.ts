@@ -286,6 +286,7 @@ export interface DepartmentListItem {
 
 export interface ProductListParams {
   search?: string
+  gtin?: string
   category?: 'A' | 'B' | 'C'
   is_active?: boolean
   include_analogs?: boolean

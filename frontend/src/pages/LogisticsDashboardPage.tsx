@@ -340,9 +340,9 @@ export function LogisticsDashboardPage() {
       render: (value: number) => <QuantityCell value={value} unit={unit} />,
     },
     {
-      title: 'Запланировано',
+      title: 'Доступно + Запланировано',
       dataIndex: 'plan',
-      width: 140,
+      width: 210,
       render: (value: number) => <QuantityCell value={value} unit={unit} />,
     },
     {
@@ -517,7 +517,7 @@ export function LogisticsDashboardPage() {
             {' · '}Всего потребность: {formatQty(totals.requirement, unit)} {unit}
             {' · '}Всего доступно:{' '}
             <QuantityCell value={totals.available} unit={unit} /> {unit}
-            {' · '}Всего запланировано:{' '}
+            {' · '}Всего доступно + запланировано:{' '}
             <QuantityCell value={totals.plan} unit={unit} /> {unit}
           </Typography.Text>
         </Space>
@@ -638,7 +638,7 @@ export function LogisticsDashboardPage() {
                         {' · '}потребность: {formatQty(totalRequirement, unit)} {unit}
                         {' · '}доступно:{' '}
                         <QuantityCell value={totalAvailable} unit={unit} /> {unit}
-                        {' · '}запланировано:{' '}
+                        {' · '}доступно + запланировано:{' '}
                         <QuantityCell value={totalPlan} unit={unit} /> {unit}
                       </Typography.Text>
                     </Space>
