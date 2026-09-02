@@ -141,7 +141,7 @@ services:
     environment:
       DOMAIN: ${DOMAIN:-localhost}
     volumes:
-      - ./certs:/etc/nginx/certs
+      - ${CERTS_DIR:-./certs}:/etc/nginx/certs
     depends_on:
       backend:
         condition: service_healthy

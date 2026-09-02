@@ -1,0 +1,82 @@
+name: Deploy production
+
+on:
+  workflow_run:
+    workflows: ["CI/CD"]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to production
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: [self-hosted, standart-reserve-prod]
+    environment: production
+    timeout-minutes: 45
+    env:
+      SERVER_ENV_DIR: /opt/standart-reserve
+
+    steps:
+      - name: Checkout release commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+          clean: true
+
+      - name: Attach server secrets
+        run: |
+          set -euo pipefail
+          if [ ! -f "${SERVER_ENV_DIR}/.env" ]; then
+            echo "::error::Нет ${SERVER_ENV_DIR}/.env. DevOps создаёт его скриптом deploy/install-runner.sh."
+            exit 1
+          fi
+          if grep -Eq '^POSTGRES_PASSWORD=(change-me-strong-password)?$' "${SERVER_ENV_DIR}/.env"; then
+            echo "::error::В ${SERVER_ENV_DIR}/.env не задан POSTGRES_PASSWORD."
+            exit 1
+          fi
+          ln -sfn "${SERVER_ENV_DIR}/.env" .env
+          mkdir -p "${SERVER_ENV_DIR}/certs"
+
+      - name: Deploy stack
+        run: |
+          set -euo pipefail
+          if docker compose up -h 2>&1 | grep -q -- '--wait'; then
+            docker compose -f docker-compose.prod.yml up -d --build --remove-orphans --wait --wait-timeout 180
+          else
+            docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+          fi
+
+      - name: Health check
+        run: |
+          set -euo pipefail
+          HTTP_PORT=80
+          val="$(grep -E '^HTTP_PORT=' "${SERVER_ENV_DIR}/.env" | tail -1 | cut -d= -f2- | tr -d '\"' | tr -d "'" || true)"
+          [ -n "${val}" ] && HTTP_PORT="${val}"
+          for _ in $(seq 1 20); do
+            if curl -fsS "http://127.0.0.1:${HTTP_PORT}/health"; then
+              echo
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "::error::Healthcheck не прошёл: http://127.0.0.1:${HTTP_PORT}/health"
+          docker compose -f docker-compose.prod.yml ps
+          docker compose -f docker-compose.prod.yml logs --tail=80
+          exit 1
+
+      - name: Remove dangling images
+        if: success()
+        continue-on-error: true
+        run: docker image prune -f

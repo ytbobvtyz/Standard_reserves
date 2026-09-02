@@ -74,28 +74,9 @@ HTTP (порт 80) перенаправляет на HTTPS, кроме `/health`
 
 ### Деплой на сервер
 
-1. Установите Docker и Docker Compose.
-2. Скопируйте репозиторий на сервер.
-3. Создайте `.env` из `.env.example`. Задайте:
-   - `POSTGRES_PASSWORD` — сильный пароль БД
-   - `DATABASE_URL` — тот же пользователь/пароль/БД
-   - `SECRET_KEY` — либо оставьте пустым (автогенерация)
-   - `DOMAIN` — публичное имя хоста
-   - `BACKEND_CORS_ORIGINS` — только доверенные HTTPS-источники, без `*`
-   - `DEBUG=false`, `LOG_LEVEL=INFO`
-4. Положите TLS-сертификаты в `certs/` (или оставьте каталог пустым для self-signed).
-5. Запустите стек:
+Боевой выкат: **push в `main`** → зелёный CI → self-hosted runner на сервере. Пошагово для разработчика и DevOps: **[docs/DEPLOY.md](docs/DEPLOY.md)**.
 
-   ```bash
-docker-compose -f docker-compose.prod.yml up -d --build
-docker-compose -f docker-compose.prod.yml ps
-   ```
-
-6. Убедитесь, что сервисы в статусе **healthy**, затем проверьте:
-
-   ```bash
-   curl -I https://your-domain.com
-   ```
+Кратко: разработчик создаёт токен раннера в GitHub, DevOps один раз запускает `deploy/install-runner.sh`. Секреты остаются в `/opt/standart-reserve/.env` на сервере.
 
 Миграции Alembic применяются автоматически при старте backend (`RUN_MIGRATIONS=1`).
 
@@ -127,6 +108,8 @@ make backup
 ```
 standart-reserve/
 ├── .github/workflows/ci.yml
+├── .github/workflows/deploy.yml
+├── deploy/                  # Установка self-hosted runner
 ├── backend/                 # FastAPI
 ├── frontend/                # React + Vite
 ├── nginx/                   # Reverse proxy (HTTP→HTTPS)
@@ -165,13 +148,16 @@ standart-reserve/
 
 ## CI/CD
 
-GitHub Actions (`.github/workflows/ci.yml`):
+GitHub Actions:
 
-1. `lint-backend` — ruff + black
+1. `lint-backend` — ruff + black (`.github/workflows/ci.yml`)
 2. `lint-frontend` — ESLint
 3. `test-backend` / `test-frontend`
 4. `build` — сборка Docker-образов
-5. `deploy-dev` — автоматически при push в `develop`
+5. `deploy-dev` — при push в `develop` (GitHub-hosted)
+6. `deploy-prod` — после успешного CI на `main`, self-hosted runner (`.github/workflows/deploy.yml`)
+
+Настройка прод-деплоя: [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ## Документация
 
@@ -180,6 +166,7 @@ GitHub Actions (`.github/workflows/ci.yml`):
 - [API](docs/API_SPECIFICATION.MD)
 - [Фронтенд](docs/FRONTEND_SPEC.MD)
 - [План разработки](docs/MVP_ROADMAP.MD)
+- [Деплой на production](docs/DEPLOY.md)
 
 ## Контакты
 
