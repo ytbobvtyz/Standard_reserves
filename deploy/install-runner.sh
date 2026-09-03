@@ -3,6 +3,9 @@
 # Standalone: copy this file to the server. Does not need a git clone.
 set -euo pipefail
 
+# sudo/cron often have a short PATH; binaries live in /usr/bin.
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
+
 APP_DIR=/opt/standart-reserve
 RUNNER_DIR=/opt/actions-runner
 RUNNER_USER=github-runner
@@ -45,6 +48,20 @@ EOF
 
 log() { printf '[standart-reserve] %s\n' "$*"; }
 err() { printf '[standart-reserve] ОШИБКА: %s\n' "$*" >&2; exit 1; }
+
+# True if a binary is on PATH or in a standard directory.
+# Do not pass Debian package names here (e.g. ca-certificates has no such command).
+have_cmd() {
+  local name="$1"
+  if command -v "$name" >/dev/null 2>&1; then
+    return 0
+  fi
+  [ -x "/usr/bin/${name}" ] || [ -x "/bin/${name}" ] || [ -x "/usr/sbin/${name}" ] || [ -x "/sbin/${name}" ]
+}
+
+pkg_installed() {
+  have_cmd dpkg && dpkg -s "$1" >/dev/null 2>&1
+}
 
 need_root() {
   if [ "$(id -u)" -ne 0 ]; then
@@ -122,12 +139,16 @@ ensure_packages() {
   have_cmd curl || pkgs+=(curl)
   have_cmd tar || pkgs+=(tar)
   have_cmd gzip || pkgs+=(gzip)
-  have_cmd ca-certificates || pkgs+=(ca-certificates)
   have_cmd git || pkgs+=(git)
+  if ! pkg_installed ca-certificates && [ ! -d /etc/ssl/certs ]; then
+    pkgs+=(ca-certificates)
+  fi
   if [ "${#pkgs[@]}" -eq 0 ]; then
     return 0
   fi
-  have_cmd apt-get || err "Нужны пакеты: ${pkgs[*]}. Установите их и повторите."
+  if ! have_cmd apt-get; then
+    err "Нет apt-get, не могу поставить: ${pkgs[*]}. Установите их и повторите."
+  fi
   log "Устанавливаю пакеты: ${pkgs[*]}"
   apt-get update -y
   apt-get install -y --no-install-recommends "${pkgs[@]}"
