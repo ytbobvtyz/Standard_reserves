@@ -1,6 +1,6 @@
 """Drop create_normative_on_approve trigger from requests.
 
-Revision ID: 0018_drop_create_normative_trigger
+Revision ID: 0018_drop_normative_trigger
 Revises: 0017_production_requests
 Create Date: 2026-09-03
 """
@@ -9,7 +9,7 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "0018_drop_create_normative_trigger"
+revision: str = "0018_drop_normative_trigger"
 down_revision: str | Sequence[str] | None = "0017_production_requests"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
