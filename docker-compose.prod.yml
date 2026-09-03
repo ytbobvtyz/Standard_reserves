@@ -80,6 +80,11 @@ services:
       timeout: 5s
       start_period: 40s
       retries: 5
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.backend.rule=Host(`${DOMAIN}`) && PathPrefix(`/api`)"
+      - "traefik.http.services.backend.loadbalancer.server.port=8000"
+      - "traefik.http.routers.backend-health.rule=Host(`${DOMAIN}`) && PathPrefix(`/health`)"
     deploy:
       resources:
         limits:
@@ -90,6 +95,7 @@ services:
           memory: 256M
     networks:
       - standart-reserve
+      - traefik
     logging:
       driver: json-file
       options:
@@ -113,6 +119,10 @@ services:
       timeout: 5s
       start_period: 15s
       retries: 5
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.services.frontend.loadbalancer.server.port=80"
     deploy:
       resources:
         limits:
@@ -123,50 +133,7 @@ services:
           memory: 32M
     networks:
       - standart-reserve
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "5"
-
-  nginx:
-    build:
-      context: ./nginx
-      dockerfile: Dockerfile
-    image: standart-reserve-nginx:1.0.0
-    restart: unless-stopped
-    ports:
-      - "${HTTP_PORT:-80}:80"
-      - "${HTTPS_PORT:-443}:443"
-    environment:
-      DOMAIN: ${DOMAIN:-localhost}
-    volumes:
-      - ${CERTS_DIR:-./certs}:/etc/nginx/certs
-    depends_on:
-      backend:
-        condition: service_healthy
-      frontend:
-        condition: service_healthy
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "curl -fk https://127.0.0.1/health || curl -fs http://127.0.0.1/health",
-        ]
-      interval: 15s
-      timeout: 5s
-      start_period: 20s
-      retries: 5
-    deploy:
-      resources:
-        limits:
-          cpus: "0.50"
-          memory: 128M
-        reservations:
-          cpus: "0.10"
-          memory: 32M
-    networks:
-      - standart-reserve
+      - traefik
     logging:
       driver: json-file
       options:
@@ -223,3 +190,6 @@ volumes:
 networks:
   standart-reserve:
     driver: bridge
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:-traefik}

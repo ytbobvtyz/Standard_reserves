@@ -10,7 +10,7 @@ COMPOSE_TEST := $(COMPOSE) -f docker-compose.test.yml
 help:
 	@echo "Available commands:"
 	@echo "  make dev        Start development stack (hot-reload)"
-	@echo "  make up         Start production stack (HTTPS)"
+	@echo "  make up         Start production compose (Traefik ingress; no published 80/443)"
 	@echo "  make prod       Alias for make up"
 	@echo "  make down       Stop all containers"
 	@echo "  make logs       Follow development logs"
@@ -25,9 +25,11 @@ help:
 
 env:
 	@test -f .env || cp .env.example .env
-	@mkdir -p certs
 
 up: env
+	@docker network inspect $$(grep -E '^TRAEFIK_NETWORK=' .env 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" || true) >/dev/null 2>&1 \
+		|| docker network inspect traefik >/dev/null 2>&1 \
+		|| docker network create traefik
 	$(COMPOSE_PROD) up -d --build
 
 prod: up

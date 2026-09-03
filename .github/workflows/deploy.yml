@@ -26,6 +26,7 @@ jobs:
     timeout-minutes: 45
     env:
       SERVER_ENV_DIR: /opt/standart-reserve
+      COMPOSE_FILE: docker-compose.prod.yml
 
     steps:
       - name: Checkout release commit
@@ -38,42 +39,77 @@ jobs:
       - name: Attach server secrets
         run: |
           set -euo pipefail
-          if [ ! -f "${SERVER_ENV_DIR}/.env" ]; then
-            echo "::error::Нет ${SERVER_ENV_DIR}/.env. DevOps создаёт его скриптом deploy/install-runner.sh."
+          env_file="${SERVER_ENV_DIR}/.env"
+          if [ ! -f "${env_file}" ]; then
+            echo "::error::Нет ${env_file}. DevOps создаёт его скриптом deploy/install-runner.sh."
             exit 1
           fi
-          if grep -Eq '^POSTGRES_PASSWORD=(change-me-strong-password)?$' "${SERVER_ENV_DIR}/.env"; then
-            echo "::error::В ${SERVER_ENV_DIR}/.env не задан POSTGRES_PASSWORD."
+          if grep -Eq '^POSTGRES_PASSWORD=(change-me-strong-password)?$' "${env_file}"; then
+            echo "::error::В ${env_file} не задан POSTGRES_PASSWORD."
             exit 1
           fi
-          ln -sfn "${SERVER_ENV_DIR}/.env" .env
-          mkdir -p "${SERVER_ENV_DIR}/certs"
+          domain="$(grep -E '^DOMAIN=' "${env_file}" | tail -1 | cut -d= -f2- | tr -d '\"' | tr -d "'" || true)"
+          if [ -z "${domain}" ] || [ "${domain}" = "localhost" ]; then
+            echo "::error::В ${env_file} нужен боевой DOMAIN (Traefik маршрутизирует по Host)."
+            exit 1
+          fi
+          traefik_network="$(grep -E '^TRAEFIK_NETWORK=' "${env_file}" | tail -1 | cut -d= -f2- | tr -d '\"' | tr -d "'" || true)"
+          traefik_network="${traefik_network:-traefik}"
+          if ! docker network inspect "${traefik_network}" >/dev/null 2>&1; then
+            echo "::error::Нет Docker-сети ${traefik_network}. Traefik должен быть поднят на сервере до деплоя."
+            exit 1
+          fi
+          ln -sfn "${env_file}" .env
+          echo "DOMAIN=${domain}"
+          echo "TRAEFIK_NETWORK=${traefik_network}"
 
       - name: Deploy stack
         run: |
           set -euo pipefail
           if docker compose up -h 2>&1 | grep -q -- '--wait'; then
-            docker compose -f docker-compose.prod.yml up -d --build --remove-orphans --wait --wait-timeout 180
+            docker compose -f "${COMPOSE_FILE}" up -d --build --remove-orphans --wait --wait-timeout 180
           else
-            docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+            docker compose -f "${COMPOSE_FILE}" up -d --build --remove-orphans
           fi
 
       - name: Health check
         run: |
           set -euo pipefail
-          HTTP_PORT=80
-          val="$(grep -E '^HTTP_PORT=' "${SERVER_ENV_DIR}/.env" | tail -1 | cut -d= -f2- | tr -d '\"' | tr -d "'" || true)"
-          [ -n "${val}" ] && HTTP_PORT="${val}"
-          for _ in $(seq 1 20); do
-            if curl -fsS "http://127.0.0.1:${HTTP_PORT}/health"; then
-              echo
-              exit 0
-            fi
-            sleep 3
-          done
-          echo "::error::Healthcheck не прошёл: http://127.0.0.1:${HTTP_PORT}/health"
-          docker compose -f docker-compose.prod.yml ps
-          docker compose -f docker-compose.prod.yml logs --tail=80
+          env_file="${SERVER_ENV_DIR}/.env"
+          domain="$(grep -E '^DOMAIN=' "${env_file}" | tail -1 | cut -d= -f2- | tr -d '\"' | tr -d "'" || true)"
+
+          echo "Проверка backend в контейнере..."
+          docker compose -f "${COMPOSE_FILE}" exec -T backend curl -fsS http://localhost:8000/health
+          echo
+
+          echo "Проверка ingress Traefik (${domain})..."
+          if curl -fskS --connect-timeout 5 --max-time 15 "https://${domain}/health"; then
+            echo
+            exit 0
+          fi
+          if curl -fsS --connect-timeout 5 --max-time 15 "http://${domain}/health"; then
+            echo
+            exit 0
+          fi
+          if curl -fskS --connect-timeout 5 --max-time 15 --resolve "${domain}:443:127.0.0.1" "https://${domain}/health"; then
+            echo
+            exit 0
+          fi
+          if curl -fsS --connect-timeout 5 --max-time 15 --resolve "${domain}:80:127.0.0.1" "http://${domain}/health"; then
+            echo
+            exit 0
+          fi
+          if curl -fskS --connect-timeout 5 --max-time 15 -H "Host: ${domain}" "https://127.0.0.1/health"; then
+            echo
+            exit 0
+          fi
+          if curl -fsS --connect-timeout 5 --max-time 15 -H "Host: ${domain}" "http://127.0.0.1/health"; then
+            echo
+            exit 0
+          fi
+          echo "::error::Контейнер жив, но Traefik не отдаёт /health для Host=${domain}."
+          docker compose -f "${COMPOSE_FILE}" ps
+          docker compose -f "${COMPOSE_FILE}" logs --tail=80
           exit 1
 
       - name: Remove dangling images

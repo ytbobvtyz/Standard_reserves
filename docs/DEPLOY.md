@@ -4,13 +4,14 @@
 
 Репозиторий у разработчика. Сервер у DevOps. Секреты живут только на сервере, в GitHub их нет.
 
+На проде **нет Nginx в compose**. Вход: внешний **Traefik** (сеть `traefik`), TLS и порты 80/443 — на стороне Traefik. Стек приложения: postgres, backend, frontend, backup.
+
 ```
 Разработчик                         DevOps (один раз)
 ─────────────                       ─────────────────
-1. Пушит workflow в main            4. Ставит Docker + раннер
-2. Создаёт environment production      одним скриптом
-3. Даёт URL репо и token            5. При необходимости правит
-                                       домен в /opt/standart-reserve/.env
+1. Пушит workflow в main            4. Ставит раннер скриптом
+2. Создаёт environment production   5. Traefik уже должен работать
+3. Даёт URL репо и token            6. В .env: боевой DOMAIN (и CORS)
 
 Дальше: git push origin main → GitHub Actions → docker compose на сервере
 ```
@@ -29,6 +30,7 @@
 |------|--------|
 | `.github/workflows/ci.yml` | Линтеры, тесты, сборка |
 | `.github/workflows/deploy.yml` | Деплой на сервер после зелёного CI |
+| `docker-compose.prod.yml` | Прод-стек (Traefik labels, без Nginx) |
 | `deploy/install-runner.sh` | Скрипт, который вы отдаёте DevOps |
 
 Если этого ещё нет в `main` — замержите и пушьте. Пока `deploy.yml` нет в ветке по умолчанию, автодеплой не стартует.
@@ -64,6 +66,9 @@
 ```
 Нужно один раз поставить GitHub Actions runner на прод-сервер Standart Reserve.
 
+Стек ходит в уже существующий Traefik (Docker-сеть traefik). Nginx в приложении больше нет.
+Порты 80/443 это приложение не публикует.
+
 1. Скопируйте на сервер файл deploy/install-runner.sh из репозитория.
 2. Выполните:
 
@@ -72,10 +77,11 @@ sudo bash install-runner.sh \
   --token ВСТАВЬТЕ_ТОКЕН \
   --domain app.company.ru
 
-3. Если домена нет — уберите --domain (будет localhost + self-signed TLS).
-4. Откройте входящие 80 и 443. Исходящий HTTPS до github.com и Docker Hub
-   должен уже работать, отдельных портов для раннера открывать не нужно.
-5. Напишите, когда в GitHub → Settings → Actions → Runners статус Idle.
+3. Проверьте: sudo bash install-runner.sh --check
+   Должны быть OK: Docker, .env, DOMAIN, сеть traefik, служба раннера.
+4. Если сеть Traefik называется иначе — TRAEFIK_NETWORK в /opt/standart-reserve/.env.
+5. Пароль Postgres в .env не меняйте, если база уже есть.
+6. Напишите, когда в GitHub → Settings → Actions → Runners статус Idle.
 
 Токен живёт ~1 час. Если протух — пришлите новый, команда та же с --replace.
 ```
@@ -96,25 +102,30 @@ sudo bash install-runner.sh \
 
 Дальше каждый push в `main` деплоит сам, если CI успешен. Ручной запуск оставляйте для повторного выката того же коммита.
 
+`--remove-orphans` снимет старый контейнер **nginx**, если он ещё был в проекте `standart-reserve-prod`. Том Postgres не трогается.
+
 ### 1.8. Что разработчику больше не нужно
 
 - SSH на сервер
 - `git pull` на сервере
 - Секреты в GitHub Secrets
 - Собирать и пушить Docker-образы в registry
+- Класть TLS-сертификаты в репозиторий или в `certs/` приложения
 
 ---
 
 ## Часть 2. DevOps (сервер, один раз)
 
-Нужны: Ubuntu 22.04+ (или Debian), root/sudo, исходящий HTTPS. Входящие порты: **80** и **443**. Репозиторий клонировать не обязательно.
+Нужны: Ubuntu 22.04+ (или Debian), root/sudo, исходящий HTTPS, **уже работающий Traefik** с Docker-сетью (обычно `traefik`). Репозиторий клонировать не обязательно.
+
+Скрипт **не** ставит Traefik и **не** открывает 80/443 — это зона Traefik.
 
 ### 2.1. Что пришлёт разработчик
 
 - файл `install-runner.sh`
 - `--url` репозитория
 - `--token`
-- домен (если есть)
+- публичный домен (тот же, что в Traefik Host)
 
 ### 2.2. Одна команда
 
@@ -129,7 +140,7 @@ sudo bash install-runner.sh \
 
 1. Ставит Docker Engine и Compose v2, если их ещё нет.
 2. Создаёт пользователя `github-runner` (группа `docker`).
-3. Создаёт `/opt/standart-reserve/.env` со сгенерированным паролем БД (существующий `.env` не трогает).
+3. Создаёт `/opt/standart-reserve/.env` со сгенерированным паролем БД (**существующий `.env` не трогает**).
 4. Скачивает GitHub Actions runner, регистрирует метку `standart-reserve-prod`, включает systemd.
 
 Повторная регистрация (новый токен):
@@ -144,35 +155,37 @@ sudo bash install-runner.sh --url ... --token ... --replace
 sudo bash install-runner.sh --check
 ```
 
-### 2.3. После скрипта — если есть боевой домен
+### 2.3. После скрипта
 
 ```bash
 sudo nano /opt/standart-reserve/.env
 ```
 
-Проверьте:
-
 | Переменная | Что поставить |
 |------------|----------------|
-| `DOMAIN` | Публичное имя хоста |
+| `DOMAIN` | Тот же хост, что в Traefik (`Host(...)`) |
 | `BACKEND_CORS_ORIGINS` | `["https://ваш-домен"]` без `*` |
-| `POSTGRES_PASSWORD` / `DATABASE_URL` | Уже сгенерированы, должны совпадать |
-| `CERTS_DIR` | Оставьте `/opt/standart-reserve/certs` |
+| `TRAEFIK_NETWORK` | Имя Docker-сети Traefik, по умолчанию `traefik` |
+| `POSTGRES_PASSWORD` / `DATABASE_URL` | Если том БД уже есть — **не менять**, должны совпадать с инициализацией тома |
 | `SECRET_KEY` | Можно пустым: ключ создастся при первом старте |
 
-Доверенный TLS: положите Let's Encrypt в `/opt/standart-reserve/certs/fullchain.pem` и `privkey.pem`. Если файлов нет, Nginx сделает self-signed.
+TLS класть в приложение не нужно: сертификаты у Traefik.
 
-Откройте 80/443, затем напишите разработчику, что раннер **Idle**.
+Проверьте сеть до первого деплоя:
 
-Код приложения и `git pull` не нужны: первый workflow сам выкатит стек (`docker-compose.prod.yml`).
+```bash
+docker network inspect traefik
+```
+
+Напишите разработчику, что раннер **Idle**. Код приложения и `git pull` не нужны: первый workflow сам выкатит стек.
 
 ### 2.4. Файрвол
 
 | Направление | Куда | Зачем |
 |-------------|------|--------|
-| Входящий | 80, 443 | Приложение |
+| Входящий 80/443 | Traefik на хосте | Приложение порты не публикует |
 | Исходящий | 443 → github.com, objects.githubusercontent.com | Связь раннера |
-| Исходящий | 443 → Docker Hub / registry | Образы postgres, nginx, python, node |
+| Исходящий | 443 → Docker Hub / registry | Образы postgres, python, node |
 
 Входящий доступ со стороны GitHub **не открывать**.
 
@@ -182,13 +195,21 @@ sudo nano /opt/standart-reserve/.env
 
 1. Push в `main` запускает **CI/CD** на GitHub-hosted runner (линтеры, тесты, сборка образов).
 2. При успехе `workflow_run` запускает **Deploy production** на сервере.
-3. Runner забирает тот же коммит, подключает `/opt/standart-reserve/.env`, выполняет:
+3. Runner забирает тот же коммит, подключает `/opt/standart-reserve/.env`, проверяет сеть Traefik, выполняет:
 
    `docker compose -f docker-compose.prod.yml up -d --build --remove-orphans`
 
 4. Alembic-миграции идут при старте backend (`RUN_MIGRATIONS=1`).
-5. Проверка: `http://127.0.0.1/health`.
-6. Volume PostgreSQL (`postgres_data`) и бэкапы не сбрасываются. TLS лежит в `CERTS_DIR`, а не в рабочей папке Actions.
+5. Проверка: `curl` внутри контейнера backend на `/health`, затем `/health` через Traefik по `DOMAIN`.
+6. Volume PostgreSQL (`postgres_data`) и бэкапы не сбрасываются.
+
+Маршруты Traefik (labels в `docker-compose.prod.yml`):
+
+| Правило | Куда |
+|---------|------|
+| `Host(DOMAIN) && PathPrefix(/api)` | backend:8000 |
+| `Host(DOMAIN) && PathPrefix(/health)` | backend:8000 |
+| `Host(DOMAIN)` | frontend:80 |
 
 Ручной выкат: **Actions → Deploy production → Run workflow**.
 
@@ -201,18 +222,14 @@ sudo nano /opt/standart-reserve/.env
 | Статус раннера | GitHub → Settings → Actions → Runners |
 | Служба раннера | `sudo systemctl status actions.runner.*.service` |
 | Логи раннера | `journalctl -u 'actions.runner.*' -f` |
-| Контейнеры | `docker compose -f docker-compose.prod.yml -p standart-reserve-prod ps` |
-| Логи приложения | `docker compose -f docker-compose.prod.yml logs -f` |
-| Health | `curl -fsS http://127.0.0.1/health` |
+| Контейнеры | `docker ps --filter name=standart-reserve-prod` |
+| Логи приложения | `docker logs -f standart-reserve-prod-backend-1` |
+| Health (из контейнера) | `docker compose -f docker-compose.prod.yml exec backend curl -fsS http://localhost:8000/health` |
+| Health (через Traefik) | `curl -fsS https://DOMAIN/health` |
 | Бэкап БД | sidecar `backup` раз в сутки; дампы в volume `postgres_backups` |
 | Снять раннер | `sudo bash install-runner.sh --uninstall` (`.env` и БД остаются) |
 
-Compose-проект называется `standart-reserve-prod` (поле `name` в `docker-compose.prod.yml`). Команды `docker compose` запускайте из каталога, где есть актуальный compose-файл, либо из воркспейса последнего деплоя (`_work/...` у пользователя `github-runner`). Для логов удобнее:
-
-```bash
-docker ps --filter name=standart-reserve-prod
-docker logs -f standart-reserve-prod-backend-1
-```
+Compose-проект называется `standart-reserve-prod` (поле `name` в `docker-compose.prod.yml`).
 
 ### Откат
 
@@ -228,8 +245,11 @@ docker logs -f standart-reserve-prod-backend-1
 2. Раннер Offline — DevOps: `sudo bash install-runner.sh --check` и `systemctl status actions.runner.*.service`.
 3. Job висит в очереди — нет раннера с меткой `standart-reserve-prod`.
 4. Нет `/opt/standart-reserve/.env` — DevOps не отработал скрипт или стёр файл.
-5. Environment `production` ждёт ревьюера — подтвердите в Actions.
-6. Org запрещает self-hosted runners.
+5. `DOMAIN=localhost` или пустой — Traefik не привяжет Host.
+6. Нет Docker-сети `traefik` (или `TRAEFIK_NETWORK`) — Traefik не поднят / другое имя сети.
+7. Контейнер healthy, а `/health` с хоста 502 — контейнер не в сети Traefik или правило Host не совпадает с доменом.
+8. Environment `production` ждёт ревьюера — подтвердите в Actions.
+9. Org запрещает self-hosted runners.
 
 ---
 
@@ -239,3 +259,4 @@ docker logs -f standart-reserve-prod-backend-1
 - Не вешайте этот же раннер на другие репо и не ставьте метку без префикса проекта.
 - `.env` не коммитить (`chmod 640`, владелец `github-runner`).
 - `workflow_dispatch` и `workflow_run` после CI на `main`. Pull request с раннера не гоняется.
+- TLS и HSTS настраивает Traefik, не этот репозиторий.

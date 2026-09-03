@@ -26,12 +26,12 @@ usage() {
   --token TOKEN      Registration token от разработчика (живёт ~1 час)
 
 Опционально:
-  --domain NAME      Публичный домен (подставится в .env). По умолчанию: localhost
+  --domain NAME      Публичный домен для Traefik Host() и CORS. По умолчанию: localhost
   --name NAME        Имя раннера. По умолчанию: <hostname>-prod
   --labels LIST      Метки через запятую. По умолчанию: standart-reserve-prod
   --replace          Перерегистрировать уже установленный раннер
   --no-docker        Не ставить Docker, если его нет
-  --check            Только проверить сервер (docker, .env, служба раннера)
+  --check            Только проверить сервер (docker, .env, сеть Traefik, служба раннера)
   --uninstall        Снять службу раннера (контейнеры и .env не трогает)
   -h, --help         Справка
 
@@ -52,7 +52,18 @@ need_root() {
   fi
 }
 
-have_cmd() { command -v "$1" >/dev/null 2>&1; }
+env_value() {
+  local key="$1"
+  local file="${2:-$APP_DIR/.env}"
+  [ -f "$file" ] || return 0
+  grep -E "^${key}=" "$file" | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true
+}
+
+traefik_network_name() {
+  local name
+  name="$(env_value TRAEFIK_NETWORK)"
+  echo "${name:-traefik}"
+}
 
 parse_args() {
   while [ $# -gt 0 ]; do
@@ -132,7 +143,7 @@ ensure_user() {
 }
 
 write_env_if_missing() {
-  mkdir -p "$APP_DIR/certs"
+  mkdir -p "$APP_DIR"
   if [ -f "$APP_DIR/.env" ]; then
     log "Файл ${APP_DIR}/.env уже есть — не перезаписываю"
     return 0
@@ -164,16 +175,14 @@ REFRESH_TOKEN_EXPIRE_DAYS=7
 DOMAIN=${DOMAIN}
 BACKEND_CORS_ORIGINS=${cors}
 VITE_API_URL=/api/v1
-HTTP_PORT=80
-HTTPS_PORT=443
 BACKUP_INTERVAL_SECONDS=86400
 BACKUP_KEEP_DAYS=14
-CERTS_DIR=${APP_DIR}/certs
+TRAEFIK_NETWORK=traefik
 EOF
   chmod 640 "$APP_DIR/.env"
   log "Создан ${APP_DIR}/.env (пароль БД сгенерирован)"
   if [ "$DOMAIN" = "localhost" ]; then
-    log "Домен не задан. Если есть публичное имя — поправьте DOMAIN и BACKEND_CORS_ORIGINS в ${APP_DIR}/.env"
+    log "Домен не задан. Для Traefik обязателен боевой DOMAIN в ${APP_DIR}/.env"
   fi
 }
 
@@ -181,7 +190,6 @@ fix_permissions() {
   chown -R "$RUNNER_USER":"$RUNNER_USER" "$APP_DIR"
   chmod 750 "$APP_DIR"
   chmod 640 "$APP_DIR/.env"
-  chmod 750 "$APP_DIR/certs"
 }
 
 latest_runner_version() {
@@ -302,8 +310,22 @@ print_check() {
     else
       log "  .env: OK (${APP_DIR}/.env)"
     fi
+    local domain
+    domain="$(env_value DOMAIN)"
+    if [ -z "$domain" ] || [ "$domain" = "localhost" ]; then
+      log "  DOMAIN: не задан (Traefik не пропишет Host)"; ok=1
+    else
+      log "  DOMAIN: ${domain}"
+    fi
   else
     log "  .env: НЕТ (${APP_DIR}/.env)"; ok=1
+  fi
+  local traefik_net
+  traefik_net="$(traefik_network_name)"
+  if docker network inspect "$traefik_net" >/dev/null 2>&1; then
+    log "  Сеть Traefik (${traefik_net}): OK"
+  else
+    log "  Сеть Traefik (${traefik_net}): НЕТ — compose не поднимется"; ok=1
   fi
   if id "$RUNNER_USER" >/dev/null 2>&1 && id -nG "$RUNNER_USER" | grep -qw docker; then
     log "  Пользователь ${RUNNER_USER} в группе docker: OK"
@@ -342,21 +364,24 @@ print_next_steps() {
 Готово. Раннер установлен.
 
 Что осталось DevOps (если ещё не сделано):
-  1. При необходимости поправьте домен и CORS:
+  1. Traefik уже должен работать. Сеть по умолчанию: traefik
+       docker network inspect traefik
+     Если имя сети другое — пропишите TRAEFIK_NETWORK в ${APP_DIR}/.env
+  2. В ${APP_DIR}/.env задайте боевой DOMAIN и CORS:
        sudo nano ${APP_DIR}/.env
      Поля: DOMAIN, BACKEND_CORS_ORIGINS
-  2. Откройте порты ${HTTP_HINT} на файрволе.
-  3. Сообщите разработчику: раннер в GitHub должен быть Idle
+     Существующий пароль БД не меняйте, если том postgres уже есть.
+  3. Порты 80/443 открывает Traefik, не этот стек. Лишние порты для приложения не нужны.
+  4. Сообщите разработчику: раннер в GitHub должен быть Idle
      (Settings → Actions → Runners).
 
 Проверка:
   sudo bash $0 --check
 
 Первый деплой делает разработчик: push в main или Actions → Deploy production → Run workflow.
+Nginx из старого compose будет снят как orphan — это ожидаемо. Том postgres_data не удаляется.
 EOF
 }
-
-HTTP_HINT="80/443"
 
 main() {
   parse_args "$@"
