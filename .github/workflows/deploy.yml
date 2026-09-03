@@ -67,10 +67,24 @@ jobs:
         run: |
           set -euo pipefail
           if docker compose up -h 2>&1 | grep -q -- '--wait'; then
-            docker compose -f "${COMPOSE_FILE}" up -d --build --remove-orphans --wait --wait-timeout 180
+            docker compose -f "${COMPOSE_FILE}" up -d --build --remove-orphans --wait --wait-timeout 240
           else
             docker compose -f "${COMPOSE_FILE}" up -d --build --remove-orphans
           fi
+
+      - name: Diagnose failed services
+        if: failure()
+        run: |
+          set +e
+          echo "===== compose ps ====="
+          docker compose -f "${COMPOSE_FILE}" ps -a
+          echo "===== backend logs ====="
+          docker compose -f "${COMPOSE_FILE}" logs --tail=200 backend
+          echo "===== backend health ====="
+          docker inspect --format '{{json .State.Health}}' standart-reserve-prod-backend-1
+          echo
+          echo "===== postgres logs ====="
+          docker compose -f "${COMPOSE_FILE}" logs --tail=80 postgres
 
       - name: Health check
         run: |

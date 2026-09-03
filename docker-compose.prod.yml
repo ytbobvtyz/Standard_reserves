@@ -47,13 +47,13 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: ${DATABASE_URL}
-      SECRET_KEY: ${SECRET_KEY:-}
+      DATABASE_URL: "${DATABASE_URL}"
+      SECRET_KEY: "${SECRET_KEY:-}"
       DEBUG: "false"
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
-      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
-      BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS}
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      ACCESS_TOKEN_EXPIRE_MINUTES: "${ACCESS_TOKEN_EXPIRE_MINUTES:-60}"
+      REFRESH_TOKEN_EXPIRE_DAYS: "${REFRESH_TOKEN_EXPIRE_DAYS:-7}"
+      BACKEND_CORS_ORIGINS: "${BACKEND_CORS_ORIGINS}"
       RUN_MIGRATIONS: "1"
     volumes:
       - backend_secrets:/var/lib/standart-reserve
@@ -75,11 +75,11 @@ services:
         "*",
       ]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health || exit 1"]
       interval: 15s
       timeout: 5s
-      start_period: 40s
-      retries: 5
+      start_period: 90s
+      retries: 8
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.backend.rule=Host(`${DOMAIN}`) && PathPrefix(`/api`)"
