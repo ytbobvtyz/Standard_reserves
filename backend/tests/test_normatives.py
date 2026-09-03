@@ -274,7 +274,9 @@ async def test_normatives_on_date_groups_and_filters(
     clients = {detail["client_name"] for detail in grouped["details"]}
     assert CLIENT_A in clients
     assert CLIENT_B in clients
-    detail_a = next(detail for detail in grouped["details"] if detail["client_name"] == CLIENT_A)
+    detail_a = next(
+        detail for detail in grouped["details"] if detail["client_name"] == CLIENT_A
+    )
     assert detail_a["request_id"] == str(seeded["request_id"])
     assert detail_a["author_name"] == test_user.full_name
     assert detail_a["expiry_date"] == "2026-12-31"

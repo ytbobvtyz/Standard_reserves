@@ -509,15 +509,21 @@ async def test_economist_approve_saves_latest_version_and_updates_normatives_on_
     on_date_res = await client.get(
         "/api/v1/normatives/on-date",
         headers=auth_header(commercial_token),
-        params={"date": date.today().isoformat(), "warehouse_code": catalog["warehouse_code"]},
+        params={
+            "date": date.today().isoformat(),
+            "warehouse_code": catalog["warehouse_code"],
+        },
     )
     assert on_date_res.status_code == 200
     matched = next(
-        item for item in on_date_res.json()["data"]
+        item
+        for item in on_date_res.json()["data"]
         if item["product_code"] == catalog["product_code"]
     )
     assert matched["total_quantity"] == 600
-    detail = next(d for d in matched["details"] if d["client_name"] == "ООО Последняя Версия")
+    detail = next(
+        d for d in matched["details"] if d["client_name"] == "ООО Последняя Версия"
+    )
     assert detail["quantity"] == 600
     assert detail["expiry_date"] == expiry_economy
     assert detail["request_id"] == request_id
