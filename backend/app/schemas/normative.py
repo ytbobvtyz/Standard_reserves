@@ -10,6 +10,8 @@ class NormativeListItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    request_id: UUID | None = None
+    author_name: str | None = None
     product_code: int
     product_name: str
     category: str
@@ -30,6 +32,8 @@ class NormativeOnDateDetail(BaseModel):
     expiry_date: date
     department_id: UUID | None = None
     department_name: str | None = None
+    request_id: UUID | None = None
+    author_name: str | None = None
 
 
 class NormativeOnDateItem(BaseModel):

@@ -197,6 +197,9 @@ async def db_ready() -> AsyncGenerator[None, None]:
             )
         )
         await connection.execute(
+            text("DROP TRIGGER IF EXISTS create_normative_on_approve ON requests")
+        )
+        await connection.execute(
             text("ALTER TABLE normatives DROP CONSTRAINT IF EXISTS ck_normatives_unit")
         )
         await connection.execute(

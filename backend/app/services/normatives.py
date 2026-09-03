@@ -135,10 +135,24 @@ def _load_options():
     )
 
 
+def _author_name(normative: Normative) -> str | None:
+    if normative.request and normative.request.initiator:
+        return normative.request.initiator.full_name
+    if (
+        normative.production_request_item
+        and normative.production_request_item.production_request
+        and normative.production_request_item.production_request.uploader
+    ):
+        return normative.production_request_item.production_request.uploader.full_name
+    return None
+
+
 def to_list_item(normative: Normative) -> NormativeListItem:
     department_id, department_name = _department_fields(normative)
     return NormativeListItem(
         id=normative.id,
+        request_id=normative.request_id,
+        author_name=_author_name(normative),
         product_code=normative.product_code,
         product_name=normative.product.name if normative.product else "",
         category=normative.category.strip(),
@@ -237,7 +251,7 @@ async def list_normatives_on_date(
         .order_by(
             Normative.warehouse_code,
             Normative.product_code,
-            Normative.client_name,
+            Normative.created_at.desc(),
         )
     )
     grouped: dict[tuple[int, int, str], list[Normative]] = defaultdict(list)
@@ -247,14 +261,22 @@ async def list_normatives_on_date(
 
     items: list[NormativeOnDateItem] = []
     for (_warehouse, _product, unit), rows in grouped.items():
-        first = rows[0]
+        seen_clients: set[str] = set()
+        latest_rows: list[Normative] = []
+        for row in rows:
+            client_key = row.client_name.strip().lower()
+            if client_key not in seen_clients:
+                seen_clients.add(client_key)
+                latest_rows.append(row)
+
+        first = latest_rows[0]
         items.append(
             NormativeOnDateItem(
                 product_code=first.product_code,
                 product_name=first.product.name if first.product else "",
                 warehouse_code=first.warehouse_code,
                 warehouse_name=first.warehouse.name if first.warehouse else "",
-                total_quantity=sum((row.quantity for row in rows), Decimal("0")),
+                total_quantity=sum((row.quantity for row in latest_rows), Decimal("0")),
                 unit=unit,
                 category=first.category.strip(),
                 details=[
@@ -264,8 +286,10 @@ async def list_normatives_on_date(
                         expiry_date=row.expiry_date,
                         department_id=_department_fields(row)[0],
                         department_name=_department_fields(row)[1],
+                        request_id=row.request_id,
+                        author_name=_author_name(row),
                     )
-                    for row in rows
+                    for row in latest_rows
                 ],
             )
         )

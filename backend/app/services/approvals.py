@@ -232,28 +232,67 @@ async def _ensure_normatives(db: AsyncSession, request: Request) -> None:
             "Для нормативного запроса отсутствует срок действия",
         )
 
-    existing = await db.scalar(
-        select(func.count())
-        .select_from(Normative)
-        .where(Normative.request_id == request.id, Normative.deleted_at.is_(None))
-    )
-    if existing:
-        return
+    now = datetime.now(UTC)
 
-    for item in request.items:
-        category = item.product.category.strip()
-        db.add(
-            Normative(
-                request_id=request.id,
-                product_code=item.product_code,
-                warehouse_code=item.warehouse_code,
-                quantity=_normative_quantity(item),
-                unit=item.unit,
-                client_name=request.client_name,
-                expiry_date=request.expiry_date,
-                category=category,
-            )
+    existing_result = await db.execute(
+        select(Normative).where(
+            Normative.request_id == request.id,
+            Normative.deleted_at.is_(None),
         )
+    )
+    existing_normatives = list(existing_result.scalars().all())
+    existing_by_key = {
+        (n.product_code, n.warehouse_code): n for n in existing_normatives
+    }
+
+    items_by_key = {
+        (item.product_code, item.warehouse_code): item for item in request.items
+    }
+
+    for (prod_code, wh_code), item in items_by_key.items():
+        qty = _normative_quantity(item)
+        category = (
+            item.product.category.strip()
+            if item.product and item.product.category
+            else "A"
+        )
+        if (prod_code, wh_code) in existing_by_key:
+            normative = existing_by_key[(prod_code, wh_code)]
+            normative.quantity = qty
+            normative.expiry_date = request.expiry_date
+            normative.client_name = request.client_name
+            normative.category = category
+            normative.unit = item.unit
+        else:
+            prev_result = await db.execute(
+                select(Normative).where(
+                    Normative.client_name == request.client_name,
+                    Normative.product_code == prod_code,
+                    Normative.warehouse_code == wh_code,
+                    Normative.request_id != request.id,
+                    Normative.production_request_item_id.is_(None),
+                    Normative.deleted_at.is_(None),
+                )
+            )
+            for prev_norm in prev_result.scalars().all():
+                prev_norm.deleted_at = now
+
+            db.add(
+                Normative(
+                    request_id=request.id,
+                    product_code=prod_code,
+                    warehouse_code=wh_code,
+                    quantity=qty,
+                    unit=item.unit,
+                    client_name=request.client_name,
+                    expiry_date=request.expiry_date,
+                    category=category,
+                )
+            )
+
+    for (prod_code, wh_code), normative in existing_by_key.items():
+        if (prod_code, wh_code) not in items_by_key:
+            normative.deleted_at = now
 
 
 def _next_status(stage: Stage, action: str, request: Request) -> str:

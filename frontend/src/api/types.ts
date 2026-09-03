@@ -549,6 +549,8 @@ export interface NormativeListParams {
 
 export interface NormativeListItem {
   id: string
+  request_id?: string | null
+  author_name?: string | null
   product_code: number
   product_name: string
   category: string
@@ -577,6 +579,8 @@ export interface NormativeOnDateDetail {
   expiry_date: string
   department_id?: string | null
   department_name?: string | null
+  request_id?: string | null
+  author_name?: string | null
 }
 
 export interface NormativeOnDateItem {

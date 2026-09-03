@@ -372,6 +372,14 @@ async def test_economist_approve_with_quantity_change(
     assert detail.json()["data"]["items"][0]["quantity_approved"] == 600
 
     async with AsyncSessionLocal() as session:
+        normatives = (
+            await session.scalars(
+                select(Normative).where(Normative.request_id == request_id)
+            )
+        ).all()
+        assert len(normatives) == 1
+        assert float(normatives[0].quantity) == 600
+
         item_ids = (
             await session.scalars(
                 select(RequestItem.id).where(RequestItem.request_id == request_id)
@@ -416,6 +424,105 @@ async def test_economist_reject(
     assert response.json()["data"]["comment_economy"] == (
         "Хранение экономически нецелесообразно"
     )
+    await delete_request(request_id)
+
+
+async def test_economist_approve_saves_latest_version_and_updates_normatives_on_date(
+    client: AsyncClient,
+    test_user: AuthUser,
+    pp_user: AuthUser,
+    economist_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    commercial_token = await login_token(client, test_user)
+    pp_token = await login_token(client, pp_user)
+    economist_token = await login_token(client, economist_user)
+
+    expiry_initial = Request.add_months(date.today(), 6).isoformat()
+    expiry_pp = Request.add_months(date.today(), 5).isoformat()
+    expiry_economy = Request.add_months(date.today(), 4).isoformat()
+
+    request_id = await _create_submitted(
+        client,
+        commercial_token,
+        client_name="ООО Последняя Версия",
+        expiry_date=expiry_initial,
+        items=[
+            {
+                "product_code": catalog["product_code"],
+                "warehouse_code": catalog["warehouse_code"],
+                "quantity_requested": 1000,
+                "unit": "шт",
+            }
+        ],
+    )
+
+    pp_res = await client.post(
+        f"/api/v1/approvals/pp/{request_id}/action",
+        headers=auth_header(pp_token),
+        json={
+            "action": "approve",
+            "items": [
+                {
+                    "product_code": catalog["product_code"],
+                    "warehouse_code": catalog["warehouse_code"],
+                    "quantity_approved": 800,
+                }
+            ],
+            "expiry_date": expiry_pp,
+            "comment": "ПП снизил до 800",
+        },
+    )
+    assert pp_res.status_code == 200
+
+    eco_res = await client.post(
+        f"/api/v1/approvals/economy/{request_id}/action",
+        headers=auth_header(economist_token),
+        json={
+            "action": "approve",
+            "items": [
+                {
+                    "product_code": catalog["product_code"],
+                    "warehouse_code": catalog["warehouse_code"],
+                    "quantity_approved": 600,
+                }
+            ],
+            "expiry_date": expiry_economy,
+            "comment": "Экономист утвердил 600 и 4 мес",
+        },
+    )
+    assert eco_res.status_code == 200
+
+    async with AsyncSessionLocal() as session:
+        normatives = (
+            await session.scalars(
+                select(Normative).where(
+                    Normative.request_id == request_id,
+                    Normative.deleted_at.is_(None),
+                )
+            )
+        ).all()
+        assert len(normatives) == 1
+        assert float(normatives[0].quantity) == 600
+        assert normatives[0].expiry_date.isoformat() == expiry_economy
+
+    on_date_res = await client.get(
+        "/api/v1/normatives/on-date",
+        headers=auth_header(commercial_token),
+        params={"date": date.today().isoformat(), "warehouse_code": catalog["warehouse_code"]},
+    )
+    assert on_date_res.status_code == 200
+    matched = next(
+        item for item in on_date_res.json()["data"]
+        if item["product_code"] == catalog["product_code"]
+    )
+    assert matched["total_quantity"] == 600
+    detail = next(d for d in matched["details"] if d["client_name"] == "ООО Последняя Версия")
+    assert detail["quantity"] == 600
+    assert detail["expiry_date"] == expiry_economy
+    assert detail["request_id"] == request_id
+    assert detail["author_name"] == test_user.full_name
+
     await delete_request(request_id)
 
 

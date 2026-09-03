@@ -13,6 +13,7 @@ import type { ColumnsType } from 'antd/es/table'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { getApiErrorMessage } from '../api/client'
 import { normativesApi } from '../api/normatives'
 import { referencesApi } from '../api/references'
@@ -31,6 +32,9 @@ interface NormativeRow {
   client_name: string
   category: string
   department_name: string
+  request_id: string | null
+  author_name: string
+  expiry_date: string
 }
 
 function flattenOnDate(
@@ -59,6 +63,9 @@ function flattenOnDate(
         client_name: detail.client_name,
         category: item.category ?? '',
         department_name: detail.department_name ?? '',
+        request_id: detail.request_id ?? null,
+        author_name: detail.author_name ?? '',
+        expiry_date: detail.expiry_date ?? '',
       })
     })
   })
@@ -153,10 +160,34 @@ export function NormativesPage() {
     { title: 'Название', dataIndex: 'product_name' },
     { title: 'Склад', dataIndex: 'warehouse_name' },
     {
+      title: 'Запрос',
+      dataIndex: 'request_id',
+      width: 120,
+      render: (value: string | null) =>
+        value ? (
+          <Link to={`/requests/${value}`} aria-label={`Запрос №${value.slice(0, 8)}`}>
+            №{value.slice(0, 8)}
+          </Link>
+        ) : (
+          '—'
+        ),
+    },
+    {
+      title: 'Автор',
+      dataIndex: 'author_name',
+      render: (value: string) => value || '—',
+    },
+    {
       title: 'Количество',
       key: 'quantity',
       width: 140,
       render: (_, record) => formatQty(record.quantity, record.unit),
+    },
+    {
+      title: 'Срок действия',
+      dataIndex: 'expiry_date',
+      width: 130,
+      render: (value: string) => (value ? dayjs(value).format('DD.MM.YYYY') : '—'),
     },
     { title: 'Клиент', dataIndex: 'client_name' },
     {

@@ -74,6 +74,8 @@ const onDateData: NormativeOnDateItem[] = [
         quantity: 1000,
         expiry_date: '2026-12-31',
         department_name: 'Коммерческий отдел',
+        request_id: '11111111-2222-3333-4444-555555555555',
+        author_name: 'Иванов Иван',
       },
     ],
   },
@@ -90,6 +92,8 @@ const onDateData: NormativeOnDateItem[] = [
         client_name: "ООО 'Ромашка'",
         quantity: 500,
         expiry_date: '2026-12-31',
+        request_id: null,
+        author_name: 'Партия загрузки',
       },
     ],
   },
@@ -181,6 +185,13 @@ describe('NormativesPage', () => {
     expect(screen.getByLabelText('Срез на дату')).toBeTruthy()
     expect(screen.getByRole('combobox', { name: 'Подразделение' })).toBeTruthy()
     expect(screen.getAllByText('Коммерческий отдел').length).toBeGreaterThan(0)
+    expect(screen.getByText('№11111111')).toBeTruthy()
+    expect(screen.getByText('№11111111').closest('a')?.getAttribute('href')).toBe(
+      '/requests/11111111-2222-3333-4444-555555555555',
+    )
+    expect(screen.getByText('Иванов Иван')).toBeTruthy()
+    expect(screen.getByText('Партия загрузки')).toBeTruthy()
+    expect(screen.getAllByText('31.12.2026').length).toBeGreaterThan(0)
   })
 
   it('sends product search after debounce', async () => {
