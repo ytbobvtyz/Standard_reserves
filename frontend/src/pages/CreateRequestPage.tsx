@@ -81,7 +81,6 @@ function RequestItemRow({
   isOneTime: boolean
   onRemove: () => void
 }) {
-  const { key: _fieldKey, ...restField } = field
   const form = Form.useFormInstance<FormValues>()
   const productName = Form.useWatch(['items', field.name, 'product_name'], form)
   const category = Form.useWatch(['items', field.name, 'category'], form)
@@ -113,7 +112,6 @@ function RequestItemRow({
         }}
       >
         <Form.Item
-          {...restField}
           name={[field.name, 'product_code']}
           rules={[{ required: true, message: 'Выберите продукт' }]}
           style={{ marginBottom: 0 }}
@@ -130,7 +128,6 @@ function RequestItemRow({
         {productName || '—'}
       </Typography.Text>
       <Form.Item
-        {...restField}
         name={[field.name, 'warehouse_code']}
         rules={[{ required: true, message: 'Выберите склад' }]}
         style={{ marginBottom: 0 }}
@@ -144,7 +141,6 @@ function RequestItemRow({
         />
       </Form.Item>
       <Form.Item
-        {...restField}
         name={[field.name, 'quantity_requested']}
         rules={[{ required: true, message: 'Укажите количество' }]}
         style={{ marginBottom: 0 }}
@@ -152,7 +148,6 @@ function RequestItemRow({
         <InputNumber min={0.01} placeholder="Кол-во" style={{ width: '100%' }} />
       </Form.Item>
       <Form.Item
-        {...restField}
         name={[field.name, 'unit']}
         initialValue="шт"
         style={{ marginBottom: 0 }}
