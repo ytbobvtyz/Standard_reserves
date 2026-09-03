@@ -125,9 +125,11 @@ def build_export_xlsx(products: list[Product]) -> bytes:
                 product.second_plant_id,
                 product.third_plant_id,
                 bool(product.mark_control),
-                product.last_modified_at.astimezone(UTC).replace(tzinfo=None)
-                if product.last_modified_at
-                else None,
+                (
+                    product.last_modified_at.astimezone(UTC).replace(tzinfo=None)
+                    if product.last_modified_at
+                    else None
+                ),
                 str(product.last_modified_by) if product.last_modified_by else None,
             ]
         )

@@ -87,9 +87,7 @@ async def test_export_b2b_unknown_product(
                     "plant_name": "Завод Московский",
                     "warehouse_code": catalog["warehouse_code"],
                     "warehouse_name": "Склад Ростов",
-                    "items": [
-                        {"product_code": 99999999, "deficit": 10, "unit": "шт"}
-                    ],
+                    "items": [{"product_code": 99999999, "deficit": 10, "unit": "шт"}],
                 }
             ]
         },

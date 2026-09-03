@@ -122,9 +122,7 @@ async def export_products(
         category=category,
         is_active=is_active,
     )
-    result = await db.execute(
-        select(Product).where(*conditions).order_by(Product.code)
-    )
+    result = await db.execute(select(Product).where(*conditions).order_by(Product.code))
     content = products_admin.build_export_xlsx(list(result.scalars().all()))
     filename = f"products_export_{date.today().isoformat()}.xlsx"
     return Response(

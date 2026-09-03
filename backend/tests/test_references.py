@@ -59,8 +59,7 @@ async def test_products_search_by_gtin(
     codes = {item["code"] for item in partial.json()["data"]}
     assert catalog["product_code"] in codes
     assert all(
-        (item.get("gtin") or "").find("4609988") >= 0
-        for item in partial.json()["data"]
+        (item.get("gtin") or "").find("4609988") >= 0 for item in partial.json()["data"]
     )
 
     exact = await client.get(
