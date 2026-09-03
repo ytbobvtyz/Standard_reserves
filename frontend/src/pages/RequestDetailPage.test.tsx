@@ -223,4 +223,43 @@ describe('RequestDetailPage', () => {
     expect(screen.getByText(/Исполнен \(Кузнецов Кузьма\)/)).toBeTruthy()
     expect(screen.getByText('Разнарядка: РН-2026-08-20-001. Отгрузка произведена')).toBeTruthy()
   })
+
+  it('hides category, distance and requirement columns for one-time requests', async () => {
+    getRequest.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: {
+          ...request,
+          request_type: 'one_time',
+          status: 'approved',
+          expiry_date: null,
+        },
+      },
+    })
+
+    render(
+      <MemoryRouter initialEntries={[`/requests/${request.id}`]}>
+        <Routes>
+          <Route path="/requests/:id" element={<RequestDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("ООО 'Ромашка'")).toBeTruthy()
+    })
+
+    // Normative columns must not be present
+    expect(screen.queryByText('Категория')).toBeNull()
+    expect(screen.queryByText('Удалённость')).toBeNull()
+    expect(screen.queryByText('Потребность')).toBeNull()
+    expect(screen.queryByText('A (×1,0)')).toBeNull()
+    expect(screen.queryByText('Нет (×1,0)')).toBeNull()
+
+    // Base columns must be present
+    expect(screen.getByText('Артикул')).toBeTruthy()
+    expect(screen.getByText('Название')).toBeTruthy()
+    expect(screen.getByText('Склад')).toBeTruthy()
+    expect(screen.getByText('Количество')).toBeTruthy()
+  })
 })

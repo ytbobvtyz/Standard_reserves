@@ -65,18 +65,23 @@ interface FormValues {
 
 const ITEM_GRID =
   'minmax(220px, 1.5fr) minmax(140px, 1.1fr) minmax(180px, 1.2fr) 110px 80px 110px 120px 150px 28px'
+const ITEM_GRID_ONE_TIME =
+  'minmax(220px, 1.5fr) minmax(140px, 1.1fr) minmax(180px, 1.2fr) 110px 80px 28px'
 
 function RequestItemRow({
   field,
   warehouses,
   canRemove,
+  isOneTime,
   onRemove,
 }: {
   field: FormListFieldData
   warehouses: ObjectListItem[]
   canRemove: boolean
+  isOneTime: boolean
   onRemove: () => void
 }) {
+  const { key: _fieldKey, ...restField } = field
   const form = Form.useFormInstance<FormValues>()
   const productName = Form.useWatch(['items', field.name, 'product_name'], form)
   const category = Form.useWatch(['items', field.name, 'category'], form)
@@ -100,15 +105,15 @@ function RequestItemRow({
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: ITEM_GRID,
+          gridTemplateColumns: isOneTime ? ITEM_GRID_ONE_TIME : ITEM_GRID,
           gap: 8,
           alignItems: 'start',
           marginBottom: 8,
-          minWidth: 1100,
+          minWidth: isOneTime ? 720 : 1100,
         }}
       >
         <Form.Item
-          {...field}
+          {...restField}
           name={[field.name, 'product_code']}
           rules={[{ required: true, message: 'Выберите продукт' }]}
           style={{ marginBottom: 0 }}
@@ -125,7 +130,7 @@ function RequestItemRow({
         {productName || '—'}
       </Typography.Text>
       <Form.Item
-        {...field}
+        {...restField}
         name={[field.name, 'warehouse_code']}
         rules={[{ required: true, message: 'Выберите склад' }]}
         style={{ marginBottom: 0 }}
@@ -139,7 +144,7 @@ function RequestItemRow({
         />
       </Form.Item>
       <Form.Item
-        {...field}
+        {...restField}
         name={[field.name, 'quantity_requested']}
         rules={[{ required: true, message: 'Укажите количество' }]}
         style={{ marginBottom: 0 }}
@@ -147,7 +152,7 @@ function RequestItemRow({
         <InputNumber min={0.01} placeholder="Кол-во" style={{ width: '100%' }} />
       </Form.Item>
       <Form.Item
-        {...field}
+        {...restField}
         name={[field.name, 'unit']}
         initialValue="шт"
         style={{ marginBottom: 0 }}
@@ -159,21 +164,25 @@ function RequestItemRow({
           ]}
         />
       </Form.Item>
-      <Typography.Text style={{ paddingTop: 5 }}>{categoryLabel(category)}</Typography.Text>
-      <Typography.Text style={{ paddingTop: 5 }}>
-        {warehouseCode == null ? '—' : distanceLabel(Boolean(longDistance))}
-      </Typography.Text>
-      {requirement == null || !unit ? (
-        <Typography.Text type="secondary" style={{ paddingTop: 5 }}>
-          —
-        </Typography.Text>
-      ) : (
-        <Tooltip title={requirementTooltip(quantity ?? 0, unit, category, Boolean(longDistance))}>
+      {!isOneTime ? (
+        <>
+          <Typography.Text style={{ paddingTop: 5 }}>{categoryLabel(category)}</Typography.Text>
           <Typography.Text style={{ paddingTop: 5 }}>
-            {formatRequirementQty(requirement)} {unit}
+            {warehouseCode == null ? '—' : distanceLabel(Boolean(longDistance))}
           </Typography.Text>
-        </Tooltip>
-      )}
+          {requirement == null || !unit ? (
+            <Typography.Text type="secondary" style={{ paddingTop: 5 }}>
+              —
+            </Typography.Text>
+          ) : (
+            <Tooltip title={requirementTooltip(quantity ?? 0, unit, category, Boolean(longDistance))}>
+              <Typography.Text style={{ paddingTop: 5 }}>
+                {formatRequirementQty(requirement)} {unit}
+              </Typography.Text>
+            </Tooltip>
+          )}
+        </>
+      ) : null}
       {canRemove ? (
         <MinusCircleOutlined style={{ marginTop: 8 }} onClick={onRemove} />
       ) : (
@@ -191,6 +200,7 @@ export function CreateRequestPage() {
   const [warehouses, setWarehouses] = useState<ObjectListItem[]>([])
   const [submitting, setSubmitting] = useState(false)
   const requestType = Form.useWatch('request_type', form)
+  const isOneTime = requestType === 'one_time'
   const isLogistics = user?.role === 'logistics'
 
   useEffect(() => {
@@ -333,11 +343,11 @@ export function CreateRequestPage() {
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: ITEM_GRID,
+                    gridTemplateColumns: isOneTime ? ITEM_GRID_ONE_TIME : ITEM_GRID,
                     gap: 8,
                     marginBottom: 8,
                     fontWeight: 600,
-                    minWidth: 1100,
+                    minWidth: isOneTime ? 720 : 1100,
                   }}
                 >
                   <span>Артикул</span>
@@ -345,9 +355,13 @@ export function CreateRequestPage() {
                   <span>Склад</span>
                   <span>Кол-во</span>
                   <span>Ед</span>
-                  <span>Категория</span>
-                  <span>Удалённость</span>
-                  <span>Потребность</span>
+                  {!isOneTime ? (
+                    <>
+                      <span>Категория</span>
+                      <span>Удалённость</span>
+                      <span>Потребность</span>
+                    </>
+                  ) : null}
                   <span />
                 </div>
                 {fields.map((field) => (
@@ -356,6 +370,7 @@ export function CreateRequestPage() {
                     field={field}
                     warehouses={warehouses}
                     canRemove={fields.length > 1}
+                    isOneTime={isOneTime}
                     onRemove={() => remove(field.name)}
                   />
                 ))}

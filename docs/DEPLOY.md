@@ -251,6 +251,30 @@ Compose-проект называется `standart-reserve-prod` (поле `nam
 8. Environment `production` ждёт ревьюера — подтвердите в Actions.
 9. Org запрещает self-hosted runners.
 
+### Backend unhealthy: `password authentication failed for user "postgres"`
+
+Образ собрался, Postgres **healthy**, но backend не может войти. Образ Postgres запоминает пароль **только при первом создании тома** `postgres_data`. Позже смена `POSTGRES_PASSWORD` в `.env` **не меняет** пароль в уже существующей базе.
+
+Типичная причина: `install-runner.sh` создал новый `/opt/standart-reserve/.env` со случайным паролем, а том остался от старого запуска с другим паролем.
+
+**Данные не удалять** (`docker compose down -v` и `docker volume rm` запрещены).
+
+DevOps:
+
+1. Взять пароль из **старого** `.env` (каталог, откуда стек поднимали до раннера).
+2. Прописать его в оба поля `/opt/standart-reserve/.env`:
+   - `POSTGRES_PASSWORD=...`
+   - `DATABASE_URL=postgresql://postgres:ЭТОТ_ЖЕ_ПАРОЛЬ@postgres:5432/standart_reserve`
+3. Если в пароле есть `$`, `#`, пробел — лучше сменить его в самой БД осознанно, чем ломать URL. Символ `$` Compose раньше мог «съесть» при подстановке `${...}`.
+4. Перезапустить только backend (или снова Run workflow **Deploy production**):
+
+```bash
+# пароль в чат не копировать
+sudo grep -E '^(POSTGRES_PASSWORD|DATABASE_URL)=' /opt/standart-reserve/.env
+```
+
+После правки `.env` повторный деплой из GitHub подхватит файл сам.
+
 ---
 
 ## Безопасность

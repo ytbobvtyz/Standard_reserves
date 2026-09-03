@@ -115,6 +115,52 @@ describe('ApprovalsPage', () => {
     expect(screen.getByRole('button', { name: 'Утвердить' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Редактировать' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Отказать' })).toBeTruthy()
+
+    // Normative columns are present
+    expect(screen.getByText('Категория')).toBeTruthy()
+    expect(screen.getByText('Удалённость')).toBeTruthy()
+    expect(screen.getByText('Потребность')).toBeTruthy()
+  })
+
+  it('hides category, distance and requirement columns for one-time requests in modal', async () => {
+    const oneTimeRequest: ApprovalPendingRequest = {
+      ...pendingRequest,
+      id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+      request_type: 'one_time',
+      expiry_date: null,
+    }
+    getPPPending.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: [oneTimeRequest],
+        meta: { page: 1, limit: 50, total: 1 },
+      },
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/approvals/pp']}>
+        <ApprovalsPage />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("ООО 'Ромашка'")).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть' }))
+    expect(screen.getByText(/Согласование запроса №bbbbbbbb/)).toBeTruthy()
+
+    // Base columns must be present
+    expect(screen.getByText('Артикул')).toBeTruthy()
+    expect(screen.getByText('Название')).toBeTruthy()
+    expect(screen.getByText('Склад')).toBeTruthy()
+    expect(screen.getByText('Запрос')).toBeTruthy()
+    expect(screen.getByText('Количество')).toBeTruthy()
+    expect(screen.getByText('Ед')).toBeTruthy()
+
+    // Coefficient and requirement columns must NOT be present
+    expect(screen.queryByText('Категория')).toBeNull()
+    expect(screen.queryByText('Удалённость')).toBeNull()
+    expect(screen.queryByText('Потребность')).toBeNull()
   })
 
   it('shows decrease-only expiry hint for economist', async () => {

@@ -238,44 +238,50 @@ export function ApprovalModal({
                 ),
               },
               { title: 'Ед', dataIndex: 'unit', width: 70 },
-              {
-                title: 'Категория',
-                width: 110,
-                render: (_, record) => categoryLabel(record.category),
-              },
-              {
-                title: 'Удалённость',
-                width: 120,
-                render: (_, record) => distanceLabel(Boolean(record.long_distance)),
-              },
-              {
-                title: 'Потребность',
-                width: 140,
-                render: (_, record) => {
-                  const qty = record.quantity_approved_input
-                  const requirement = calculateRequirement(
-                    qty,
-                    record.category,
-                    record.long_distance,
-                  )
-                  return (
-                    <Tooltip
-                      title={requirementTooltip(
-                        qty,
-                        record.unit,
-                        record.category,
-                        record.long_distance,
-                      )}
-                    >
-                      <span>
-                        {requirement == null
-                          ? '—'
-                          : `${formatRequirementQty(requirement)} ${record.unit}`}
-                      </span>
-                    </Tooltip>
-                  )
-                },
-              },
+              ...(isNormative
+                ? [
+                    {
+                      title: 'Категория',
+                      width: 110,
+                      render: (_: unknown, record: EditableItem) =>
+                        categoryLabel(record.category),
+                    },
+                    {
+                      title: 'Удалённость',
+                      width: 120,
+                      render: (_: unknown, record: EditableItem) =>
+                        distanceLabel(Boolean(record.long_distance)),
+                    },
+                    {
+                      title: 'Потребность',
+                      width: 140,
+                      render: (_: unknown, record: EditableItem) => {
+                        const qty = record.quantity_approved_input
+                        const requirement = calculateRequirement(
+                          qty,
+                          record.category,
+                          record.long_distance,
+                        )
+                        return (
+                          <Tooltip
+                            title={requirementTooltip(
+                              qty,
+                              record.unit,
+                              record.category,
+                              record.long_distance,
+                            )}
+                          >
+                            <span>
+                              {requirement == null
+                                ? '—'
+                                : `${formatRequirementQty(requirement)} ${record.unit}`}
+                            </span>
+                          </Tooltip>
+                        )
+                      },
+                    },
+                  ]
+                : []),
             ]}
           />
           <Input.TextArea

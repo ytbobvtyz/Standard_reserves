@@ -22,6 +22,7 @@ import { requestsApi } from '../api/requests'
 import type {
   RequestDetail,
   RequestHistoryEntry,
+  RequestItemDetail,
   RequestItemHistoryEntry,
 } from '../api/types'
 import { StatusBadge } from '../components/common/StatusBadge'
@@ -283,35 +284,45 @@ export function RequestDetailPage() {
                 value == null ? '—' : `Утверждено: ${value}`,
             },
             { title: 'Ед.', dataIndex: 'unit', width: 70 },
-            {
-              title: 'Категория',
-              width: 110,
-              render: (_, item) => categoryLabel(item.product.category),
-            },
-            {
-              title: 'Удалённость',
-              width: 120,
-              render: (_, item) =>
-                distanceLabel(item.long_distance ?? item.warehouse.long_distance),
-            },
-            {
-              title: 'Потребность',
-              width: 140,
-              render: (_, item) => {
-                const qty = item.quantity_approved ?? item.quantity_requested
-                const longDistance = item.long_distance ?? item.warehouse.long_distance
-                const value = item.requirement
-                return (
-                  <Tooltip
-                    title={requirementTooltip(qty, item.unit, item.product.category, longDistance)}
-                  >
-                    <span>
-                      {formatRequirementQty(value ?? qty)} {item.unit}
-                    </span>
-                  </Tooltip>
-                )
-              },
-            },
+            ...(request.request_type !== 'one_time'
+              ? [
+                  {
+                    title: 'Категория',
+                    width: 110,
+                    render: (_: unknown, item: RequestItemDetail) =>
+                      categoryLabel(item.product.category),
+                  },
+                  {
+                    title: 'Удалённость',
+                    width: 120,
+                    render: (_: unknown, item: RequestItemDetail) =>
+                      distanceLabel(item.long_distance ?? item.warehouse.long_distance),
+                  },
+                  {
+                    title: 'Потребность',
+                    width: 140,
+                    render: (_: unknown, item: RequestItemDetail) => {
+                      const qty = item.quantity_approved ?? item.quantity_requested
+                      const longDistance = item.long_distance ?? item.warehouse.long_distance
+                      const value = item.requirement
+                      return (
+                        <Tooltip
+                          title={requirementTooltip(
+                            qty,
+                            item.unit,
+                            item.product.category,
+                            longDistance,
+                          )}
+                        >
+                          <span>
+                            {formatRequirementQty(value ?? qty)} {item.unit}
+                          </span>
+                        </Tooltip>
+                      )
+                    },
+                  },
+                ]
+              : []),
           ]}
         />
       </Card>

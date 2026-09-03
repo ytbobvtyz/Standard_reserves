@@ -64,4 +64,32 @@ describe('CreateRequestPage', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Разовое перемещение' }))
     expect(screen.getByText(PALLET_HINT)).toBeTruthy()
   })
+
+  it('shows category, distance and requirement columns for normative and hides them for one-time', async () => {
+    render(
+      <MemoryRouter>
+        <CreateRequestPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByText('Создать запрос')).toBeTruthy()
+    })
+
+    // Initially normative
+    expect(screen.getByText('Категория')).toBeTruthy()
+    expect(screen.getByText('Удалённость')).toBeTruthy()
+    expect(screen.getByText('Потребность')).toBeTruthy()
+
+    // Switch to one-time
+    fireEvent.click(screen.getByRole('radio', { name: 'Разовое перемещение' }))
+    expect(screen.queryByText('Категория')).toBeNull()
+    expect(screen.queryByText('Удалённость')).toBeNull()
+    expect(screen.queryByText('Потребность')).toBeNull()
+
+    // Switch back to normative
+    fireEvent.click(screen.getByRole('radio', { name: 'Нормативный' }))
+    expect(screen.getByText('Категория')).toBeTruthy()
+    expect(screen.getByText('Удалённость')).toBeTruthy()
+    expect(screen.getByText('Потребность')).toBeTruthy()
+  })
 })
