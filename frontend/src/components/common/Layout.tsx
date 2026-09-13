@@ -1,4 +1,4 @@
-import { Layout as AntLayout, Menu, Typography, Button, Space } from 'antd'
+import { Layout as AntLayout, Menu, Typography, Button, Space, Badge } from 'antd'
 import {
   DashboardOutlined,
   FileTextOutlined,
@@ -9,10 +9,11 @@ import {
   LogoutOutlined,
   TeamOutlined,
 } from '@ant-design/icons'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../stores/auth'
 import { ChangePasswordModal } from './ChangePasswordModal'
+import { approvalsApi } from '../../api/approvals'
 
 const { Header, Sider, Content } = AntLayout
 
@@ -22,6 +23,7 @@ export function AppLayout() {
   const user = useAuthStore((state) => state.user)
   const logout = useAuthStore((state) => state.logout)
   const [changePasswordOpen, setChangePasswordOpen] = useState(false)
+  const [pendingApprovalCount, setPendingApprovalCount] = useState<number | null>(null)
 
   const path = location.pathname
   const selectedKey = path.startsWith('/requests/create')
@@ -47,6 +49,43 @@ export function AppLayout() {
   const showEconomy = user?.role === 'economist'
   const showAdmin = user?.role === 'logistics'
 
+  useEffect(() => {
+    let cancelled = false
+
+    const loadPendingCount = async () => {
+      if (user?.role !== 'pp' && user?.role !== 'economist') {
+        setPendingApprovalCount(null)
+        return
+      }
+
+      try {
+        const response = user.role === 'pp'
+          ? await approvalsApi.getPPPending({ page: 1, limit: 1 })
+          : await approvalsApi.getEconomyPending({ page: 1, limit: 1 })
+        if (!cancelled) {
+          setPendingApprovalCount(response.data.meta?.total ?? response.data.data.length)
+        }
+      } catch {
+        // The menu remains usable when the count cannot be loaded.
+      }
+    }
+
+    void loadPendingCount()
+    return () => {
+      cancelled = true
+    }
+  }, [user?.role, location.pathname])
+
+  const approvalLabel = (label: string) => (
+    <Badge
+      className="approval-count-badge"
+      count={pendingApprovalCount ?? 0}
+      overflowCount={999}
+    >
+      <span>{label}</span>
+    </Badge>
+  )
+
   const menuItems = [
     { key: '/dashboard', icon: <DashboardOutlined />, label: 'Дашборд' },
     { key: '/requests/my', icon: <FileTextOutlined />, label: 'Запросы' },
@@ -64,7 +103,7 @@ export function AppLayout() {
           {
             key: '/approvals/pp',
             icon: <CheckSquareOutlined />,
-            label: 'Согласование ПП',
+            label: approvalLabel('Согласование ПП'),
           },
         ]
       : []),
@@ -73,7 +112,7 @@ export function AppLayout() {
           {
             key: '/approvals/economy',
             icon: <CheckSquareOutlined />,
-            label: 'Согласование экономиста',
+            label: approvalLabel('Согласование экономиста'),
           },
         ]
       : []),
