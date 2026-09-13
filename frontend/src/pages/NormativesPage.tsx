@@ -8,7 +8,9 @@ import {
   Tabs,
   Typography,
   message,
+  Button,
 } from 'antd'
+import { DownloadOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
@@ -74,6 +76,15 @@ function flattenOnDate(
 
 function formatQty(quantity: number, unit: Unit): string {
   return `${quantity.toLocaleString('ru-RU')} ${unit}`
+}
+
+function exportRows(rows: NormativeRow[]): void {
+  const headers = ['Артикул', 'Название', 'Склад', 'Запрос', 'Автор', 'Количество', 'Ед.', 'Срок действия', 'Клиент', 'Подразделение']
+  const esc = (value: unknown) => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const body = rows.map((row) => `<tr>${[row.product_code, row.product_name, row.warehouse_name, row.request_id ?? '', row.author_name, row.quantity, row.unit, row.expiry_date, row.client_name, row.department_name].map((v) => `<td>${esc(v)}</td>`).join('')}</tr>`).join('')
+  const html = `<table><thead><tr>${headers.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table>`
+  const blob = new Blob([`\ufeff<html><meta charset="utf-8">${html}</html>`], { type: 'application/vnd.ms-excel' })
+  const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `normatives_export_${dayjs().format('YYYY-MM-DD')}.xls`; link.click(); URL.revokeObjectURL(url)
 }
 
 const SEARCH_DEBOUNCE_MS = 400
@@ -294,6 +305,7 @@ export function NormativesPage() {
   return (
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
       <Typography.Title level={3}>Нормативы</Typography.Title>
+      <Button icon={<DownloadOutlined />} onClick={() => exportRows(rows)}>Выгрузить в Excel</Button>
       <Tabs
         items={[
           {
