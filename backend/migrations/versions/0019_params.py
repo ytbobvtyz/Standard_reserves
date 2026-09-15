@@ -146,7 +146,10 @@ SELECT
                 WHEN 'C' THEN COALESCE(prm.category_c, 2)
                 ELSE 1
               END
-            * CASE WHEN o.long_distance THEN COALESCE(prm.remote_warehouse, 1.5) ELSE 1 END
+            * CASE
+                WHEN o.long_distance THEN COALESCE(prm.remote_warehouse, 1.5)
+                ELSE 1
+              END
             - COALESCE(ab.plan, 0)
         ) > 0 THEN 'warning'
         ELSE 'ok'

@@ -46,9 +46,7 @@ class ParamsUpdate(BaseModel):
     remote_warehouse: Decimal = Field(...)
     pallet_multiple: bool
 
-    @field_validator(
-        "category_a", "category_b", "category_c", "remote_warehouse"
-    )
+    @field_validator("category_a", "category_b", "category_c", "remote_warehouse")
     @classmethod
     def check_coefficient(cls, value: Decimal) -> Decimal:
         return validate_coefficient(value)

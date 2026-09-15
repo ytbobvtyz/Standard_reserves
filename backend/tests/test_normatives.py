@@ -372,9 +372,8 @@ async def test_normatives_export_xlsx_formatting(
     )
     assert response.status_code == 200, response.text
     assert "spreadsheetml" in response.headers["content-type"]
-    assert (
-        'filename="normatives_export_2026-12-31.xlsx"'
-        in response.headers.get("content-disposition", "")
+    assert 'filename="normatives_export_2026-12-31.xlsx"' in response.headers.get(
+        "content-disposition", ""
     )
     workbook = load_workbook(BytesIO(response.content))
     sheet = workbook.active

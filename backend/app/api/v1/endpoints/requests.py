@@ -28,6 +28,7 @@ from app.schemas.request import (
     RequestStatusData,
     RequestUpdate,
 )
+from app.services.params import load_coefficient_set
 from app.services.requests import (
     LIST_OPTIONS,
     apply_own_requests_scope,
@@ -44,7 +45,6 @@ from app.services.requests import (
     update_active_expiry,
     update_draft,
 )
-from app.services.params import load_coefficient_set
 
 router = APIRouter(tags=["Запросы"])
 

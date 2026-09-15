@@ -327,7 +327,9 @@ def build_export_xlsx(
     category: CategoryFilter | None = None,
     client_name: str | None = None,
 ) -> bytes:
-    client_filter = client_name.strip().lower() if client_name and client_name.strip() else None
+    client_filter = (
+        client_name.strip().lower() if client_name and client_name.strip() else None
+    )
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Нормативы"
@@ -377,13 +379,17 @@ def build_export_xlsx(
             for col in range(1, len(EXPORT_HEADERS) + 1):
                 cell = sheet.cell(row=row_idx, column=col)
                 cell.border = thin
-                cell.alignment = Alignment(vertical="center", wrap_text=col in {2, 3, 5, 9, 10})
+                cell.alignment = Alignment(
+                    vertical="center",
+                    wrap_text=col in {2, 3, 5, 9, 10},
+                )
             sheet.cell(row=row_idx, column=1).number_format = "0"
             sheet.cell(row=row_idx, column=6).number_format = "#,##0.00"
             sheet.cell(row=row_idx, column=8).number_format = "DD.MM.YYYY"
 
     if sheet.max_row > 1:
-        sheet.auto_filter.ref = f"A1:{get_column_letter(len(EXPORT_HEADERS))}{sheet.max_row}"
+        last_col = get_column_letter(len(EXPORT_HEADERS))
+        sheet.auto_filter.ref = f"A1:{last_col}{sheet.max_row}"
 
     buffer = BytesIO()
     workbook.save(buffer)

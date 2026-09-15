@@ -267,9 +267,7 @@ def _history(request: Request) -> list[RequestHistoryEntry]:
     return entries
 
 
-def to_detail(
-    request: Request, coeffs: CoefficientSet | None = None
-) -> RequestDetail:
+def to_detail(request: Request, coeffs: CoefficientSet | None = None) -> RequestDetail:
     return RequestDetail(
         id=request.id,
         request_type=request.request_type,

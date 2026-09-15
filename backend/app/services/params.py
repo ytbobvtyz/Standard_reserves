@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.models.params import Params
 from app.models.user import User
 from app.schemas.params import ParamsLastModifiedBy, ParamsResponse, ParamsUpdate
-from app.services.coefficients import CoefficientSet, DEFAULT_COEFFICIENTS
+from app.services.coefficients import DEFAULT_COEFFICIENTS, CoefficientSet
 
 
 def _defaults_row() -> Params:
@@ -110,5 +110,3 @@ async def update_params(
         ),
         last_modified_at=row.last_modified_at,
     )
-
-

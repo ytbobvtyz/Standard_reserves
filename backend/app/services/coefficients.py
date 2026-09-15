@@ -38,9 +38,7 @@ DISTANCE_FACTOR_REMOTE = DEFAULT_COEFFICIENTS.remote_warehouse
 DISTANCE_FACTOR_NEAR = NEAR_DISTANCE_FACTOR
 
 
-def category_factor(
-    category: str, coeffs: CoefficientSet | None = None
-) -> Decimal:
+def category_factor(category: str, coeffs: CoefficientSet | None = None) -> Decimal:
     return (coeffs or DEFAULT_COEFFICIENTS).category_factor(category)
 
 
