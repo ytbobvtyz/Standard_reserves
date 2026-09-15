@@ -6,6 +6,8 @@ import type {
   ObjectListItem,
   ObjectListParams,
   ObjectUpdatePayload,
+  PalletNormsPreview,
+  PalletNormsUploadResult,
   ProductDetail,
   ProductListItem,
   ProductListParams,
@@ -53,6 +55,31 @@ export const referencesApi = {
           }
         },
       },
+    )
+  },
+
+  downloadPalletNormsTemplate: () =>
+    api.get<Blob>('/references/products/pallet-norms/template', {
+      responseType: 'blob',
+    }),
+
+  previewPalletNorms: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post<ApiSuccess<PalletNormsPreview>>(
+      '/references/products/pallet-norms/preview',
+      form,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    )
+  },
+
+  uploadPalletNorms: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post<ApiSuccess<PalletNormsUploadResult>>(
+      '/references/products/pallet-norms/upload',
+      form,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
     )
   },
 

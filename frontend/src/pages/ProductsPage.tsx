@@ -30,6 +30,7 @@ import type {
   ProductListItem,
   ProductUpdatePayload,
   ProductUploadResult,
+  PalletNormsUploadResult,
 } from '../api/types'
 import { ProductAutocomplete } from '../components/requests/ProductAutocomplete'
 import { useAuthStore } from '../stores/auth'
@@ -58,6 +59,9 @@ export function ProductsPage() {
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [uploadResult, setUploadResult] = useState<ProductUploadResult | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [palletOpen, setPalletOpen] = useState(false)
+  const [palletResult, setPalletResult] = useState<PalletNormsUploadResult | null>(null)
+  const [palletUploading, setPalletUploading] = useState(false)
 
   const [editOpen, setEditOpen] = useState(false)
   const [editLoading, setEditLoading] = useState(false)
@@ -146,6 +150,45 @@ export function ProductsPage() {
     return false
   }
 
+  const downloadPalletTemplate = async () => {
+    try {
+      const { data } = await referencesApi.downloadPalletNormsTemplate()
+      downloadBlob(data, 'pallet_norms_template.xlsx')
+    } catch (err) {
+      message.error(getApiErrorMessage(err, 'Не удалось скачать шаблон'))
+    }
+  }
+
+  const handlePalletUpload = async (file: File) => {
+    setPalletUploading(true)
+    setPalletResult(null)
+    try {
+      const preview = await referencesApi.previewPalletNorms(file)
+      const confirmed = await new Promise<boolean>((resolve) => {
+        Modal.confirm({
+          title: 'Загрузить поддонные нормы',
+          content: `${preview.data.data.message}, подтверждаете?`,
+          okText: 'Подтвердить',
+          cancelText: 'Отмена',
+          onOk: () => resolve(true),
+          onCancel: () => resolve(false),
+        })
+      })
+      if (!confirmed) {
+        return false
+      }
+      const { data } = await referencesApi.uploadPalletNorms(file)
+      setPalletResult(data.data)
+      message.success(data.data.message)
+      await load()
+    } catch (err) {
+      message.error(getApiErrorMessage(err, 'Не удалось загрузить поддонные нормы'))
+    } finally {
+      setPalletUploading(false)
+    }
+    return false
+  }
+
   const openEdit = async (code: number) => {
     setEditOpen(true)
     setEditLoading(true)
@@ -160,6 +203,7 @@ export function ProductsPage() {
         is_active: data.data.is_active,
         weight_kg: data.data.weight_kg,
         monthly_consumption: data.data.monthly_consumption,
+        pallet_qty: data.data.pallet_qty,
         gtin: data.data.gtin,
         mark_control: Boolean(data.data.mark_control),
         plant_id: data.data.plant_id,
@@ -188,6 +232,7 @@ export function ProductsPage() {
         ...values,
         description: values.description || null,
         monthly_consumption: values.monthly_consumption ?? null,
+        pallet_qty: values.pallet_qty ?? null,
         gtin,
         second_plant_id: values.second_plant_id ?? null,
         third_plant_id: values.third_plant_id ?? null,
@@ -232,6 +277,12 @@ export function ProductsPage() {
     { title: 'Категория', dataIndex: 'category', width: 100 },
     { title: 'Завод', dataIndex: 'plant_name' },
     { title: 'Вес, кг', dataIndex: 'weight_kg', width: 100 },
+    {
+      title: 'Поддонная норма',
+      dataIndex: 'pallet_qty',
+      width: 140,
+      render: (value?: number | null) => value ?? '—',
+    },
     {
       title: 'GTIN',
       dataIndex: 'gtin',
@@ -337,6 +388,15 @@ export function ProductsPage() {
             >
               Загрузить из Excel
             </Button>
+            <Button
+              icon={<UploadOutlined aria-hidden />}
+              onClick={() => {
+                setPalletResult(null)
+                setPalletOpen(true)
+              }}
+            >
+              Загрузить поддонные нормы
+            </Button>
           </>
         ) : null}
       </Space>
@@ -391,6 +451,46 @@ export function ProductsPage() {
             ))}
           </Space>
         ) : null}
+      </Modal>
+
+      <Modal
+        title="Загрузить поддонные нормы"
+        open={palletOpen}
+        onCancel={() => setPalletOpen(false)}
+        footer={null}
+        destroyOnHidden
+      >
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Button
+            icon={<DownloadOutlined aria-hidden />}
+            onClick={() => void downloadPalletTemplate()}
+          >
+            Выгрузить шаблон
+          </Button>
+          <Upload.Dragger
+            accept=".xlsx,.xls"
+            maxCount={1}
+            showUploadList={false}
+            disabled={palletUploading}
+            beforeUpload={(file) => {
+              void handlePalletUpload(file)
+              return false
+            }}
+          >
+            <p>Загрузить из шаблона</p>
+            <p>Колонки: артикул и количество штук на поддоне</p>
+          </Upload.Dragger>
+          {palletResult ? (
+            <Space direction="vertical" style={{ width: '100%' }}>
+              <Typography.Text strong>{palletResult.message}</Typography.Text>
+              {palletResult.error_details.map((item) => (
+                <Typography.Text key={item.row} type="danger">
+                  Строка {item.row}: {item.message}
+                </Typography.Text>
+              ))}
+            </Space>
+          ) : null}
+        </Space>
       </Modal>
 
       <Modal
@@ -460,6 +560,9 @@ export function ProductsPage() {
             </Form.Item>
             <Form.Item name="monthly_consumption" label="Потребление / мес">
               <InputNumber min={0} style={{ width: 160 }} />
+            </Form.Item>
+            <Form.Item name="pallet_qty" label="Поддонная норма">
+              <InputNumber min={1} precision={0} style={{ width: 160 }} />
             </Form.Item>
           </Space>
           <Form.Item

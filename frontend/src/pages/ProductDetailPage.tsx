@@ -58,6 +58,9 @@ export function ProductDetailPage() {
           <Descriptions.Item label="Категория">{product.category}</Descriptions.Item>
           <Descriptions.Item label="Завод">{product.plant_name}</Descriptions.Item>
           <Descriptions.Item label="Вес, кг">{product.weight_kg}</Descriptions.Item>
+          <Descriptions.Item label="Поддонная норма">
+            {product.pallet_qty ?? '—'}
+          </Descriptions.Item>
           <Descriptions.Item label="Мес. потребление">
             {product.monthly_consumption ?? '—'}
           </Descriptions.Item>

@@ -13,6 +13,7 @@ const product: ProductListItem = {
   plant_name: 'Завод Московский',
   weight_kg: 0.25,
   monthly_consumption: 1000,
+  pallet_qty: 48,
   is_active: true,
   gtin: '4601234567890',
   mark_control: false,
@@ -26,6 +27,9 @@ const deleteProduct = vi.fn()
 const downloadProductsTemplate = vi.fn()
 const exportProducts = vi.fn()
 const uploadProducts = vi.fn()
+const downloadPalletNormsTemplate = vi.fn()
+const previewPalletNorms = vi.fn()
+const uploadPalletNorms = vi.fn()
 const getObjects = vi.fn()
 const getProduct = vi.fn()
 
@@ -38,6 +42,9 @@ vi.mock('../api/references', () => ({
     downloadProductsTemplate: (...args: unknown[]) => downloadProductsTemplate(...args),
     exportProducts: (...args: unknown[]) => exportProducts(...args),
     uploadProducts: (...args: unknown[]) => uploadProducts(...args),
+    downloadPalletNormsTemplate: (...args: unknown[]) => downloadPalletNormsTemplate(...args),
+    previewPalletNorms: (...args: unknown[]) => previewPalletNorms(...args),
+    uploadPalletNorms: (...args: unknown[]) => uploadPalletNorms(...args),
     getObjects: (...args: unknown[]) => getObjects(...args),
     getProduct: (...args: unknown[]) => getProduct(...args),
   },
@@ -77,6 +84,9 @@ describe('ProductsPage', () => {
     downloadProductsTemplate.mockReset()
     exportProducts.mockReset()
     uploadProducts.mockReset()
+    downloadPalletNormsTemplate.mockReset()
+    previewPalletNorms.mockReset()
+    uploadPalletNorms.mockReset()
     getObjects.mockReset()
     getProduct.mockReset()
     URL.createObjectURL = vi.fn(() => 'blob:url')
@@ -150,6 +160,35 @@ describe('ProductsPage', () => {
         },
       },
     })
+    downloadPalletNormsTemplate.mockResolvedValue({
+      data: new Blob(['xlsx']),
+    })
+    previewPalletNorms.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: {
+          file_rows: 3,
+          matched: 2,
+          unmatched: 1,
+          errors: 0,
+          message:
+            'В вашем файле 3 записей, найдены позиции для 2 записей, они будут обновлены',
+          error_details: [],
+        },
+      },
+    })
+    uploadPalletNorms.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: {
+          updated: 2,
+          unmatched: 1,
+          errors: 0,
+          message: 'Обновлено 2 поддонных норм, не найдено 1, ошибок 0',
+          error_details: [],
+        },
+      },
+    })
     setRole('pp')
   })
 
@@ -167,6 +206,7 @@ describe('ProductsPage', () => {
     expect(screen.getByPlaceholderText('Поиск по GTIN')).toBeTruthy()
     expect(screen.getByRole('button', { name: /Выгрузить шаблон/ })).toBeTruthy()
     expect(screen.getByRole('button', { name: /Загрузить из Excel/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Загрузить поддонные нормы/ })).toBeTruthy()
     expect(screen.getByText('GTIN')).toBeTruthy()
     expect(screen.getByText('Честный знак')).toBeTruthy()
     expect(screen.getByText('Дата изменения')).toBeTruthy()
@@ -185,6 +225,7 @@ describe('ProductsPage', () => {
     })
     expect(screen.queryByRole('button', { name: /Выгрузить шаблон/ })).toBeNull()
     expect(screen.queryByRole('button', { name: /Загрузить из Excel/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Загрузить поддонные нормы/ })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Редактировать' })).toBeNull()
     expect(screen.getByRole('button', { name: /Выгрузить в Excel/ })).toBeTruthy()
     expect(screen.getByPlaceholderText('Поиск по GTIN')).toBeTruthy()
@@ -242,6 +283,42 @@ describe('ProductsPage', () => {
       expect(screen.getByText('Загружено 1, ошибок 1')).toBeTruthy()
     })
     expect(screen.getByText(/Строка 3/)).toBeTruthy()
+  }, 15000)
+
+  it('previews pallet norms and uploads after confirmation', async () => {
+    render(
+      <MemoryRouter>
+        <ProductsPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByText('Подшипник 6204ZZ')).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Загрузить поддонные нормы/ }))
+    expect(screen.getByText(/Загрузить из шаблона/)).toBeTruthy()
+    expect(screen.getAllByRole('button', { name: /Выгрузить шаблон/ }).length).toBeGreaterThan(
+      1,
+    )
+
+    const file = new File(['data'], 'pallet.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    const input = document.querySelectorAll('input[type="file"]')[0] as HTMLInputElement
+    fireEvent.change(input, { target: { files: [file] } })
+
+    await waitFor(() => {
+      expect(previewPalletNorms).toHaveBeenCalled()
+    })
+    await waitFor(() => {
+      expect(screen.getByText(/найдены позиции для 2 записей/)).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить' }))
+    await waitFor(() => {
+      expect(uploadPalletNorms).toHaveBeenCalled()
+    })
+    await waitFor(() => {
+      expect(screen.getByText(/Обновлено 2 поддонных норм/)).toBeTruthy()
+    })
   }, 15000)
 
   it('opens edit modal and deletes with confirmation', async () => {

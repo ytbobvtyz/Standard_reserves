@@ -26,6 +26,8 @@ from app.schemas.reference import (
     ObjectDetail,
     ObjectListItem,
     ObjectUpdate,
+    PalletNormsPreview,
+    PalletNormsUploadResult,
     ProductDetail,
     ProductListItem,
     ProductUpdate,
@@ -149,6 +151,59 @@ async def upload_products(
         current_user,
         content,
         file.filename or "products.xlsx",
+    )
+    return SuccessResponse(data=data)
+
+
+@router.get("/products/pallet-norms/template")
+async def download_pallet_norms_template(
+    _user: User = Depends(PRODUCT_MANAGERS),
+) -> Response:
+    content = products_admin.build_pallet_norms_template_xlsx()
+    return Response(
+        content=content,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        headers={
+            "Content-Disposition": ('attachment; filename="pallet_norms_template.xlsx"')
+        },
+    )
+
+
+@router.post(
+    "/products/pallet-norms/preview",
+    response_model=SuccessResponse[PalletNormsPreview],
+)
+async def preview_pallet_norms(
+    file: UploadFile = File(...),
+    _user: User = Depends(PRODUCT_MANAGERS),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[PalletNormsPreview]:
+    content = await file.read()
+    data = await products_admin.preview_pallet_norms(
+        db,
+        content,
+        file.filename or "pallet_norms.xlsx",
+    )
+    return SuccessResponse(data=data)
+
+
+@router.post(
+    "/products/pallet-norms/upload",
+    response_model=SuccessResponse[PalletNormsUploadResult],
+)
+async def upload_pallet_norms(
+    file: UploadFile = File(...),
+    current_user: User = Depends(PRODUCT_MANAGERS),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[PalletNormsUploadResult]:
+    content = await file.read()
+    data = await products_admin.upload_pallet_norms(
+        db,
+        current_user,
+        content,
+        file.filename or "pallet_norms.xlsx",
     )
     return SuccessResponse(data=data)
 

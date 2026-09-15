@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
@@ -19,6 +20,8 @@ from app.models.product import Product
 from app.models.request_item import RequestItem
 from app.models.user import User
 from app.schemas.reference import (
+    PalletNormsPreview,
+    PalletNormsUploadResult,
     ProductDetail,
     ProductUpdate,
     ProductUploadError,
@@ -39,12 +42,14 @@ TEMPLATE_HEADERS = [
     "gtin",
     "plant_id",
     "weight_kg",
+    "pallet_qty",
 ]
 EXPORT_HEADERS = [
     "code",
     "name",
     "category",
     "weight_kg",
+    "pallet_qty",
     "gtin",
     "is_active",
     "parent_code",
@@ -67,7 +72,17 @@ EXAMPLE_ROW = [
     "4601234567890",
     1001,
     0.25,
+    48,
 ]
+
+
+PALLET_TEMPLATE_HEADERS = ["Артикул", "Количество штук на поддоне"]
+PALLET_CODE_ALIASES = {"code", "артикул"}
+PALLET_QTY_ALIASES = {
+    "pallet_qty",
+    "количество штук на поддоне",
+    "поддонная норма",
+}
 
 
 def product_list_conditions(
@@ -117,6 +132,7 @@ def build_export_xlsx(products: list[Product]) -> bytes:
                 product.name,
                 product.category.strip() if product.category else None,
                 float(product.weight_kg) if product.weight_kg is not None else None,
+                product.pallet_qty,
                 product.gtin,
                 bool(product.is_active),
                 product.parent_code,
@@ -195,6 +211,21 @@ def _parse_decimal(value: Any, field: str) -> Decimal | None:
         return Decimal(str(value).strip().replace(",", "."))
     except (InvalidOperation, TypeError, ValueError):
         raise ValueError(f"{field} должен быть числом") from None
+
+
+def _parse_pallet_qty(value: Any) -> int | None:
+    if value is None or str(value).strip() == "":
+        return None
+    try:
+        number = Decimal(str(value).strip().replace(",", "."))
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValueError("Поддонная норма должна быть целым числом") from None
+    if number != number.to_integral_value():
+        raise ValueError("Поддонная норма должна быть целым числом")
+    qty = int(number)
+    if qty < 1:
+        raise ValueError("Поддонная норма должна быть не меньше 1")
+    return qty
 
 
 def _cell_map(header_row: tuple[Any, ...]) -> dict[str, int]:
@@ -288,6 +319,7 @@ async def update_product(
     product.category = body.category
     product.is_active = body.is_active
     product.weight_kg = body.weight_kg
+    product.pallet_qty = body.pallet_qty
     product.monthly_consumption = body.monthly_consumption
     product.gtin = gtin
     product.mark_control = body.mark_control
@@ -384,6 +416,7 @@ async def _upsert_row(
             children_code=values.get("children_code"),
             gtin=gtin,
             mark_control=values["mark_control"],
+            pallet_qty=values.get("pallet_qty"),
         )
         _touch(product, user)
         db.add(product)
@@ -415,6 +448,8 @@ async def _upsert_row(
         if values["weight_kg"] <= 0:
             raise ValueError("weight_kg должен быть больше 0")
         product.weight_kg = values["weight_kg"]
+    if "pallet_qty" in values:
+        product.pallet_qty = values["pallet_qty"]
     _touch(product, user)
     _audit(
         db,
@@ -504,6 +539,8 @@ async def upload_products(
                     "weight_kg",
                 ),
             }
+            if "pallet_qty" in headers:
+                values["pallet_qty"] = _parse_pallet_qty(row[headers["pallet_qty"]])
             if "parent_code" in headers:
                 raw_parent = row[headers["parent_code"]]
                 values["clear_parent"] = (
@@ -544,4 +581,162 @@ async def upload_products(
         errors=len(error_details),
         message=f"Загружено {loaded}, ошибок {len(error_details)}",
         error_details=error_details,
+    )
+
+
+def build_pallet_norms_template_xlsx() -> bytes:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "pallet_norms"
+    sheet.append(PALLET_TEMPLATE_HEADERS)
+    sheet.append([10001, 48])
+    buffer = BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+def _load_xlsx(content: bytes, filename: str):
+    lowered = filename.lower()
+    if not lowered.endswith((".xlsx", ".xls")):
+        raise APIError(400, "INVALID_FILE", "Загрузите файл .xlsx или .xls")
+    try:
+        return load_workbook(BytesIO(content), data_only=True)
+    except Exception as exc:
+        raise APIError(
+            400,
+            "INVALID_FILE",
+            "Не удалось прочитать Excel. Используйте формат .xlsx",
+        ) from exc
+
+
+def _header_index(mapping: dict[str, int], aliases: set[str]) -> int | None:
+    for key, index in mapping.items():
+        if key in aliases:
+            return index
+    return None
+
+
+@dataclass
+class PalletNormsParse:
+    file_rows: int = 0
+    updates: dict[int, int] = field(default_factory=dict)
+    unmatched: list[int] = field(default_factory=list)
+    error_details: list[ProductUploadError] = field(default_factory=list)
+
+
+async def _parse_pallet_norms(
+    db: AsyncSession, content: bytes, filename: str
+) -> PalletNormsParse:
+    workbook = _load_xlsx(content, filename)
+    sheet = workbook.active
+    rows = list(sheet.iter_rows(values_only=True))
+    if not rows:
+        raise APIError(400, "INVALID_FILE", "Файл пуст")
+    headers = _cell_map(rows[0])
+    code_idx = _header_index(headers, PALLET_CODE_ALIASES)
+    qty_idx = _header_index(headers, PALLET_QTY_ALIASES)
+    if code_idx is None or qty_idx is None:
+        raise APIError(
+            400,
+            "INVALID_FILE",
+            "В шаблоне нужны колонки «Артикул» и «Количество штук на поддоне»",
+        )
+
+    parsed = PalletNormsParse()
+    for index, row in enumerate(rows[1:], start=2):
+        if row is None or all(cell is None or str(cell).strip() == "" for cell in row):
+            continue
+        parsed.file_rows += 1
+        try:
+            code = _parse_int(row[code_idx] if code_idx < len(row) else None, "артикул")
+            if code is None:
+                raise ValueError("Укажите артикул")
+            qty = _parse_pallet_qty(row[qty_idx] if qty_idx < len(row) else None)
+            if qty is None:
+                raise ValueError("Укажите количество штук на поддоне")
+            parsed.updates[code] = qty
+        except ValueError as exc:
+            parsed.error_details.append(ProductUploadError(row=index, message=str(exc)))
+
+    if parsed.updates:
+        existing = set(
+            await db.scalars(
+                select(Product.code).where(
+                    Product.code.in_(parsed.updates),
+                    Product.deleted_at.is_(None),
+                )
+            )
+        )
+        parsed.unmatched = [code for code in parsed.updates if code not in existing]
+        parsed.updates = {
+            code: qty for code, qty in parsed.updates.items() if code in existing
+        }
+    return parsed
+
+
+def _pallet_preview_message(parsed: PalletNormsParse) -> str:
+    return (
+        f"В вашем файле {parsed.file_rows} записей, найдены позиции для "
+        f"{len(parsed.updates)} записей, они будут обновлены"
+    )
+
+
+async def preview_pallet_norms(
+    db: AsyncSession, content: bytes, filename: str
+) -> PalletNormsPreview:
+    parsed = await _parse_pallet_norms(db, content, filename)
+    return PalletNormsPreview(
+        file_rows=parsed.file_rows,
+        matched=len(parsed.updates),
+        unmatched=len(parsed.unmatched),
+        errors=len(parsed.error_details),
+        message=_pallet_preview_message(parsed),
+        error_details=parsed.error_details,
+    )
+
+
+async def upload_pallet_norms(
+    db: AsyncSession, user: User, content: bytes, filename: str
+) -> PalletNormsUploadResult:
+    parsed = await _parse_pallet_norms(db, content, filename)
+    if parsed.updates:
+        result = await db.execute(
+            select(Product).where(
+                Product.code.in_(parsed.updates),
+                Product.deleted_at.is_(None),
+            )
+        )
+        for product in result.scalars().all():
+            product.pallet_qty = parsed.updates[product.code]
+            _touch(product, user)
+            _audit(
+                db,
+                user=user,
+                action="update",
+                entity_id=str(product.code),
+                payload={"source": "pallet_norms", "pallet_qty": product.pallet_qty},
+            )
+    _audit(
+        db,
+        user=user,
+        action="upload",
+        entity_id=filename,
+        payload={
+            "source": "pallet_norms",
+            "updated": len(parsed.updates),
+            "unmatched": len(parsed.unmatched),
+            "errors": len(parsed.error_details),
+            "filename": filename,
+        },
+    )
+    await db.commit()
+    return PalletNormsUploadResult(
+        updated=len(parsed.updates),
+        unmatched=len(parsed.unmatched),
+        errors=len(parsed.error_details),
+        message=(
+            f"Обновлено {len(parsed.updates)} поддонных норм, "
+            f"не найдено {len(parsed.unmatched)}, ошибок {len(parsed.error_details)}"
+        ),
+        error_details=parsed.error_details,
     )

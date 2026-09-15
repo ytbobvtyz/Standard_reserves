@@ -65,6 +65,7 @@ export interface ProductListItem {
   plant_id: number
   plant_name: string
   weight_kg: number
+  pallet_qty?: number | null
   monthly_consumption: number | null
   is_active: boolean
   is_analog?: boolean
@@ -479,6 +480,7 @@ export interface ProductUpdatePayload {
   category: 'A' | 'B' | 'C'
   is_active: boolean
   weight_kg: number
+  pallet_qty?: number | null
   monthly_consumption?: number | null
   gtin?: string | null
   mark_control: boolean
@@ -497,6 +499,23 @@ export interface ProductUploadError {
 export interface ProductUploadResult {
   created: number
   updated: number
+  errors: number
+  message: string
+  error_details: ProductUploadError[]
+}
+
+export interface PalletNormsPreview {
+  file_rows: number
+  matched: number
+  unmatched: number
+  errors: number
+  message: string
+  error_details: ProductUploadError[]
+}
+
+export interface PalletNormsUploadResult {
+  updated: number
+  unmatched: number
   errors: number
   message: string
   error_details: ProductUploadError[]

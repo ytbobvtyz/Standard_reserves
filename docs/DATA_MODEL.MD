@@ -42,6 +42,7 @@ erDiagram
         int second_plant_id FK "второй завод (опционально)"
         int third_plant_id FK "третий завод (опционально)"
         decimal weight_kg "вес 1 шт в кг нетто"
+        int pallet_qty "штук на поддоне (опционально)"
         decimal monthly_consumption "потребление в месяц"
         boolean is_active "активный"
         int parent_code "ссылка на старый артикул (без FK)"
@@ -358,6 +359,7 @@ CREATE TABLE products (
     second_plant_id INTEGER REFERENCES objects(code),
     third_plant_id INTEGER REFERENCES objects(code),
     weight_kg DECIMAL(12,4) NOT NULL,
+    pallet_qty INTEGER CHECK (pallet_qty IS NULL OR pallet_qty >= 1),
     monthly_consumption DECIMAL(12,2),
     is_active BOOLEAN DEFAULT true,
     parent_code INTEGER,
@@ -391,6 +393,7 @@ plant_id	INTEGER	✅	Основной завод → objects.code
 second_plant_id	INTEGER	❌	Второй завод → objects.code
 third_plant_id	INTEGER	❌	Третий завод → objects.code
 weight_kg	DECIMAL(12,4)	✅	Вес 1 шт в кг нетто
+pallet_qty	INTEGER	❌	Поддонная норма, штук на поддоне (≥ 1)
 monthly_consumption	DECIMAL(12,2)	❌	Потребление в месяц
 is_active	BOOLEAN	✅	Активный (по умолчанию true)
 parent_code	INTEGER	❌	Ссылка на старый артикул (логическая, без FK; код может ещё не существовать)
@@ -1333,6 +1336,7 @@ EXECUTE FUNCTION trigger_create_normative();
 | 17 | `0017_production_requests.py` | `production_requests`, `production_request_items`; `normatives.request_id` nullable; `production_request_item_id`; unit `шт`/`кг`/`т` |
 | 18 | `0018_drop_normative_trigger.py` | Удаление триггера `create_normative_on_approve` |
 | 19 | `0019_params.py` | Таблица `params`; формулы `calculate_normative` / `deficit_view` читают коэффициенты |
+| 20 | `0020_pallet_qty.py` | `products.pallet_qty` — опциональная поддонная норма |
 
 Начальные пользователи и объекты заполняются скриптом `backend/scripts/seed_data.py`, а не миграцией.
 

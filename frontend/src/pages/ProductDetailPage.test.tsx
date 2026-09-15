@@ -28,6 +28,7 @@ describe('ProductDetailPage', () => {
           plant_name: 'Завод Московский',
           weight_kg: 0.25,
           monthly_consumption: 1000,
+          pallet_qty: 48,
           is_active: true,
         },
       },
@@ -66,5 +67,7 @@ describe('ProductDetailPage', () => {
     expect(screen.getByText('Родственные артикулы')).toBeTruthy()
     expect(screen.getByText('Дочерний')).toBeTruthy()
     expect(getRelated).toHaveBeenCalledWith(10001)
+    expect(screen.getByText('Поддонная норма')).toBeTruthy()
+    expect(screen.getByText('48')).toBeTruthy()
   })
 })

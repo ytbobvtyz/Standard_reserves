@@ -16,6 +16,7 @@ class ProductListItem(BaseModel):
     plant_id: int
     plant_name: str
     weight_kg: DecimalNumber
+    pallet_qty: int | None = None
     monthly_consumption: DecimalNumber | None = None
     is_active: bool
     is_analog: bool = False
@@ -44,6 +45,7 @@ class ProductUpdate(BaseModel):
     category: str = Field(pattern="^[ABC]$")
     is_active: bool = True
     weight_kg: DecimalNumber = Field(gt=0)
+    pallet_qty: int | None = Field(default=None, ge=1)
     monthly_consumption: DecimalNumber | None = None
     gtin: str | None = None
     mark_control: bool = False
@@ -62,6 +64,23 @@ class ProductUploadError(BaseModel):
 class ProductUploadResult(BaseModel):
     created: int
     updated: int
+    errors: int
+    message: str
+    error_details: list[ProductUploadError]
+
+
+class PalletNormsPreview(BaseModel):
+    file_rows: int
+    matched: int
+    unmatched: int
+    errors: int
+    message: str
+    error_details: list[ProductUploadError]
+
+
+class PalletNormsUploadResult(BaseModel):
+    updated: int
+    unmatched: int
     errors: int
     message: str
     error_details: list[ProductUploadError]

@@ -61,6 +61,10 @@ class Product(TimestampMixin, SoftDeleteMixin, Base):
             "gtin IS NULL OR gtin ~ '^[0-9]{13}$'",
             name="ck_products_gtin",
         ),
+        CheckConstraint(
+            "pallet_qty IS NULL OR pallet_qty >= 1",
+            name="ck_products_pallet_qty",
+        ),
     )
 
     code: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -74,6 +78,7 @@ class Product(TimestampMixin, SoftDeleteMixin, Base):
     second_plant_id: Mapped[int | None] = mapped_column(ForeignKey("objects.code"))
     third_plant_id: Mapped[int | None] = mapped_column(ForeignKey("objects.code"))
     weight_kg: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
+    pallet_qty: Mapped[int | None] = mapped_column(Integer)
     monthly_consumption: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     is_active: Mapped[bool] = mapped_column(
         Boolean,

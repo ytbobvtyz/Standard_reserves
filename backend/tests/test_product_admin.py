@@ -108,6 +108,7 @@ async def test_template_download_for_pp(
     ]
     assert "plant_id" in headers
     assert "weight_kg" in headers
+    assert "pallet_qty" in headers
 
 
 async def test_products_export_allowed_for_commercial(
@@ -130,6 +131,7 @@ async def test_products_export_allowed_for_commercial(
         "name",
         "category",
         "weight_kg",
+        "pallet_qty",
         "gtin",
         "is_active",
         "parent_code",
@@ -167,7 +169,7 @@ async def test_products_export_filters_by_gtin(
     workbook = load_workbook(BytesIO(response.content))
     rows = list(workbook.active.iter_rows(min_row=2, values_only=True))
     assert rows
-    assert all(row[4] and gtin in str(row[4]) for row in rows)
+    assert all(row[5] and gtin in str(row[5]) for row in rows)
     assert catalog["product_code"] in {row[0] for row in rows}
 
 
@@ -570,3 +572,87 @@ async def test_guest_cannot_manage_products(
         headers=auth_header(token),
     )
     assert listed.status_code == 200
+
+
+async def test_pallet_norms_template_and_upload(
+    client: AsyncClient, pp_user: AuthUser, catalog: dict[str, int]
+) -> None:
+    await _cleanup_admin_products()
+    await _seed_product(UPDATE_CODE, catalog)
+    token = await login_token(client, pp_user)
+
+    template = await client.get(
+        "/api/v1/references/products/pallet-norms/template",
+        headers=auth_header(token),
+    )
+    assert template.status_code == 200, template.text
+    workbook = load_workbook(BytesIO(template.content))
+    headers = [cell.value for cell in next(workbook.active.iter_rows(max_row=1))]
+    assert headers == ["Артикул", "Количество штук на поддоне"]
+
+    content = _xlsx(
+        [
+            ["Артикул", "Количество штук на поддоне"],
+            [UPDATE_CODE, 48],
+            [UPDATE_CODE, 64],
+            [999999, 12],
+            ["bad", 10],
+        ]
+    )
+    preview = await client.post(
+        "/api/v1/references/products/pallet-norms/preview",
+        headers=auth_header(token),
+        files={
+            "file": (
+                "pallet.xlsx",
+                content,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert preview.status_code == 200, preview.text
+    preview_data = preview.json()["data"]
+    assert preview_data["file_rows"] == 4
+    assert preview_data["matched"] == 1
+    assert preview_data["unmatched"] == 1
+    assert preview_data["errors"] == 1
+    assert "4 записей" in preview_data["message"]
+    assert "1 записей" in preview_data["message"]
+
+    async with AsyncSessionLocal() as session:
+        product = await session.get(Product, UPDATE_CODE)
+        assert product is not None
+        assert product.pallet_qty is None
+
+    uploaded = await client.post(
+        "/api/v1/references/products/pallet-norms/upload",
+        headers=auth_header(token),
+        files={
+            "file": (
+                "pallet.xlsx",
+                content,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    data = uploaded.json()["data"]
+    assert data["updated"] == 1
+    assert data["unmatched"] == 1
+    edited = await client.get(
+        f"/api/v1/references/products/{UPDATE_CODE}/edit",
+        headers=auth_header(token),
+    )
+    assert edited.json()["data"]["pallet_qty"] == 64
+    await _cleanup_admin_products()
+
+
+async def test_pallet_norms_forbidden_for_commercial(
+    client: AsyncClient, test_user: AuthUser, catalog: dict[str, int]
+) -> None:
+    token = await login_token(client, test_user)
+    response = await client.get(
+        "/api/v1/references/products/pallet-norms/template",
+        headers=auth_header(token),
+    )
+    assert response.status_code == 403

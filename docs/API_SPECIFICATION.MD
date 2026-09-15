@@ -1394,6 +1394,7 @@ json
             "plant_id": 1001,
             "plant_name": "Завод Московский",
             "weight_kg": 0.250,
+            "pallet_qty": 48,
             "monthly_consumption": 1000,
             "is_active": true,
             "is_analog": false,
@@ -1566,7 +1567,7 @@ Authorization: Bearer <token>
 
 Response (200): файл application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
 
-Колонки шаблона: code, name, status, children_code, parent_code, category, mark_control, gtin, plant_id, weight_kg
+Колонки шаблона: code, name, status, children_code, parent_code, category, mark_control, gtin, plant_id, weight_kg, pallet_qty
 
 8.5.1. Выгрузить продукты в Excel
 text
@@ -1582,7 +1583,7 @@ Query параметры те же, что у списка (`search`, `gtin`, `c
 Response (200): файл `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
 `Content-Disposition: attachment; filename="products_export_YYYY-MM-DD.xlsx"`
 
-Колонки: code, name, category, weight_kg, gtin, is_active, parent_code, children_code, plant_id, second_plant_id, third_plant_id, mark_control, last_modified_at, last_modified_by
+Колонки: code, name, category, weight_kg, pallet_qty, gtin, is_active, parent_code, children_code, plant_id, second_plant_id, third_plant_id, mark_control, last_modified_at, last_modified_by
 
 8.6. Загрузить продукты из Excel
 text
@@ -1602,6 +1603,7 @@ Form-data: file — .xlsx или .xls
 - gtin: пусто или ровно 13 цифр; **не уникален** (родитель и потомок могут иметь один GTIN)
 - parent_code / children_code: целые или пусто; **не проверяются** на наличие в БД (ссылка сохраняется как есть)
 - обязательные при создании: `code` (уникальный PK), `name` (не пустой), `category` (A/B/C); `plant_id` и `weight_kg` нужны новым строкам из‑за NOT NULL в таблице
+- `pallet_qty`: целое ≥ 1 или пусто (поддонная норма)
 - по code: существующая запись обновляется, иначе создаётся
 
 Response (200):
@@ -1619,6 +1621,30 @@ json
         ]
     }
 }
+8.6.1. Поддонные нормы (массовое обновление)
+text
+GET /references/products/pallet-norms/template
+POST /references/products/pallet-norms/preview
+POST /references/products/pallet-norms/upload
+Права: pp, economist, logistics
+
+Шаблон `.xlsx`: колонки «Артикул», «Количество штук на поддоне». Новые продукты не создаются — обновляются только существующие артикулы. Повтор артикула: действует последнее значение.
+
+`preview` не пишет в БД. Ответ:
+json
+{
+    "status": "success",
+    "data": {
+        "file_rows": 10,
+        "matched": 8,
+        "unmatched": 2,
+        "errors": 0,
+        "message": "В вашем файле 10 записей, найдены позиции для 8 записей, они будут обновлены",
+        "error_details": []
+    }
+}
+
+`upload` применяет matched-строки и возвращает `updated`, `unmatched`, `errors`.
 8.7. Получить продукт для редактирования
 text
 GET /references/products/{code}/edit
@@ -1643,6 +1669,7 @@ json
         "second_plant_id": null,
         "third_plant_id": null,
         "weight_kg": 0.25,
+        "pallet_qty": 48,
         "monthly_consumption": 1000,
         "is_active": true,
         "parent_code": null,
@@ -1674,6 +1701,7 @@ json
     "category": "A",
     "is_active": true,
     "weight_kg": 0.25,
+    "pallet_qty": 48,
     "monthly_consumption": 1000,
     "gtin": "4601234567890",
     "mark_control": false,

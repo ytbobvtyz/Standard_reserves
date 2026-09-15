@@ -26,6 +26,7 @@ def to_product_list_item(
         plant_id=product.plant_id,
         plant_name=product.plant.name if product.plant else "",
         weight_kg=product.weight_kg,
+        pallet_qty=product.pallet_qty,
         monthly_consumption=product.monthly_consumption,
         is_active=product.is_active,
         is_analog=is_analog,
