@@ -32,6 +32,7 @@ vi.mock('antd', async () => {
 })
 
 const getOnDate = vi.fn()
+const exportExcel = vi.fn()
 const getObjects = vi.fn()
 const getDepartments = vi.fn()
 const listProductionRequests = vi.fn()
@@ -49,6 +50,7 @@ vi.mock('../api/productionRequests', () => ({
 vi.mock('../api/normatives', () => ({
   normativesApi: {
     getOnDate: (...args: unknown[]) => getOnDate(...args),
+    exportExcel: (...args: unknown[]) => exportExcel(...args),
   },
 }))
 
@@ -56,6 +58,19 @@ vi.mock('../api/references', () => ({
   referencesApi: {
     getObjects: (...args: unknown[]) => getObjects(...args),
     getDepartments: (...args: unknown[]) => getDepartments(...args),
+  },
+}))
+
+const downloadBlob = vi.fn()
+
+vi.mock('../utils/download', () => ({
+  downloadBlob: (...args: unknown[]) => downloadBlob(...args),
+  filenameFromContentDisposition: (header?: string) => {
+    if (!header) {
+      return null
+    }
+    const match = /filename="?([^";]+)"?/i.exec(header)
+    return match?.[1] ?? null
   },
 }))
 
@@ -121,6 +136,8 @@ const laterDateData: NormativeOnDateItem[] = [
 describe('NormativesPage', () => {
   beforeEach(() => {
     getOnDate.mockReset()
+    exportExcel.mockReset()
+    downloadBlob.mockReset()
     getObjects.mockReset()
     getDepartments.mockReset()
     listProductionRequests.mockReset()
@@ -298,5 +315,35 @@ describe('NormativesPage', () => {
     expect(screen.getByRole('button', { name: /Загрузить НЗ/ })).toBeTruthy()
     expect(screen.getByRole('button', { name: /Изменить даты/ })).toBeTruthy()
     expect(screen.getByRole('button', { name: /Удалить партию/ })).toBeTruthy()
+  })
+
+  it('downloads xlsx export with current date slice and filters', async () => {
+    const blob = new Blob(['xlsx'], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    exportExcel.mockResolvedValue({
+      data: blob,
+      headers: {
+        'content-disposition': 'attachment; filename="normatives_export_2026-12-31.xlsx"',
+      },
+    })
+    render(
+      <MemoryRouter>
+        <NormativesPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByText('Подшипник 6204ZZ')).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Выгрузить в Excel/ }))
+    await waitFor(() => {
+      expect(exportExcel).toHaveBeenCalledWith({
+        date: dayjs().format('YYYY-MM-DD'),
+        warehouse_code: undefined,
+        department_id: undefined,
+        search: undefined,
+        category: undefined,
+        client_name: undefined,
+      })
+    })
+    expect(downloadBlob).toHaveBeenCalledWith(blob, 'normatives_export_2026-12-31.xlsx')
   })
 })

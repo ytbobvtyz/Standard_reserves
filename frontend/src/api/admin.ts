@@ -7,6 +7,8 @@ import type {
   ApiSuccess,
   DepartmentListItem,
   PasswordResetData,
+  SystemParams,
+  SystemParamsUpdate,
 } from './types'
 
 export const adminApi = {
@@ -37,4 +39,9 @@ export const adminApi = {
 
   deleteDepartment: (id: string) =>
     api.delete<{ status: 'success'; message: string }>(`/admin/departments/${id}`),
+
+  getParams: () => api.get<ApiSuccess<SystemParams>>('/admin/params'),
+
+  updateParams: (data: SystemParamsUpdate) =>
+    api.put<ApiSuccess<SystemParams>>('/admin/params', data),
 }

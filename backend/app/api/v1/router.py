@@ -7,6 +7,7 @@ from app.api.v1.endpoints import (
     logistics_normative,
     logistics_one_time,
     normatives,
+    params,
     production_requests,
     products,
     references,
@@ -16,6 +17,7 @@ from app.api.v1.endpoints import (
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth.router)
 api_router.include_router(admin_users.router)
+api_router.include_router(params.router)
 api_router.include_router(references.router)
 api_router.include_router(products.router)
 api_router.include_router(production_requests.router)

@@ -42,7 +42,7 @@ import { UnitToggle } from '../components/logistics/UnitToggle'
 import { useAuthStore } from '../stores/auth'
 import { downloadBlob, filenameFromContentDisposition } from '../utils/download'
 import { formatShortName } from '../utils/format'
-import { categoryFactor, formatFactor } from '../utils/requirement'
+import { categoryFactor, formatFactor, type CoefficientParams } from '../utils/requirement'
 import { todayStamp } from '../utils/b2b'
 
 function formatQty(value: number, unit: Unit): string {
@@ -70,11 +70,15 @@ const KG_IN_TON = 1000
 const LONG_DISTANCE_NOTICE =
   'Ввиду удалённого расположения склада, пополнение возможно по железной дороге — срок доставки около 1 месяца от даты готовности продукции на производственной площадке, в связи с чем нормативы увеличены'
 
-function requirementHint(category: string, longDistance: boolean): string {
+function requirementHint(
+  category: string,
+  longDistance: boolean,
+  coeffs: CoefficientParams,
+): string {
   const cat = (category || 'A').trim().toUpperCase()
-  const parts = [`категория ${cat} (×${formatFactor(categoryFactor(cat))})`]
+  const parts = [`категория ${cat} (×${formatFactor(categoryFactor(cat, coeffs))})`]
   if (longDistance) {
-    parts.push('удалённый склад (×1,5)')
+    parts.push(`удалённый склад (×${formatFactor(coeffs.remote_warehouse)})`)
   }
   return `Потребность = норматив × ${parts.join(' × ')}`
 }
@@ -198,6 +202,12 @@ export function LogisticsDashboardPage() {
   const [warehouseCode, setWarehouseCode] = useState<number | undefined>()
   const [search, setSearch] = useState('')
   const [warehouses, setWarehouses] = useState<ObjectListItem[]>([])
+  const [coeffs, setCoeffs] = useState<CoefficientParams>({
+    category_a: 1,
+    category_b: 1.5,
+    category_c: 2,
+    remote_warehouse: 1.5,
+  })
   const [items, setItems] = useState<WarehouseDeficit[]>([])
   const [loading, setLoading] = useState(true)
   const [activeKeys, setActiveKeys] = useState<string[]>([])
@@ -248,6 +258,17 @@ export function LogisticsDashboardPage() {
       .catch((error) => {
         message.error(getApiErrorMessage(error, 'Не удалось загрузить склады'))
       })
+    void referencesApi
+      .getParams()
+      .then(({ data }) => {
+        setCoeffs({
+          category_a: Number(data.data.category_a),
+          category_b: Number(data.data.category_b),
+          category_c: Number(data.data.category_c),
+          remote_warehouse: Number(data.data.remote_warehouse),
+        })
+      })
+      .catch(() => undefined)
   }, [])
 
   const visibleWarehouses = useMemo(() => {
@@ -328,7 +349,7 @@ export function LogisticsDashboardPage() {
         record.hide_group_metrics ? (
           hiddenGroupMetric()
         ) : (
-          <Tooltip title={requirementHint(record.category, longDistance)}>
+          <Tooltip title={requirementHint(record.category, longDistance, coeffs)}>
             <span>{formatQty(value, unit)}</span>
           </Tooltip>
         ),

@@ -229,6 +229,52 @@ async def test_dashboard_returns_deficit(
     assert body["summary"]["deficit_products"] >= 1
 
 
+async def test_dashboard_requirement_recalculates_after_coeff_change(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    logistics_catalog: dict,
+) -> None:
+    warehouse_code = logistics_catalog["warehouse_code"]
+    token = await login_token(client, logistics_user)
+    before = await client.get(
+        "/api/v1/logistics/normative/dashboard",
+        params={"warehouse_code": warehouse_code},
+        headers=auth_header(token),
+    )
+    assert before.status_code == 200, before.text
+    item_before = _item(
+        _warehouse(before.json()["data"], warehouse_code), TEST_PRODUCT_DEFICIT
+    )
+    assert item_before["requirement"] == 1000
+    assert item_before["deficit"] == 400
+
+    updated = await client.put(
+        "/api/v1/admin/params",
+        headers=auth_header(token),
+        json={
+            "category_a": 2,
+            "category_b": 1.5,
+            "category_c": 2,
+            "remote_warehouse": 1.5,
+            "pallet_multiple": False,
+        },
+    )
+    assert updated.status_code == 200, updated.text
+
+    after = await client.get(
+        "/api/v1/logistics/normative/dashboard",
+        params={"warehouse_code": warehouse_code},
+        headers=auth_header(token),
+    )
+    assert after.status_code == 200, after.text
+    item_after = _item(
+        _warehouse(after.json()["data"], warehouse_code), TEST_PRODUCT_DEFICIT
+    )
+    assert item_after["normative_quantity"] == 1000
+    assert item_after["requirement"] == 2000
+    assert item_after["deficit"] == 1400
+
+
 def test_calculate_requirement_factors() -> None:
     assert calculate_requirement(Decimal("1000"), "A", False) == Decimal("1000")
     assert calculate_requirement(Decimal("1000"), "B", False) == Decimal("1500")

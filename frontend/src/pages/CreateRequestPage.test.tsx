@@ -7,12 +7,14 @@ import { useAuthStore } from '../stores/auth'
 const getObjects = vi.fn()
 const getProducts = vi.fn()
 const getProduct = vi.fn()
+const getParams = vi.fn()
 
 vi.mock('../api/references', () => ({
   referencesApi: {
     getObjects: (...args: unknown[]) => getObjects(...args),
     getProducts: (...args: unknown[]) => getProducts(...args),
     getProduct: (...args: unknown[]) => getProduct(...args),
+    getParams: (...args: unknown[]) => getParams(...args),
   },
 }))
 
@@ -31,11 +33,24 @@ describe('CreateRequestPage', () => {
     getObjects.mockReset()
     getProducts.mockReset()
     getProduct.mockReset()
+    getParams.mockReset()
     getObjects.mockResolvedValue({
       data: { status: 'success', data: [] },
     })
     getProducts.mockResolvedValue({
       data: { status: 'success', data: [] },
+    })
+    getParams.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: {
+          category_a: 1,
+          category_b: 1.5,
+          category_c: 2,
+          remote_warehouse: 1.5,
+          pallet_multiple: false,
+        },
+      },
     })
     useAuthStore.setState({
       user: {

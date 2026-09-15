@@ -91,6 +91,7 @@ const exportB2B = vi.fn()
 const uploadBalances = vi.fn()
 const getSyncInfo = vi.fn()
 const getObjects = vi.fn()
+const getParams = vi.fn()
 
 vi.mock('../api/logistics', () => ({
   logisticsApi: {
@@ -120,6 +121,7 @@ vi.mock('../utils/download', () => ({
 vi.mock('../api/references', () => ({
   referencesApi: {
     getObjects: (...args: unknown[]) => getObjects(...args),
+    getParams: (...args: unknown[]) => getParams(...args),
   },
 }))
 
@@ -158,6 +160,7 @@ describe('LogisticsDashboardPage', () => {
     uploadBalances.mockReset()
     getSyncInfo.mockReset()
     getObjects.mockReset()
+    getParams.mockReset()
     getDashboard.mockResolvedValue({ data: dashboard })
     getSyncInfo.mockResolvedValue({
       data: {
@@ -180,6 +183,18 @@ describe('LogisticsDashboardPage', () => {
           { code: 2001, name: 'Склад Ростов', city: 'Ростов', type: 'warehouse' },
           { code: 2003, name: 'Склад Казань', city: 'Казань', type: 'warehouse' },
         ],
+      },
+    })
+    getParams.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: {
+          category_a: 1,
+          category_b: 1.5,
+          category_c: 2,
+          remote_warehouse: 1.5,
+          pallet_multiple: false,
+        },
       },
     })
     generateOrdersBulk.mockResolvedValue({

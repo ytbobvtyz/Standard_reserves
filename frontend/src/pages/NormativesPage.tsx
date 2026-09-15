@@ -22,6 +22,7 @@ import { referencesApi } from '../api/references'
 import type { DepartmentListItem, NormativeOnDateItem, ObjectListItem, Unit } from '../api/types'
 import { ProductionRequestsTab } from '../components/normatives/ProductionRequestsTab'
 import { useAuthStore } from '../stores/auth'
+import { downloadBlob, filenameFromContentDisposition } from '../utils/download'
 
 interface NormativeRow {
   key: string
@@ -78,15 +79,6 @@ function formatQty(quantity: number, unit: Unit): string {
   return `${quantity.toLocaleString('ru-RU')} ${unit}`
 }
 
-function exportRows(rows: NormativeRow[]): void {
-  const headers = ['Артикул', 'Название', 'Склад', 'Запрос', 'Автор', 'Количество', 'Ед.', 'Срок действия', 'Клиент', 'Подразделение']
-  const esc = (value: unknown) => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  const body = rows.map((row) => `<tr>${[row.product_code, row.product_name, row.warehouse_name, row.request_id ?? '', row.author_name, row.quantity, row.unit, row.expiry_date, row.client_name, row.department_name].map((v) => `<td>${esc(v)}</td>`).join('')}</tr>`).join('')
-  const html = `<table><thead><tr>${headers.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table>`
-  const blob = new Blob([`\ufeff<html><meta charset="utf-8">${html}</html>`], { type: 'application/vnd.ms-excel' })
-  const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `normatives_export_${dayjs().format('YYYY-MM-DD')}.xls`; link.click(); URL.revokeObjectURL(url)
-}
-
 const SEARCH_DEBOUNCE_MS = 400
 
 export function NormativesPage() {
@@ -102,6 +94,7 @@ export function NormativesPage() {
   const [departmentId, setDepartmentId] = useState<string | undefined>()
   const [items, setItems] = useState<NormativeOnDateItem[]>([])
   const [loading, setLoading] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -211,6 +204,28 @@ export function NormativesPage() {
   const canManageBatches =
     user?.role === 'logistics' || user?.role === 'economist' || user?.role === 'pp'
 
+  const exportExcel = async () => {
+    setExporting(true)
+    try {
+      const { data, headers } = await normativesApi.exportExcel({
+        date: sliceDate.format('YYYY-MM-DD'),
+        warehouse_code: warehouseCode,
+        department_id: departmentId,
+        search: search || undefined,
+        category,
+        client_name: clientName.trim() || undefined,
+      })
+      const filename =
+        filenameFromContentDisposition(headers['content-disposition']) ??
+        `normatives_export_${sliceDate.format('YYYY-MM-DD')}.xlsx`
+      downloadBlob(data, filename)
+    } catch (error) {
+      message.error(getApiErrorMessage(error, 'Не удалось выгрузить нормативы'))
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const normativesContent = (
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
       <Space wrap>
@@ -305,7 +320,13 @@ export function NormativesPage() {
   return (
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
       <Typography.Title level={3}>Нормативы</Typography.Title>
-      <Button icon={<DownloadOutlined />} onClick={() => exportRows(rows)}>Выгрузить в Excel</Button>
+      <Button
+        icon={<DownloadOutlined />}
+        loading={exporting}
+        onClick={() => void exportExcel()}
+      >
+        Выгрузить в Excel
+      </Button>
       <Tabs
         items={[
           {

@@ -253,6 +253,19 @@ erDiagram
         timestamp updated_at "дата обновления записи"
     }
 
+    params {
+        int id PK "всегда 1 (singleton)"
+        decimal category_a "коэф. категории A, 1–3 шаг 0,1"
+        decimal category_b "коэф. категории B, 1–3 шаг 0,1"
+        decimal category_c "коэф. категории C, 1–3 шаг 0,1"
+        decimal remote_warehouse "коэф. удалённого склада, 1–3 шаг 0,1"
+        boolean pallet_multiple "запросы кратно паллетной норме"
+        uuid last_modified_by FK "кто изменил"
+        timestamp last_modified_at "когда изменили"
+        timestamp created_at
+        timestamp updated_at
+    }
+
     %% ============================================
     %% БУДУЩИЙ АГЕНТ
     %% ============================================
@@ -324,8 +337,9 @@ erDiagram
     available_balances }o--|| products : "product_code"
     available_balances }o--|| objects : "warehouse_code"
 
-    %% Sync metadata → Users
+    %% Sync metadata / params → Users
     users ||--o| sync_metadata : "last_balances_sync_by"
+    users ||--o| params : "last_modified_by"
 
     %% Events → Requests
     events }o--|| requests : "request_id"
@@ -825,6 +839,28 @@ last_balances_sync_by	UUID	❌	Кто загрузил → users.id
 updated_at	TIMESTAMP	✅	Дата обновления записи (по умолчанию NOW())
 При загрузке Excel: для складов из файла старые строки `available_balances` удаляются, затем вставляются только строки из файла. После этого обновляются `last_balances_sync_at` и `last_balances_sync_by`.
 
+5.3.1. params — Глобальные коэффициенты и настройки
+Singleton-таблица (ровно одна строка, `id = 1`). Хранит коэффициенты потребности и флаг паллетной кратности. Потребность на дашборде считается на лету: `количество × коэф. категории × коэф. удалённости` (для неудалённого склада множитель удалённости = 1).
+
+sql
+CREATE TABLE params (
+    id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    category_a DECIMAL(3,1) NOT NULL DEFAULT 1.0 CHECK (category_a >= 1 AND category_a <= 3),
+    category_b DECIMAL(3,1) NOT NULL DEFAULT 1.5 CHECK (category_b >= 1 AND category_b <= 3),
+    category_c DECIMAL(3,1) NOT NULL DEFAULT 2.0 CHECK (category_c >= 1 AND category_c <= 3),
+    remote_warehouse DECIMAL(3,1) NOT NULL DEFAULT 1.5 CHECK (remote_warehouse >= 1 AND remote_warehouse <= 3),
+    pallet_multiple BOOLEAN NOT NULL DEFAULT false,
+    last_modified_by UUID REFERENCES users(id),
+    last_modified_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_params_last_modified_by ON params(last_modified_by);
+INSERT INTO params (id) VALUES (1);
+
+Значения коэффициентов — от 1 до 3 с шагом 0,1. `pallet_multiple` сохраняется для будущей логики запросов НЗ.
+
 5.4. production_requests — Партии загрузки нормативов (Excel)
 
 Метаданные одной загрузки нормативов из Excel. Обходит коммерческий цикл запросов: роли `pp`, `economist`, `logistics` создают активные нормативы напрямую.
@@ -1295,6 +1331,8 @@ EXECUTE FUNCTION trigger_create_normative();
 | 15 | `0015_object_long_distance.py` | `objects.long_distance`; формула потребности в `calculate_normative` и `deficit_view` |
 | 16 | `0016_departments.py` | Таблица `departments`; `users.department_id`; `requests.department_id` |
 | 17 | `0017_production_requests.py` | `production_requests`, `production_request_items`; `normatives.request_id` nullable; `production_request_item_id`; unit `шт`/`кг`/`т` |
+| 18 | `0018_drop_normative_trigger.py` | Удаление триггера `create_normative_on_approve` |
+| 19 | `0019_params.py` | Таблица `params`; формулы `calculate_normative` / `deficit_view` читают коэффициенты |
 
 Начальные пользователи и объекты заполняются скриптом `backend/scripts/seed_data.py`, а не миграцией.
 

@@ -14,6 +14,7 @@ import type {
   RelatedProductsData,
   User,
   DepartmentListItem,
+  SystemParams,
 } from './types'
 
 export const referencesApi = {
@@ -80,4 +81,6 @@ export const referencesApi = {
 
   getDepartments: (params?: { is_active?: boolean }) =>
     api.get<ApiSuccess<DepartmentListItem[]>>('/references/departments', { params }),
+
+  getParams: () => api.get<ApiSuccess<SystemParams>>('/params'),
 }

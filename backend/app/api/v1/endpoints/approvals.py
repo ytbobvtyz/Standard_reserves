@@ -13,6 +13,7 @@ from app.schemas.approval import (
 )
 from app.schemas.common import PaginatedResponse, PaginationMeta, SuccessResponse
 from app.services.approvals import apply_action, list_pending, to_pending
+from app.services.params import load_coefficient_set
 
 router = APIRouter(prefix="/approvals", tags=["Согласование"])
 
@@ -34,8 +35,9 @@ async def _pending_response(
         limit=limit,
         client_name=client_name,
     )
+    coeffs = await load_coefficient_set(db)
     return PaginatedResponse(
-        data=[to_pending(item) for item in requests],
+        data=[to_pending(item, coeffs) for item in requests],
         meta=PaginationMeta(page=page, limit=limit, total=total),
     )
 

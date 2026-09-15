@@ -571,6 +571,8 @@ export interface NormativeOnDateParams {
   product_code?: number
   department_id?: string
   search?: string
+  category?: 'A' | 'B' | 'C'
+  client_name?: string
 }
 
 export interface NormativeOnDateDetail {
@@ -693,4 +695,26 @@ export interface AdminUserUpdatePayload {
 
 export interface PasswordResetData {
   new_password: string
+}
+
+export interface SystemParams {
+  category_a: number
+  category_b: number
+  category_c: number
+  remote_warehouse: number
+  pallet_multiple: boolean
+  last_modified_by?: {
+    id: string
+    username: string
+    full_name: string
+  } | null
+  last_modified_at?: string | null
+}
+
+export interface SystemParamsUpdate {
+  category_a: number
+  category_b: number
+  category_c: number
+  remote_warehouse: number
+  pallet_multiple: boolean
 }

@@ -13,4 +13,7 @@ export const normativesApi = {
 
   getOnDate: (params: NormativeOnDateParams) =>
     api.get<ApiSuccess<NormativeOnDateItem[]>>('/normatives/on-date', { params }),
+
+  exportExcel: (params: NormativeOnDateParams) =>
+    api.get<Blob>('/normatives/export', { params, responseType: 'blob' }),
 }

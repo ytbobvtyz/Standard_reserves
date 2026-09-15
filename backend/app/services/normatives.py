@@ -1,9 +1,13 @@
 from collections import defaultdict
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
+from io import BytesIO
 from typing import Literal
 from uuid import UUID
 
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 from sqlalchemy import String, and_, cast, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -28,8 +32,22 @@ from app.services.coefficients import (
     category_factor,
     distance_factor,
 )
+from app.services.params import load_coefficient_set
 
 DEFAULT_UNIT = "шт"
+EXPORT_HEADERS = [
+    "Артикул",
+    "Название",
+    "Склад",
+    "Запрос",
+    "Автор",
+    "Количество",
+    "Ед.",
+    "Срок действия",
+    "Клиент",
+    "Подразделение",
+]
+EXPORT_COLUMN_WIDTHS = [14, 36, 28, 14, 24, 14, 8, 16, 28, 28]
 
 CategoryFilter = Literal["A", "B", "C"]
 
@@ -297,6 +315,103 @@ async def list_normatives_on_date(
     return items
 
 
+def _request_label(request_id: UUID | None) -> str:
+    if request_id is None:
+        return ""
+    return f"№{str(request_id)[:8]}"
+
+
+def build_export_xlsx(
+    items: list[NormativeOnDateItem],
+    *,
+    category: CategoryFilter | None = None,
+    client_name: str | None = None,
+) -> bytes:
+    client_filter = client_name.strip().lower() if client_name and client_name.strip() else None
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Нормативы"
+    sheet.append(EXPORT_HEADERS)
+
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="305496")
+    header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    thin = Border(
+        left=Side(style="thin", color="D9D9D9"),
+        right=Side(style="thin", color="D9D9D9"),
+        top=Side(style="thin", color="D9D9D9"),
+        bottom=Side(style="thin", color="D9D9D9"),
+    )
+    for cell in sheet[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = thin
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = f"A1:{get_column_letter(len(EXPORT_HEADERS))}1"
+    for index, width in enumerate(EXPORT_COLUMN_WIDTHS, start=1):
+        sheet.column_dimensions[get_column_letter(index)].width = width
+    sheet.row_dimensions[1].height = 22
+
+    for item in items:
+        if category and (item.category or "").strip().upper() != category:
+            continue
+        for detail in item.details:
+            if client_filter and client_filter not in detail.client_name.lower():
+                continue
+            sheet.append(
+                [
+                    item.product_code,
+                    item.product_name,
+                    item.warehouse_name,
+                    _request_label(detail.request_id),
+                    detail.author_name or "",
+                    float(detail.quantity),
+                    item.unit,
+                    detail.expiry_date,
+                    detail.client_name,
+                    detail.department_name or "",
+                ]
+            )
+            row_idx = sheet.max_row
+            for col in range(1, len(EXPORT_HEADERS) + 1):
+                cell = sheet.cell(row=row_idx, column=col)
+                cell.border = thin
+                cell.alignment = Alignment(vertical="center", wrap_text=col in {2, 3, 5, 9, 10})
+            sheet.cell(row=row_idx, column=1).number_format = "0"
+            sheet.cell(row=row_idx, column=6).number_format = "#,##0.00"
+            sheet.cell(row=row_idx, column=8).number_format = "DD.MM.YYYY"
+
+    if sheet.max_row > 1:
+        sheet.auto_filter.ref = f"A1:{get_column_letter(len(EXPORT_HEADERS))}{sheet.max_row}"
+
+    buffer = BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+async def export_normatives_xlsx(
+    db: AsyncSession,
+    *,
+    on_date: date,
+    warehouse_code: int | None = None,
+    product_code: int | None = None,
+    search: str | None = None,
+    department_id: UUID | None = None,
+    category: CategoryFilter | None = None,
+    client_name: str | None = None,
+) -> bytes:
+    items = await list_normatives_on_date(
+        db,
+        on_date=on_date,
+        warehouse_code=warehouse_code,
+        product_code=product_code,
+        search=search,
+        department_id=department_id,
+    )
+    return build_export_xlsx(items, category=category, client_name=client_name)
+
+
 async def calculate_normative(
     db: AsyncSession,
     *,
@@ -322,13 +437,14 @@ async def calculate_normative(
         raise APIError(404, "NOT_FOUND", "Склад не найден")
 
     category = product.category.strip()
-    cat_factor = category_factor(category)
-    dist_factor = distance_factor(bool(warehouse.long_distance))
+    coeffs = await load_coefficient_set(db)
+    cat_factor = category_factor(category, coeffs)
+    dist_factor = distance_factor(bool(warehouse.long_distance), coeffs)
     monthly = product.monthly_consumption
     calculated = None
     if monthly is not None:
         calculated = calculate_requirement(
-            monthly, category, bool(warehouse.long_distance)
+            monthly, category, bool(warehouse.long_distance), coeffs
         )
 
     return NormativeCalculateData(

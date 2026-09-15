@@ -35,7 +35,8 @@ from app.schemas.logistics import (
     Unit,
     WarehouseDeficit,
 )
-from app.services.coefficients import calculate_requirement
+from app.services.coefficients import CoefficientSet, calculate_requirement
+from app.services.params import load_coefficient_set
 
 logger = logging.getLogger(__name__)
 
@@ -277,6 +278,7 @@ def _convert_row(
     group_index: int = 0,
     is_group_main: bool = True,
     hide_group_metrics: bool = False,
+    coeffs: CoefficientSet | None = None,
 ) -> DeficitRow:
     is_remote = bool(
         warehouse.long_distance if long_distance is None else long_distance
@@ -289,7 +291,7 @@ def _convert_row(
     else:
         display_normative_pcs = normative_pcs
         requirement_pcs = calculate_requirement(
-            display_normative_pcs, product.category, is_remote
+            display_normative_pcs, product.category, is_remote, coeffs
         )
         plan_for_deficit = plan_pcs if deficit_plan_pcs is None else deficit_plan_pcs
         deficit_pcs = requirement_pcs - plan_for_deficit
@@ -380,6 +382,7 @@ async def collect_deficit_rows(
     unit: Unit = "шт",
     product_codes: list[int] | None = None,
 ) -> list[DeficitRow]:
+    coeffs = await load_coefficient_set(db)
     if product_codes:
         product_codes = await _expand_family_codes(db, product_codes)
     today = date.today()
@@ -579,7 +582,7 @@ async def collect_deficit_rows(
             main_warehouse.code, bool(main_warehouse.long_distance)
         )
         group_requirement_pcs = calculate_requirement(
-            group_normative_pcs, main_product.category, is_remote
+            group_normative_pcs, main_product.category, is_remote, coeffs
         )
         group_deficit_pcs = group_requirement_pcs - group_plan_pcs
         if filter_mode == "with_normatives" and group_normative_pcs <= 0:
@@ -636,6 +639,7 @@ async def collect_deficit_rows(
                     group_index=group_index,
                     is_group_main=is_main,
                     hide_group_metrics=grouped and not is_main,
+                    coeffs=coeffs,
                 )
             )
     return rows

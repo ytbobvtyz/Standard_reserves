@@ -26,7 +26,7 @@ from app.schemas.request import (
     validate_expiry_date_limit,
 )
 from app.schemas.user import UserBrief
-from app.services.coefficients import item_coefficient_fields
+from app.services.coefficients import CoefficientSet, item_coefficient_fields
 from app.services.requests import load_request
 
 Stage = Literal["pp", "economy"]
@@ -48,7 +48,9 @@ def _actor_brief(user: User | None) -> ApprovalActorBrief | None:
     return ApprovalActorBrief(id=user.id, full_name=user.full_name)
 
 
-def to_pending(request: Request) -> ApprovalPendingRequest:
+def to_pending(
+    request: Request, coeffs: CoefficientSet | None = None
+) -> ApprovalPendingRequest:
     return ApprovalPendingRequest(
         id=request.id,
         request_type=request.request_type,
@@ -79,6 +81,7 @@ def to_pending(request: Request) -> ApprovalPendingRequest:
                         if item.quantity_approved is not None
                         else item.quantity_requested
                     ),
+                    coeffs,
                 )
             ]
         ],

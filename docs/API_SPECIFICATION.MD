@@ -1266,7 +1266,16 @@ json
         }
     ]
 }
-7.3. Расчет норматива (формула)
+7.3. Выгрузить нормативы в Excel
+text
+GET /normatives/export
+Headers:
+
+text
+Authorization: Bearer <token>
+Query параметры: те же, что у `GET /normatives/on-date`, плюс опциональные `category` (A/B/C) и `client_name`.
+Response (200): файл `.xlsx` (`application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`), имя `normatives_export_YYYY-MM-DD.xlsx` по дате среза. Лист «Нормативы», колонки: Артикул (целое), Название, Склад, Запрос (`№` + первые 8 символов UUID либо пусто), Автор, Количество (число), Ед., Срок действия (дата `DD.MM.YYYY`), Клиент, Подразделение. Учитываются дата среза и фильтры страницы.
+7.4. Расчет норматива (формула)
 text
 GET /normatives/calculate
 Headers:
@@ -1296,7 +1305,7 @@ json
         "unit": "шт"
     }
 }
-7.4. Получить цепочку родственных артикулов
+7.5. Получить цепочку родственных артикулов
 text
 GET /products/{product_code}/related
 Headers:
@@ -1846,6 +1855,9 @@ json
 | POST | `/admin/departments` | Создать подразделение | `logistics` |
 | PUT | `/admin/departments/{id}` | Переименовать подразделение | `logistics` |
 | DELETE | `/admin/departments/{id}` | Удалить подразделение (soft delete) | `logistics` |
+| GET | `/params` | Текущие коэффициенты и настройки | все авторизованные |
+| GET | `/admin/params` | Текущие коэффициенты (админ) | `logistics` |
+| PUT | `/admin/params` | Обновить коэффициенты и настройки | `logistics` |
 
 9.1. Список пользователей
 text
@@ -2056,6 +2068,34 @@ json
     "status": "success",
     "message": "Подразделение удалено"
 }
+
+9.11. Параметры (коэффициенты)
+text
+GET /params
+GET /admin/params
+Права: GET `/params` — все авторизованные; GET/PUT `/admin/params` — только logistics.
+
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": {
+        "category_a": 1,
+        "category_b": 1.5,
+        "category_c": 2,
+        "remote_warehouse": 1.5,
+        "pallet_multiple": false,
+        "last_modified_by": {
+            "id": "44444444-4444-4444-4444-444444444444",
+            "username": "logistics",
+            "full_name": "Кузнецов Кузьма"
+        },
+        "last_modified_at": "2026-09-15T06:00:00Z"
+    }
+}
+
+PUT /admin/params — тело: `category_a`, `category_b`, `category_c`, `remote_warehouse` (1–3, шаг 0,1), `pallet_multiple` (boolean). При сохранении обновляются `last_modified_by` и `last_modified_at`. Невалидный шаг или диапазон — 422. Потребность на дашборде пересчитывается сразу из новых коэффициентов.
 
 10. УПРАВЛЕНИЕ ОСТАТКАМИ
 На MVP загрузка остатков выполняется через `POST /logistics/normative/upload` (Excel ERP, поля `available` и `plan`). Эндпоинты `/inventory/*` **не реализованы**.

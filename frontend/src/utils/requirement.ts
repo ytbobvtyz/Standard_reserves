@@ -1,23 +1,46 @@
-const CATEGORY_FACTORS: Record<string, number> = { A: 1, B: 1.5, C: 2 }
-
-export function categoryFactor(category?: string | null): number {
-  const key = (category ?? '').trim().toUpperCase()
-  return CATEGORY_FACTORS[key] ?? 1
+export interface CoefficientParams {
+  category_a: number
+  category_b: number
+  category_c: number
+  remote_warehouse: number
 }
 
-export function distanceFactor(longDistance?: boolean | null): number {
-  return longDistance ? 1.5 : 1
+export const DEFAULT_COEFFICIENTS: CoefficientParams = {
+  category_a: 1,
+  category_b: 1.5,
+  category_c: 2,
+  remote_warehouse: 1.5,
+}
+
+export function categoryFactor(
+  category?: string | null,
+  params: CoefficientParams = DEFAULT_COEFFICIENTS,
+): number {
+  const key = (category ?? '').trim().toUpperCase()
+  if (key === 'A') return params.category_a
+  if (key === 'B') return params.category_b
+  if (key === 'C') return params.category_c
+  return 1
+}
+
+export function distanceFactor(
+  longDistance?: boolean | null,
+  params: CoefficientParams = DEFAULT_COEFFICIENTS,
+): number {
+  return longDistance ? params.remote_warehouse : 1
 }
 
 export function calculateRequirement(
   quantity: number | null | undefined,
   category?: string | null,
   longDistance?: boolean | null,
+  params: CoefficientParams = DEFAULT_COEFFICIENTS,
 ): number | null {
   if (quantity == null || Number.isNaN(Number(quantity))) {
     return null
   }
-  const raw = Number(quantity) * categoryFactor(category) * distanceFactor(longDistance)
+  const raw =
+    Number(quantity) * categoryFactor(category, params) * distanceFactor(longDistance, params)
   return Number(raw.toFixed(32))
 }
 
@@ -31,19 +54,25 @@ export function formatRequirementQty(value: number): string {
   return value.toLocaleString('ru-RU', { maximumFractionDigits: 20 })
 }
 
-export function categoryLabel(category?: string | null): string {
+export function categoryLabel(
+  category?: string | null,
+  params: CoefficientParams = DEFAULT_COEFFICIENTS,
+): string {
   if (!category) {
     return '—'
   }
   const cat = category.trim().toUpperCase()
-  return `${cat} (×${formatFactor(categoryFactor(cat))})`
+  return `${cat} (×${formatFactor(categoryFactor(cat, params))})`
 }
 
-export function distanceLabel(longDistance?: boolean | null): string {
+export function distanceLabel(
+  longDistance?: boolean | null,
+  params: CoefficientParams = DEFAULT_COEFFICIENTS,
+): string {
   if (longDistance == null) {
     return '—'
   }
-  const factor = distanceFactor(longDistance)
+  const factor = distanceFactor(longDistance, params)
   return longDistance ? `Да (×${formatFactor(factor)})` : `Нет (×${formatFactor(factor)})`
 }
 
@@ -52,11 +81,12 @@ export function requirementTooltip(
   unit: string,
   category?: string | null,
   longDistance?: boolean | null,
+  params: CoefficientParams = DEFAULT_COEFFICIENTS,
 ): string {
   const cat = (category ?? 'A').trim().toUpperCase() || 'A'
-  const catF = categoryFactor(cat)
-  const distF = distanceFactor(Boolean(longDistance))
-  const result = calculateRequirement(quantity, cat, longDistance) ?? 0
+  const catF = categoryFactor(cat, params)
+  const distF = distanceFactor(Boolean(longDistance), params)
+  const result = calculateRequirement(quantity, cat, longDistance, params) ?? 0
   const distText = longDistance ? 'удалённый склад' : 'не удалённый склад'
   return `Расчёт: ${formatRequirementQty(quantity)} ${unit} × ${formatFactor(catF)} (категория ${cat}) × ${formatFactor(distF)} (${distText}) = ${formatRequirementQty(result)} ${unit}`
 }

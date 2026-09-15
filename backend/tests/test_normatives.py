@@ -1,8 +1,10 @@
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from io import BytesIO
 from uuid import uuid4
 
 from httpx import AsyncClient
+from openpyxl import load_workbook
 from sqlalchemy import delete, select
 
 from app.core.database import AsyncSessionLocal
@@ -351,6 +353,60 @@ async def test_calculate_normative_formula(
         params={"product_code": 999999, "warehouse_code": catalog["warehouse_code"]},
     )
     assert missing.status_code == 404
+
+    await delete_request(seeded["request_id"])
+    await delete_request(seeded["expired_request_id"])
+    await delete_request(seeded["future_request_id"])
+    await _cleanup_products([TEST_PRODUCT_A, TEST_PRODUCT_B, TEST_PRODUCT_C])
+
+
+async def test_normatives_export_xlsx_formatting(
+    client: AsyncClient, test_user: AuthUser, catalog: dict[str, int]
+) -> None:
+    seeded = await _seed_normatives(catalog, test_user)
+    token = await login_token(client, test_user)
+    response = await client.get(
+        "/api/v1/normatives/export",
+        headers=auth_header(token),
+        params={"date": "2026-12-31", "warehouse_code": catalog["warehouse_code"]},
+    )
+    assert response.status_code == 200, response.text
+    assert "spreadsheetml" in response.headers["content-type"]
+    assert (
+        'filename="normatives_export_2026-12-31.xlsx"'
+        in response.headers.get("content-disposition", "")
+    )
+    workbook = load_workbook(BytesIO(response.content))
+    sheet = workbook.active
+    assert sheet.title == "Нормативы"
+    headers = [cell.value for cell in next(sheet.iter_rows(max_row=1))]
+    assert headers == [
+        "Артикул",
+        "Название",
+        "Склад",
+        "Запрос",
+        "Автор",
+        "Количество",
+        "Ед.",
+        "Срок действия",
+        "Клиент",
+        "Подразделение",
+    ]
+    assert sheet.freeze_panes == "A2"
+    data_rows = list(sheet.iter_rows(min_row=2, max_row=sheet.max_row))
+    assert data_rows
+    first = data_rows[0]
+    assert isinstance(first[0].value, int)
+    assert first[0].number_format == "0"
+    assert isinstance(first[5].value, (int, float))
+    assert first[5].number_format == "#,##0.00"
+    assert first[3].value is None or str(first[3].value).startswith("№")
+    expiry_cell = first[7]
+    assert expiry_cell.number_format == "DD.MM.YYYY"
+    assert expiry_cell.value is not None
+    codes = {row[0].value for row in data_rows}
+    assert TEST_PRODUCT_A in codes
+    assert TEST_PRODUCT_C not in codes
 
     await delete_request(seeded["request_id"])
     await delete_request(seeded["expired_request_id"])

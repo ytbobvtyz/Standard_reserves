@@ -5,6 +5,7 @@ from app.models.department import Department
 from app.models.event import Event
 from app.models.normative import Normative
 from app.models.object import Object
+from app.models.params import Params
 from app.models.password_reset import PasswordResetToken
 from app.models.product import Product
 from app.models.production_request import ProductionRequest, ProductionRequestItem
@@ -23,6 +24,7 @@ __all__ = [
     "Event",
     "Normative",
     "Object",
+    "Params",
     "PasswordResetToken",
     "Product",
     "ProductionRequest",

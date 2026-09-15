@@ -3,6 +3,7 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
@@ -67,6 +68,38 @@ async def list_normatives_on_date(
         department_id=department_id,
     )
     return SuccessResponse(data=items)
+
+
+@router.get("/normatives/export")
+async def export_normatives(
+    date: date = Query(...),
+    warehouse_code: int | None = Query(default=None),
+    product_code: int | None = Query(default=None),
+    search: str | None = Query(default=None),
+    department_id: UUID | None = Query(default=None),
+    category: Literal["A", "B", "C"] | None = Query(default=None),
+    client_name: str | None = Query(default=None),
+    _user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    content = await service.export_normatives_xlsx(
+        db,
+        on_date=date,
+        warehouse_code=warehouse_code,
+        product_code=product_code,
+        search=search,
+        department_id=department_id,
+        category=category,
+        client_name=client_name,
+    )
+    filename = f"normatives_export_{date.isoformat()}.xlsx"
+    return Response(
+        content=content,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get(

@@ -38,7 +38,8 @@ from app.schemas.request import (
     validate_expiry_date_limit,
 )
 from app.schemas.user import UserBrief
-from app.services.coefficients import item_coefficient_fields
+from app.services.coefficients import CoefficientSet, item_coefficient_fields
+from app.services.params import load_coefficient_set
 
 VIEW_ALL_ROLES = {"pp", "economist", "logistics"}
 
@@ -138,9 +139,11 @@ def _item_quantity(item: RequestItem) -> Decimal:
     return item.quantity_requested
 
 
-def _item_created(item: RequestItem) -> RequestItemCreated:
-    coeffs = item_coefficient_fields(
-        item.product, item.warehouse, item.quantity_requested
+def _item_created(
+    item: RequestItem, coeffs: CoefficientSet | None = None
+) -> RequestItemCreated:
+    fields = item_coefficient_fields(
+        item.product, item.warehouse, item.quantity_requested, coeffs
     )
     return RequestItemCreated(
         id=item.id,
@@ -150,11 +153,11 @@ def _item_created(item: RequestItem) -> RequestItemCreated:
         quantity_approved=item.quantity_approved,
         unit=item.unit,
         comment=item.comment,
-        category=coeffs["category"],
-        category_factor=coeffs["category_factor"],
-        long_distance=coeffs["long_distance"],
-        distance_factor=coeffs["distance_factor"],
-        requirement=coeffs["requirement"],
+        category=fields["category"],
+        category_factor=fields["category_factor"],
+        long_distance=fields["long_distance"],
+        distance_factor=fields["distance_factor"],
+        requirement=fields["requirement"],
     )
 
 
@@ -166,7 +169,9 @@ def _department_name(request: Request) -> str | None:
     return None
 
 
-def _created_schema(request: Request) -> RequestCreated:
+def _created_schema(
+    request: Request, coeffs: CoefficientSet | None = None
+) -> RequestCreated:
     return RequestCreated(
         id=request.id,
         request_type=request.request_type,
@@ -175,7 +180,7 @@ def _created_schema(request: Request) -> RequestCreated:
         initiator_id=request.initiator_id,
         department_id=request.department_id,
         expiry_date=request.expiry_date,
-        items=[_item_created(item) for item in request.items],
+        items=[_item_created(item, coeffs) for item in request.items],
         created_at=request.created_at,
     )
 
@@ -262,7 +267,9 @@ def _history(request: Request) -> list[RequestHistoryEntry]:
     return entries
 
 
-def to_detail(request: Request) -> RequestDetail:
+def to_detail(
+    request: Request, coeffs: CoefficientSet | None = None
+) -> RequestDetail:
     return RequestDetail(
         id=request.id,
         request_type=request.request_type,
@@ -307,7 +314,7 @@ def to_detail(request: Request) -> RequestDetail:
             for item in request.items
             for coeffs in [
                 item_coefficient_fields(
-                    item.product, item.warehouse, _item_quantity(item)
+                    item.product, item.warehouse, _item_quantity(item), coeffs
                 )
             ]
         ],
@@ -455,7 +462,8 @@ async def create_request(
     db.add(request)
     await db.commit()
     request = await load_request(db, request.id)
-    return _created_schema(request)
+    coeffs = await load_coefficient_set(db)
+    return _created_schema(request, coeffs)
 
 
 async def update_draft(

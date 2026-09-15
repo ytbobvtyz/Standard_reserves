@@ -278,6 +278,42 @@ async def db_ready() -> AsyncGenerator[None, None]:
                     WHEN undefined_table THEN NULL;
                 END $$;
                 """))
+        await connection.execute(text("""
+                DO $$
+                BEGIN
+                    INSERT INTO params (id)
+                    VALUES (1)
+                    ON CONFLICT (id) DO NOTHING;
+                EXCEPTION
+                    WHEN undefined_table THEN NULL;
+                END $$;
+                """))
+        await connection.execute(text("""
+                DO $$
+                BEGIN
+                    ALTER TABLE params
+                        DROP CONSTRAINT IF EXISTS params_last_modified_by_fkey;
+                EXCEPTION
+                    WHEN undefined_table THEN NULL;
+                    WHEN duplicate_object THEN NULL;
+                END $$;
+                """))
+        await connection.execute(text("""
+                DO $$
+                BEGIN
+                    UPDATE params
+                    SET category_a = 1.0,
+                        category_b = 1.5,
+                        category_c = 2.0,
+                        remote_warehouse = 1.5,
+                        pallet_multiple = false,
+                        last_modified_by = NULL,
+                        last_modified_at = NULL
+                    WHERE id = 1;
+                EXCEPTION
+                    WHEN undefined_table THEN NULL;
+                END $$;
+                """))
     yield
 
 

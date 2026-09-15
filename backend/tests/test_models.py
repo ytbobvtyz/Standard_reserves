@@ -4,6 +4,7 @@ from app.models import (
     Event,
     Normative,
     Object,
+    Params,
     PasswordResetToken,
     Product,
     Request,
@@ -19,6 +20,7 @@ EXPECTED_TABLES = {
     "events",
     "normatives",
     "objects",
+    "params",
     "password_reset_tokens",
     "products",
     "request_item_history",
@@ -43,6 +45,7 @@ def test_models_import() -> None:
     assert AvailableBalance.__tablename__ == "available_balances"
     assert Event.__tablename__ == "events"
     assert SyncMetadata.__tablename__ == "sync_metadata"
+    assert Params.__tablename__ == "params"
 
 
 def test_all_tables_registered() -> None:

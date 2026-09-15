@@ -38,9 +38,11 @@ import { formatInitiator } from '../utils/format'
 import {
   calculateRequirement,
   categoryLabel,
+  DEFAULT_COEFFICIENTS,
   distanceLabel,
   formatRequirementQty,
   requirementTooltip,
+  type CoefficientParams,
 } from '../utils/requirement'
 
 const PALLET_NORM_HINT =
@@ -73,12 +75,14 @@ function RequestItemRow({
   warehouses,
   canRemove,
   isOneTime,
+  coeffs,
   onRemove,
 }: {
   field: FormListFieldData
   warehouses: ObjectListItem[]
   canRemove: boolean
   isOneTime: boolean
+  coeffs: CoefficientParams
   onRemove: () => void
 }) {
   const form = Form.useFormInstance<FormValues>()
@@ -89,7 +93,7 @@ function RequestItemRow({
   const warehouseCode = Form.useWatch(['items', field.name, 'warehouse_code'], form)
   const warehouse = warehouses.find((item) => item.code === warehouseCode)
   const longDistance = warehouse == null ? undefined : Boolean(warehouse.long_distance)
-  const requirement = calculateRequirement(quantity, category, longDistance)
+  const requirement = calculateRequirement(quantity, category, longDistance, coeffs)
 
   return (
     <>
@@ -161,16 +165,16 @@ function RequestItemRow({
       </Form.Item>
       {!isOneTime ? (
         <>
-          <Typography.Text style={{ paddingTop: 5 }}>{categoryLabel(category)}</Typography.Text>
+          <Typography.Text style={{ paddingTop: 5 }}>{categoryLabel(category, coeffs)}</Typography.Text>
           <Typography.Text style={{ paddingTop: 5 }}>
-            {warehouseCode == null ? '—' : distanceLabel(Boolean(longDistance))}
+            {warehouseCode == null ? '—' : distanceLabel(Boolean(longDistance), coeffs)}
           </Typography.Text>
           {requirement == null || !unit ? (
             <Typography.Text type="secondary" style={{ paddingTop: 5 }}>
               —
             </Typography.Text>
           ) : (
-            <Tooltip title={requirementTooltip(quantity ?? 0, unit, category, Boolean(longDistance))}>
+            <Tooltip title={requirementTooltip(quantity ?? 0, unit, category, Boolean(longDistance), coeffs)}>
               <Typography.Text style={{ paddingTop: 5 }}>
                 {formatRequirementQty(requirement)} {unit}
               </Typography.Text>
@@ -193,6 +197,7 @@ export function CreateRequestPage() {
   const navigate = useNavigate()
   const user = useAuthStore((state) => state.user)
   const [warehouses, setWarehouses] = useState<ObjectListItem[]>([])
+  const [coeffs, setCoeffs] = useState<CoefficientParams>(DEFAULT_COEFFICIENTS)
   const [submitting, setSubmitting] = useState(false)
   const requestType = Form.useWatch('request_type', form)
   const isOneTime = requestType === 'one_time'
@@ -204,6 +209,19 @@ export function CreateRequestPage() {
       .then(({ data }) => setWarehouses(data.data))
       .catch((error) => {
         message.error(getApiErrorMessage(error, 'Не удалось загрузить склады'))
+      })
+    void referencesApi
+      .getParams()
+      .then(({ data }) => {
+        setCoeffs({
+          category_a: Number(data.data.category_a),
+          category_b: Number(data.data.category_b),
+          category_c: Number(data.data.category_c),
+          remote_warehouse: Number(data.data.remote_warehouse),
+        })
+      })
+      .catch(() => {
+        setCoeffs(DEFAULT_COEFFICIENTS)
       })
   }, [])
 
@@ -366,6 +384,7 @@ export function CreateRequestPage() {
                     warehouses={warehouses}
                     canRemove={fields.length > 1}
                     isOneTime={isOneTime}
+                    coeffs={coeffs}
                     onRemove={() => remove(field.name)}
                   />
                 ))}

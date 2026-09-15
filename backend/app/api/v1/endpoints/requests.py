@@ -44,6 +44,7 @@ from app.services.requests import (
     update_active_expiry,
     update_draft,
 )
+from app.services.params import load_coefficient_set
 
 router = APIRouter(tags=["Запросы"])
 
@@ -142,7 +143,8 @@ async def get_request(
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[RequestDetail]:
     request = await get_visible_request(db, request_id, current_user)
-    return SuccessResponse(data=to_detail(request))
+    coeffs = await load_coefficient_set(db)
+    return SuccessResponse(data=to_detail(request, coeffs))
 
 
 @router.get(
