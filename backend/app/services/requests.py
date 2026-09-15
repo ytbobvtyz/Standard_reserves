@@ -304,13 +304,13 @@ def to_detail(request: Request, coeffs: CoefficientSet | None = None) -> Request
                 quantity_approved=item.quantity_approved,
                 unit=item.unit,
                 comment=item.comment,
-                category_factor=coeffs["category_factor"],
-                long_distance=coeffs["long_distance"],
-                distance_factor=coeffs["distance_factor"],
-                requirement=coeffs["requirement"],
+                category_factor=fields["category_factor"],
+                long_distance=fields["long_distance"],
+                distance_factor=fields["distance_factor"],
+                requirement=fields["requirement"],
             )
             for item in request.items
-            for coeffs in [
+            for fields in [
                 item_coefficient_fields(
                     item.product, item.warehouse, _item_quantity(item), coeffs
                 )

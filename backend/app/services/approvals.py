@@ -65,14 +65,14 @@ def to_pending(
                 quantity_requested=item.quantity_requested,
                 quantity_approved=item.quantity_approved,
                 unit=item.unit,
-                category=coeffs["category"],
-                category_factor=coeffs["category_factor"],
-                long_distance=coeffs["long_distance"],
-                distance_factor=coeffs["distance_factor"],
-                requirement=coeffs["requirement"],
+                category=fields["category"],
+                category_factor=fields["category_factor"],
+                long_distance=fields["long_distance"],
+                distance_factor=fields["distance_factor"],
+                requirement=fields["requirement"],
             )
             for item in request.items
-            for coeffs in [
+            for fields in [
                 item_coefficient_fields(
                     item.product,
                     item.warehouse,
