@@ -17,10 +17,12 @@ from app.models.production_request import ProductionRequest, ProductionRequestIt
 from app.models.user import User
 from app.schemas.common import PaginationMeta
 from app.schemas.production_request import (
+    InactiveProductInfo,
     ProductionRequestDatesUpdate,
     ProductionRequestDetail,
     ProductionRequestItemData,
     ProductionRequestListItem,
+    ProductionRequestPreview,
     ProductionRequestUploadError,
     ProductionRequestUploadOptions,
     ProductionRequestUploadResult,
@@ -278,6 +280,52 @@ async def _load_batch(db: AsyncSession, batch_id: UUID) -> ProductionRequest:
     return batch
 
 
+async def _products_by_code(db: AsyncSession, codes: set[int]) -> dict[int, Product]:
+    if not codes:
+        return {}
+    result = await db.scalars(
+        select(Product).where(
+            Product.code.in_(codes),
+            Product.deleted_at.is_(None),
+        )
+    )
+    return {product.code: product for product in result.all()}
+
+
+def _inactive_products(products: dict[int, Product]) -> list[InactiveProductInfo]:
+    return [
+        InactiveProductInfo(code=product.code, name=product.name)
+        for product in sorted(products.values(), key=lambda item: item.code)
+        if not product.is_active
+    ]
+
+
+async def preview_batch(
+    db: AsyncSession,
+    *,
+    content: bytes,
+    filename: str,
+) -> ProductionRequestPreview:
+    parsed_file = parse_xlsx(content, filename)
+    products = await _products_by_code(
+        db, {row.product_code for row in parsed_file.rows}
+    )
+    inactive = _inactive_products(products)
+    if inactive:
+        message = (
+            f"В файле {len(inactive)} неактивных артикулов "
+            f"из {parsed_file.total_rows} строк"
+        )
+    else:
+        message = f"Неактивных артикулов нет, строк в файле {parsed_file.total_rows}"
+    return ProductionRequestPreview(
+        total_rows=parsed_file.total_rows,
+        parse_error_count=len(parsed_file.errors),
+        inactive_products=inactive,
+        message=message,
+    )
+
+
 async def list_batches(
     db: AsyncSession,
     *,
@@ -318,18 +366,7 @@ async def upload_batch(
     parsed_file = parse_xlsx(content, filename)
     product_codes = {row.product_code for row in parsed_file.rows}
     erp_plant_codes = {row.erp_plant_code for row in parsed_file.rows}
-    products = {
-        product.code: product
-        for product in (
-            await db.scalars(
-                select(Product).where(
-                    Product.code.in_(product_codes),
-                    Product.deleted_at.is_(None),
-                    Product.is_active.is_(True),
-                )
-            )
-        ).all()
-    }
+    products = await _products_by_code(db, product_codes)
     objects = (
         await db.scalars(
             select(Object)
@@ -361,21 +398,22 @@ async def upload_batch(
     errors = list(parsed_file.errors)
     valid_rows: list[tuple[ParsedRow, Product, Object]] = []
     common_client = options.client_name.strip() if options.client_name else None
+    include_inactive = options.inactive_policy == "include_inactive"
     for row in parsed_file.rows:
         row_errors: list[str] = []
         product = products.get(row.product_code)
         warehouse = warehouses.get((row.erp_plant_code, row.erp_warehouse_code))
         if row.erp_plant_code not in plants:
             row_errors.append(f"завод ERP {row.erp_plant_code} не найден")
-        if row.product_code not in products:
-            row_errors.append(f"активный артикул {row.product_code} не найден")
+        if product is None:
+            row_errors.append(f"артикул {row.product_code} не найден")
+        elif not product.is_active and not include_inactive:
+            row_errors.append(f"артикул {row.product_code} неактивен, строка пропущена")
         if warehouse is None:
             row_errors.append(
                 "активный склад ERP "
                 f"{row.erp_plant_code}/{row.erp_warehouse_code} не найден"
             )
-        if not (row.client_name or common_client):
-            row_errors.append("укажите клиента в строке или общий клиент")
         if row_errors:
             errors.append(
                 ProductionRequestUploadError(

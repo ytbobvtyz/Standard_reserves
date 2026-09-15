@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
@@ -13,6 +14,7 @@ from app.schemas.production_request import (
     ProductionRequestDatesUpdate,
     ProductionRequestDetail,
     ProductionRequestListItem,
+    ProductionRequestPreview,
     ProductionRequestUploadOptions,
     ProductionRequestUploadResult,
 )
@@ -55,6 +57,27 @@ async def download_production_request_template(
 
 
 @router.post(
+    "/preview",
+    response_model=SuccessResponse[ProductionRequestPreview],
+)
+async def preview_production_request(
+    file: UploadFile = File(...),
+    _current_user: User = Depends(MANAGE_PRODUCTION_REQUESTS),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[ProductionRequestPreview]:
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise APIError(400, "INVALID_FILE", "Размер файла не должен превышать 10 МБ")
+    return SuccessResponse(
+        data=await service.preview_batch(
+            db,
+            content=content,
+            filename=file.filename or "normatives.xlsx",
+        )
+    )
+
+
+@router.post(
     "/upload",
     status_code=201,
     response_model=SuccessResponse[ProductionRequestUploadResult],
@@ -64,6 +87,9 @@ async def upload_production_request(
     valid_from: date = Form(...),
     valid_to: date = Form(...),
     client_name: str | None = Form(default=None),
+    inactive_policy: Literal["active_only", "include_inactive"] = Form(
+        default="active_only"
+    ),
     current_user: User = Depends(MANAGE_PRODUCTION_REQUESTS),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[ProductionRequestUploadResult]:
@@ -80,6 +106,7 @@ async def upload_production_request(
         client_name=client_name,
         valid_from=valid_from,
         valid_to=valid_to,
+        inactive_policy=inactive_policy,
     )
     return SuccessResponse(
         data=await service.upload_batch(

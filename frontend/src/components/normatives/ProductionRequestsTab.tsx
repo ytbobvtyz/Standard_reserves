@@ -61,6 +61,10 @@ export function ProductionRequestsTab({
   const [uploadResult, setUploadResult] =
     useState<ProductionRequestUploadResult>()
   const [selectedId, setSelectedId] = useState<string>()
+  const [inactiveOpen, setInactiveOpen] = useState(false)
+  const [inactiveProducts, setInactiveProducts] = useState<
+    Array<{ code: number; name: string }>
+  >([])
 
   const selected = useMemo(
     () => items.find((item) => item.id === selectedId),
@@ -93,10 +97,14 @@ export function ProductionRequestsTab({
     })
     setFileList([])
     setUploadResult(undefined)
+    setInactiveOpen(false)
+    setInactiveProducts([])
     setUploadOpen(true)
   }
 
-  const submitUpload = async () => {
+  const runUpload = async (
+    policy: 'active_only' | 'include_inactive',
+  ) => {
     const values = await uploadForm.validateFields()
     const file = fileList[0]?.originFileObj
     if (!file) {
@@ -109,7 +117,9 @@ export function ProductionRequestsTab({
         client_name: values.client_name,
         valid_from: values.dates[0].format('YYYY-MM-DD'),
         valid_to: values.dates[1].format('YYYY-MM-DD'),
+        inactive_policy: policy,
       })
+      setInactiveOpen(false)
       setUploadResult(data.data)
       message.success(data.data.message)
       if (data.data.imported_count > 0) {
@@ -121,6 +131,30 @@ export function ProductionRequestsTab({
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const submitUpload = async () => {
+    await uploadForm.validateFields()
+    const file = fileList[0]?.originFileObj
+    if (!file) {
+      message.error('Выберите Excel-файл')
+      return
+    }
+    setSubmitting(true)
+    try {
+      const { data } = await productionRequestsApi.preview(file)
+      if (data.data.inactive_products.length > 0) {
+        setInactiveProducts(data.data.inactive_products)
+        setInactiveOpen(true)
+        return
+      }
+    } catch (error) {
+      message.error(getApiErrorMessage(error, 'Не удалось проверить файл'))
+      return
+    } finally {
+      setSubmitting(false)
+    }
+    await runUpload('active_only')
   }
 
   const openDates = () => {
@@ -311,7 +345,7 @@ export function ProductionRequestsTab({
           <Form.Item
             name="client_name"
             label="Общий клиент"
-            extra="Используется, если клиент не указан в строке Excel"
+            extra="Необязательно. Если не задан и в строке Excel нет клиента, норматив всё равно загружается"
           >
             <Input maxLength={500} />
           </Form.Item>
@@ -341,6 +375,43 @@ export function ProductionRequestsTab({
             }
           />
         ) : null}
+      </Modal>
+
+      <Modal
+        title="Неактивные артикулы в файле"
+        open={inactiveOpen}
+        onCancel={() => setInactiveOpen(false)}
+        footer={
+          <Space wrap>
+            <Button onClick={() => setInactiveOpen(false)}>Отменить загрузку</Button>
+            <Button
+              loading={submitting}
+              onClick={() => void runUpload('active_only')}
+            >
+              Загрузить только активные
+            </Button>
+            <Button
+              type="primary"
+              loading={submitting}
+              onClick={() => void runUpload('include_inactive')}
+            >
+              Загрузить все, включая неактивные
+            </Button>
+          </Space>
+        }
+      >
+        <Typography.Paragraph>
+          В файле найдены неактивные артикулы. Можно загрузить ретроспективные
+          нормативы по ним или пропустить эти строки. Сами карточки продуктов
+          не активируются.
+        </Typography.Paragraph>
+        <Space direction="vertical" size={2}>
+          {inactiveProducts.map((item) => (
+            <Typography.Text key={item.code}>
+              {item.code} — {item.name}
+            </Typography.Text>
+          ))}
+        </Space>
       </Modal>
 
       <Modal

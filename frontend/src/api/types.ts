@@ -654,6 +654,16 @@ export interface ProductionRequestUploadResult {
   }>
 }
 
+export interface ProductionRequestPreview {
+  total_rows: number
+  parse_error_count: number
+  inactive_products: Array<{
+    code: number
+    name: string
+  }>
+  message: string
+}
+
 export interface ProductionRequestDatesPayload {
   valid_from: string
   valid_to: string

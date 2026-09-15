@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Self
+from typing import Literal, Self
 from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
@@ -64,5 +64,21 @@ class ProductionRequestDatesUpdate(ProductionRequestDateRange):
     pass
 
 
+InactivePolicy = Literal["active_only", "include_inactive"]
+
+
+class InactiveProductInfo(BaseModel):
+    code: int
+    name: str
+
+
+class ProductionRequestPreview(BaseModel):
+    total_rows: int
+    parse_error_count: int
+    inactive_products: list[InactiveProductInfo]
+    message: str
+
+
 class ProductionRequestUploadOptions(ProductionRequestDateRange):
     client_name: str | None = Field(default=None, max_length=500)
+    inactive_policy: InactivePolicy = "active_only"

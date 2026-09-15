@@ -4,6 +4,7 @@ import type {
   ProductionRequestDatesPayload,
   ProductionRequestDetail,
   ProductionRequestListItem,
+  ProductionRequestPreview,
   ProductionRequestUploadResult,
 } from './types'
 
@@ -13,9 +14,21 @@ export const productionRequestsApi = {
       params,
     }),
 
+  preview: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post<ApiSuccess<ProductionRequestPreview>>(
+      '/production-requests/preview',
+      form,
+    )
+  },
+
   upload: (
     file: File,
-    payload: ProductionRequestDatesPayload & { client_name?: string },
+    payload: ProductionRequestDatesPayload & {
+      client_name?: string
+      inactive_policy?: 'active_only' | 'include_inactive'
+    },
   ) => {
     const form = new FormData()
     form.append('file', file)
@@ -24,6 +37,7 @@ export const productionRequestsApi = {
     if (payload.client_name?.trim()) {
       form.append('client_name', payload.client_name.trim())
     }
+    form.append('inactive_policy', payload.inactive_policy ?? 'active_only')
     return api.post<ApiSuccess<ProductionRequestUploadResult>>(
       '/production-requests/upload',
       form,

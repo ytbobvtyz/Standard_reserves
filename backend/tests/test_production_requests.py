@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from app.core.database import AsyncSessionLocal
 from app.models.normative import Normative
 from app.models.object import Object
+from app.models.product import Product
 from app.models.production_request import ProductionRequest, ProductionRequestItem
 from tests.conftest import AuthUser, auth_header, login_token
 
@@ -298,6 +299,162 @@ async def test_upload_accepts_erp_plant_code_on_warehouse_only(
             warehouse = await session.get(Object, warehouse_code)
             if warehouse is not None:
                 warehouse.erp_plant_code = previous_plant_code
+            if batch_id is not None:
+                remaining = await session.get(ProductionRequest, batch_id)
+                if remaining is not None:
+                    await session.delete(remaining)
+            await session.commit()
+
+
+async def test_upload_without_client_creates_batch(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    token = await login_token(client, logistics_user)
+    valid_from = date.today() - timedelta(days=30)
+    valid_to = date.today() + timedelta(days=90)
+    content = _xlsx(
+        [
+            [
+                catalog["erp_plant_code"],
+                catalog["erp_warehouse_code"],
+                catalog["product_code"],
+                250,
+                "шт",
+                None,
+            ]
+        ]
+    )
+    batch_id: UUID | None = None
+    try:
+        response = await client.post(
+            "/api/v1/production-requests/upload",
+            headers=auth_header(token),
+            files={
+                "file": (
+                    "normatives.xlsx",
+                    content,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+            data={
+                "valid_from": valid_from.isoformat(),
+                "valid_to": valid_to.isoformat(),
+            },
+        )
+        assert response.status_code == 201, response.text
+        result = response.json()["data"]
+        assert result["imported_count"] == 1
+        assert result["error_count"] == 0
+        assert result["production_request"]["client_name"] is None
+        assert result["production_request"]["items"][0]["client_name"] == ""
+        batch_id = UUID(result["production_request"]["id"])
+    finally:
+        async with AsyncSessionLocal() as session:
+            if batch_id is not None:
+                remaining = await session.get(ProductionRequest, batch_id)
+                if remaining is not None:
+                    await session.delete(remaining)
+                    await session.commit()
+
+
+async def test_preview_and_upload_inactive_articles(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    token = await login_token(client, logistics_user)
+    product_code = catalog["product_code"]
+    async with AsyncSessionLocal() as session:
+        product = await session.get(Product, product_code)
+        assert product is not None
+        product.is_active = False
+        await session.commit()
+
+    content = _xlsx(
+        [
+            [
+                catalog["erp_plant_code"],
+                catalog["erp_warehouse_code"],
+                product_code,
+                100,
+                "шт",
+                "Исторический клиент",
+            ]
+        ]
+    )
+    batch_id: UUID | None = None
+    try:
+        preview = await client.post(
+            "/api/v1/production-requests/preview",
+            headers=auth_header(token),
+            files={
+                "file": (
+                    "normatives.xlsx",
+                    content,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+        )
+        assert preview.status_code == 200, preview.text
+        preview_data = preview.json()["data"]
+        assert preview_data["total_rows"] == 1
+        assert [item["code"] for item in preview_data["inactive_products"]] == [
+            product_code
+        ]
+
+        skipped = await client.post(
+            "/api/v1/production-requests/upload",
+            headers=auth_header(token),
+            files={
+                "file": (
+                    "normatives.xlsx",
+                    content,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+            data={
+                "valid_from": date.today().isoformat(),
+                "valid_to": (date.today() + timedelta(days=30)).isoformat(),
+                "inactive_policy": "active_only",
+            },
+        )
+        assert skipped.status_code == 201, skipped.text
+        skipped_data = skipped.json()["data"]
+        assert skipped_data["imported_count"] == 0
+        assert skipped_data["production_request"] is None
+        assert "неактивен" in skipped_data["error_details"][0]["message"]
+
+        included = await client.post(
+            "/api/v1/production-requests/upload",
+            headers=auth_header(token),
+            files={
+                "file": (
+                    "normatives.xlsx",
+                    content,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+            data={
+                "valid_from": date.today().isoformat(),
+                "valid_to": (date.today() + timedelta(days=30)).isoformat(),
+                "inactive_policy": "include_inactive",
+            },
+        )
+        assert included.status_code == 201, included.text
+        included_data = included.json()["data"]
+        assert included_data["imported_count"] == 1
+        batch_id = UUID(included_data["production_request"]["id"])
+        async with AsyncSessionLocal() as session:
+            product = await session.get(Product, product_code)
+            assert product is not None
+            assert product.is_active is False
+    finally:
+        async with AsyncSessionLocal() as session:
+            product = await session.get(Product, product_code)
+            if product is not None:
+                product.is_active = True
             if batch_id is not None:
                 remaining = await session.get(ProductionRequest, batch_id)
                 if remaining is not None:

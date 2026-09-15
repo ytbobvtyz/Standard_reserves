@@ -2279,6 +2279,11 @@ Response (200): `application/vnd.openxmlformats-officedocument.spreadsheetml.she
 
 Колонки шаблона (порядок фиксирован): `Завод ERP`, `Склад ERP`, `Артикул`, `Количество`, `Ед.`, `Клиент`.
 
+16.2.1. Предпросмотр файла партии
+text
+POST /production-requests/preview
+Form-data: `file`. Ответ: `total_rows`, `parse_error_count`, `inactive_products` (`code`, `name`).
+
 16.3. Загрузить партию
 text
 POST /production-requests/upload
@@ -2292,13 +2297,16 @@ file	file	✅	Excel `.xlsx` / `.xls`, максимум 10 МБ
 valid_from	date	✅	Начало действия
 valid_to	date	✅	Окончание действия
 client_name	string	❌	Общий клиент (если в строке Excel клиент пуст)
+inactive_policy	string	❌	`active_only` (по умолчанию) или `include_inactive`
 
 Правила файла:
 - первые три колонки обязательны и идут в порядке `Завод ERP`, `Склад ERP`, `Артикул`;
 - далее обязательны `Количество`, `Ед.`; колонка `Клиент` необязательна;
 - склад определяется по паре `objects.erp_plant_code` + `objects.erp_warehouse_code`;
-- принимаются только активные завод, склад и товар;
-- клиент строки имеет приоритет над общим `client_name`;
+- принимаются активные завод и склад; неактивный товар по умолчанию пропускается;
+- клиент строки имеет приоритет над общим `client_name`; общий клиент и клиент в строке необязательны — норматив загружается и без них;
+- `POST /production-requests/preview` возвращает список неактивных артикулов в файле;
+- `inactive_policy=include_inactive` загружает нормативы и по неактивным артикулам, не включая их обратно в справочник;
 - единицы: `шт` / `кг` / `т` (и синонимы Excel);
 - строки независимы: валидные загружаются, невалидные — в `error_details` `{row, message}`.
 

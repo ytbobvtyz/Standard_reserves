@@ -40,6 +40,7 @@ const listProductionRequests = vi.fn()
 vi.mock('../api/productionRequests', () => ({
   productionRequestsApi: {
     list: (...args: unknown[]) => listProductionRequests(...args),
+    preview: vi.fn(),
     upload: vi.fn(),
     updateDates: vi.fn(),
     remove: vi.fn(),
