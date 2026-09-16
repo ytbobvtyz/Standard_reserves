@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from io import BytesIO
 from uuid import UUID
 
@@ -63,7 +63,12 @@ REQUIRED_COLUMNS = {
     "unit",
 }
 ALLOWED_UNITS = {"шт", "кг", "т"}
-MAX_QUANTITY = Decimal("9999999999.99")
+MAX_QUANTITY = Decimal("9999999999.999999")
+QUANTITY_STEP = {
+    "шт": Decimal("0.01"),
+    "кг": Decimal("0.001"),
+    "т": Decimal("0.000001"),
+}
 
 
 @dataclass(frozen=True)
@@ -126,17 +131,22 @@ def _parse_erp_warehouse(value: object) -> str:
     return text
 
 
-def _parse_quantity(value: object) -> Decimal:
+def _parse_quantity(value: object, unit: str) -> Decimal:
     try:
         quantity = Decimal(_text(value).replace(",", "."))
     except InvalidOperation as exc:
         raise ValueError("Количество: ожидается число") from exc
     if quantity <= 0:
         raise ValueError("Количество должно быть больше нуля")
-    quantity = quantity.quantize(Decimal("0.01"))
-    if quantity > MAX_QUANTITY:
+    rounded = quantity.quantize(QUANTITY_STEP[unit], rounding=ROUND_HALF_UP)
+    if rounded <= 0:
+        raise ValueError(
+            "Количество слишком мало для выбранной единицы "
+            "и после округления равно нулю"
+        )
+    if rounded > MAX_QUANTITY:
         raise ValueError("Количество превышает допустимое значение")
-    return quantity
+    return rounded
 
 
 def _parse_unit(value: object) -> str:
@@ -202,6 +212,7 @@ def parse_xlsx(content: bytes, filename: str) -> ParsedFile:
         total_rows += 1
         try:
             row_client = _text(_value(row, columns, "client_name")) or None
+            unit = _parse_unit(_value(row, columns, "unit"))
             parsed.append(
                 ParsedRow(
                     excel_row=row_number,
@@ -216,8 +227,8 @@ def parse_xlsx(content: bytes, filename: str) -> ParsedFile:
                         _value(row, columns, "product_code"),
                         "Артикул",
                     ),
-                    quantity=_parse_quantity(_value(row, columns, "quantity")),
-                    unit=_parse_unit(_value(row, columns, "unit")),
+                    quantity=_parse_quantity(_value(row, columns, "quantity"), unit),
+                    unit=unit,
                     client_name=row_client,
                 )
             )

@@ -82,7 +82,7 @@ class DeficitRow:
 
 
 def _quantize(value: Decimal, unit: Unit) -> Decimal:
-    step = Decimal("0.0001") if unit == "т" else Decimal("0.01")
+    step = Decimal("0.000001") if unit == "т" else Decimal("0.01")
     return value.quantize(step, rounding=ROUND_HALF_UP)
 
 

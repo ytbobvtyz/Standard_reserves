@@ -71,7 +71,7 @@ class Normative(TimestampMixin, SoftDeleteMixin, Base):
         ForeignKey("objects.code"),
         nullable=False,
     )
-    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(16, 6), nullable=False)
     unit: Mapped[str] = mapped_column(String(10), nullable=False)
     client_name: Mapped[str] = mapped_column(Text, nullable=False)
     expiry_date: Mapped[date] = mapped_column(Date, nullable=False)

@@ -679,8 +679,8 @@ CREATE TABLE request_items (
     request_id UUID NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
     product_code INTEGER NOT NULL REFERENCES products(code),
     warehouse_code INTEGER NOT NULL REFERENCES objects(code),
-    quantity_requested DECIMAL(12,2) NOT NULL CHECK (quantity_requested > 0),
-    quantity_approved DECIMAL(12,2),
+    quantity_requested DECIMAL(12,6) NOT NULL CHECK (quantity_requested > 0),
+    quantity_approved DECIMAL(12,6),
     unit VARCHAR(10) NOT NULL CHECK (unit IN ('шт', 'т')),
     comment TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -701,8 +701,8 @@ id	UUID	✅	Идентификатор (PK)
 request_id	UUID	✅	Запрос → requests.id (ON DELETE CASCADE)
 product_code	INTEGER	✅	Артикул → products.code
 warehouse_code	INTEGER	✅	Склад → objects.code
-quantity_requested	DECIMAL(12,2)	✅	Запрошенный объем (>0)
-quantity_approved	DECIMAL(12,2)	❌	Утвержденный объем
+quantity_requested	DECIMAL(12,6)	✅	Запрошенный объем (>0)
+quantity_approved	DECIMAL(12,6)	❌	Утвержденный объем
 unit	VARCHAR(10)	✅	шт или т
 comment	TEXT	❌	Комментарий по позиции
 created_at	TIMESTAMP	✅	Дата создания
@@ -713,8 +713,8 @@ CREATE TABLE request_item_history (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     request_item_id UUID NOT NULL REFERENCES request_items(id) ON DELETE CASCADE,
     field_name VARCHAR(30) NOT NULL CHECK (field_name IN ('quantity_requested', 'quantity_approved')),
-    old_value DECIMAL(12,2),
-    new_value DECIMAL(12,2),
+    old_value DECIMAL(12,6),
+    new_value DECIMAL(12,6),
     changed_by UUID NOT NULL REFERENCES users(id),
     changed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     comment TEXT
@@ -728,8 +728,8 @@ CREATE INDEX idx_request_item_history_changed_by ON request_item_history(changed
 id	UUID	✅	Идентификатор (PK)
 request_item_id	UUID	✅	Позиция запроса → request_items.id (ON DELETE CASCADE)
 field_name	VARCHAR(30)	✅	quantity_requested / quantity_approved
-old_value	DECIMAL(12,2)	❌	Старое значение
-new_value	DECIMAL(12,2)	❌	Новое значение
+old_value	DECIMAL(12,6)	❌	Старое значение
+new_value	DECIMAL(12,6)	❌	Новое значение
 changed_by	UUID	✅	Кто изменил → users.id
 changed_at	TIMESTAMP	✅	Дата изменения (по умолчанию NOW())
 comment	TEXT	❌	Комментарий
@@ -754,7 +754,7 @@ CREATE TABLE normatives (
     production_request_item_id UUID UNIQUE REFERENCES production_request_items(id) ON DELETE CASCADE,
     product_code INTEGER NOT NULL REFERENCES products(code),
     warehouse_code INTEGER NOT NULL REFERENCES objects(code),
-    quantity DECIMAL(12,2) NOT NULL,
+    quantity DECIMAL(16,6) NOT NULL,
     unit VARCHAR(10) NOT NULL CHECK (unit IN ('шт', 'кг', 'т')),
     client_name TEXT NOT NULL,
     expiry_date DATE NOT NULL,
@@ -781,7 +781,7 @@ request_id	UUID	❌	Запрос-основание → requests.id (NULL для
 production_request_item_id	UUID	❌	Позиция Excel-партии → production_request_items.id (UNIQUE, ON DELETE CASCADE; NULL для коммерческих запросов)
 product_code	INTEGER	✅	Артикул → products.code
 warehouse_code	INTEGER	✅	Склад → objects.code
-quantity	DECIMAL(12,2)	✅	Утвержденный объем
+quantity	DECIMAL(16,6)	✅	Утвержденный объем
 unit	VARCHAR(10)	✅	шт / кг / т
 client_name	TEXT	✅	Метка авторства
 expiry_date	DATE	✅	Срок действия
@@ -862,7 +862,7 @@ CREATE TABLE params (
 CREATE INDEX idx_params_last_modified_by ON params(last_modified_by);
 INSERT INTO params (id) VALUES (1);
 
-Значения коэффициентов — от 1 до 3 с шагом 0,1. Если `pallet_multiple = true`, при создании и правке черновика запроса коммерсантом/логистом `quantity_requested` округляется вверх до кратного `products.pallet_qty` (если норма не задана — шаг 1 шт.). Согласующие могут менять количество свободно.
+Значения коэффициентов — от 1 до 3 с шагом 0,1. Если `pallet_multiple = true`, при создании и правке черновика запроса коммерсантом/логистом `quantity_requested` округляется вверх до кратного поддонной норме: для `шт` шаг = `pallet_qty` (или 1 шт, если норма не задана); для `т` количество переводится в штуки через `weight_kg` (1 т = 1000 кг), округляется вверх до целых поддонов и переводится обратно в тонны. Согласующие могут менять количество свободно.
 
 5.4. production_requests — Партии загрузки нормативов (Excel)
 
@@ -925,7 +925,7 @@ CREATE TABLE production_request_items (
     production_request_id UUID NOT NULL REFERENCES production_requests(id) ON DELETE CASCADE,
     product_code INTEGER NOT NULL REFERENCES products(code),
     warehouse_code INTEGER NOT NULL REFERENCES objects(code),
-    quantity DECIMAL(12,2) NOT NULL,
+    quantity DECIMAL(16,6) NOT NULL,
     unit VARCHAR(10) NOT NULL,
     client_name TEXT NOT NULL,
     category CHAR(1) NOT NULL,
@@ -949,7 +949,7 @@ id	UUID	✅	Идентификатор (PK)
 production_request_id	UUID	✅	Партия → production_requests.id (ON DELETE CASCADE)
 product_code	INTEGER	✅	Артикул → products.code
 warehouse_code	INTEGER	✅	Склад → objects.code
-quantity	DECIMAL(12,2)	✅	Объём (> 0)
+quantity	DECIMAL(16,6)	✅	Объём (> 0); для т до 6 знаков
 unit	VARCHAR(10)	✅	шт / кг / т
 client_name	TEXT	✅	Итоговый клиент (строка или общий клиент партии)
 category	CHAR(1)	✅	Снимок категории продукта на момент загрузки
@@ -1337,6 +1337,9 @@ EXECUTE FUNCTION trigger_create_normative();
 | 18 | `0018_drop_normative_trigger.py` | Удаление триггера `create_normative_on_approve` |
 | 19 | `0019_params.py` | Таблица `params`; формулы `calculate_normative` / `deficit_view` читают коэффициенты |
 | 20 | `0020_pallet_qty.py` | `products.pallet_qty` — опциональная поддонная норма |
+| 21 | `0021_request_qty_scale.py` | `request_items` / `request_item_history` quantity: DECIMAL(12,5) |
+| 22 | `0022_request_qty_6dp.py` | количества запроса в тоннах: DECIMAL(12,6) |
+| 23 | `0023_prod_qty_scale.py` | `production_request_items` / `normatives.quantity`: DECIMAL(16,6) |
 
 Начальные пользователи и объекты заполняются скриптом `backend/scripts/seed_data.py`, а не миграцией.
 

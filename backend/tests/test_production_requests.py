@@ -1,7 +1,9 @@
 from datetime import date, timedelta
+from decimal import Decimal
 from io import BytesIO
 from uuid import UUID
 
+import pytest
 from httpx import AsyncClient
 from openpyxl import Workbook, load_workbook
 from sqlalchemy import func, select
@@ -11,6 +13,7 @@ from app.models.normative import Normative
 from app.models.object import Object
 from app.models.product import Product
 from app.models.production_request import ProductionRequest, ProductionRequestItem
+from app.services.production_requests import _parse_quantity
 from tests.conftest import AuthUser, auth_header, login_token
 
 
@@ -460,3 +463,69 @@ async def test_preview_and_upload_inactive_articles(
                 if remaining is not None:
                     await session.delete(remaining)
             await session.commit()
+
+
+def test_parse_quantity_keeps_small_tons() -> None:
+    assert _parse_quantity("0.004", "т") == Decimal("0.004000")
+
+
+def test_parse_quantity_rejects_tons_that_round_to_zero() -> None:
+    with pytest.raises(ValueError, match="после округления равно нулю"):
+        _parse_quantity("0.0000004", "т")
+
+
+async def test_upload_keeps_fractional_tons(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    token = await login_token(client, logistics_user)
+    content = _xlsx(
+        [
+            [
+                catalog["erp_plant_code"],
+                catalog["erp_warehouse_code"],
+                catalog["product_code"],
+                0.004,
+                "т",
+                "Ретро",
+            ]
+        ]
+    )
+    response = await client.post(
+        "/api/v1/production-requests/upload",
+        headers=auth_header(token),
+        files={
+            "file": (
+                "normatives.xlsx",
+                content,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+        data={
+            "valid_from": date.today().isoformat(),
+            "valid_to": (date.today() + timedelta(days=30)).isoformat(),
+        },
+    )
+    assert response.status_code == 201, response.text
+    data = response.json()["data"]
+    assert data["imported_count"] == 1
+    assert data["error_count"] == 0
+    batch_id = UUID(data["production_request"]["id"])
+    try:
+        async with AsyncSessionLocal() as session:
+            item = (
+                await session.scalars(
+                    select(ProductionRequestItem).where(
+                        ProductionRequestItem.production_request_id == batch_id
+                    )
+                )
+            ).one()
+            assert item.unit == "т"
+            assert item.quantity == Decimal("0.004000")
+    finally:
+        async with AsyncSessionLocal() as session:
+            remaining = await session.get(ProductionRequest, batch_id)
+            if remaining is not None:
+                await session.delete(remaining)
+                await session.commit()

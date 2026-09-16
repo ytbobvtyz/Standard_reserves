@@ -67,8 +67,8 @@ class RequestItem(TimestampMixin, Base):
         ForeignKey("objects.code"),
         nullable=False,
     )
-    quantity_requested: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
-    quantity_approved: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    quantity_requested: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
+    quantity_approved: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))
     unit: Mapped[str] = mapped_column(String(10), nullable=False)
     comment: Mapped[str | None] = mapped_column(Text)
 

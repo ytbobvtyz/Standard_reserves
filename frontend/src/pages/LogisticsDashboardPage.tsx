@@ -47,7 +47,7 @@ import { todayStamp } from '../utils/b2b'
 
 function formatQty(value: number, unit: Unit): string {
   return new Intl.NumberFormat('ru-RU', {
-    maximumFractionDigits: unit === 'т' ? 4 : 2,
+    maximumFractionDigits: unit === 'т' ? 6 : 2,
   }).format(value)
 }
 
@@ -84,7 +84,7 @@ function requirementHint(
 }
 
 function quantize(value: number, unit: Unit): number {
-  const factor = unit === 'т' ? 10000 : 100
+  const factor = unit === 'т' ? 1_000_000 : 100
   return Math.round(value * factor) / factor
 }
 

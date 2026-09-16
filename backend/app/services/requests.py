@@ -142,12 +142,15 @@ async def apply_pallet_rounding(
     for item in items:
         product = products.get(item.product_code)
         pallet_qty = None if product is None else product.pallet_qty
+        weight_kg = None if product is None else product.weight_kg
         rounded.append(
             item.model_copy(
                 update={
                     "quantity_requested": ceil_to_pallet(
                         Decimal(item.quantity_requested),
                         pallet_qty,
+                        unit=item.unit,
+                        weight_kg=weight_kg,
                     )
                 }
             )

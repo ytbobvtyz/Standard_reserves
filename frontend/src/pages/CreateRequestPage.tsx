@@ -55,6 +55,7 @@ interface ItemFormValue {
   warehouse_code?: number
   quantity_requested?: number
   pallet_qty?: number | null
+  weight_kg?: number | null
   unit?: 'шт' | 'т'
   category?: string
 }
@@ -99,6 +100,36 @@ function RequestItemRow({
   const longDistance = warehouse == null ? undefined : Boolean(warehouse.long_distance)
   const requirement = calculateRequirement(quantity, category, longDistance, coeffs)
 
+  const roundCurrent = (nextUnit?: 'шт' | 'т') => {
+    if (!palletMultiple) {
+      return
+    }
+    const current = form.getFieldValue([
+      'items',
+      field.name,
+      'quantity_requested',
+    ]) as number | undefined
+    if (current == null) {
+      return
+    }
+    const palletQty = form.getFieldValue(['items', field.name, 'pallet_qty']) as
+      | number
+      | null
+      | undefined
+    const weightKg = form.getFieldValue(['items', field.name, 'weight_kg']) as
+      | number
+      | null
+      | undefined
+    const activeUnit =
+      nextUnit ??
+      ((form.getFieldValue(['items', field.name, 'unit']) as 'шт' | 'т' | undefined) ??
+        'шт')
+    form.setFieldValue(
+      ['items', field.name, 'quantity_requested'],
+      ceilToPallet(current, palletQty, activeUnit, weightKg),
+    )
+  }
+
   return (
     <>
       <div style={{ display: 'none' }}>
@@ -109,6 +140,9 @@ function RequestItemRow({
           <Input />
         </Form.Item>
         <Form.Item name={[field.name, 'pallet_qty']}>
+          <InputNumber />
+        </Form.Item>
+        <Form.Item name={[field.name, 'weight_kg']}>
           <InputNumber />
         </Form.Item>
       </div>
@@ -136,19 +170,8 @@ function RequestItemRow({
               ['items', field.name, 'pallet_qty'],
               product?.pallet_qty ?? 1,
             )
-            if (palletMultiple) {
-              const current = form.getFieldValue([
-                'items',
-                field.name,
-                'quantity_requested',
-              ]) as number | undefined
-              if (current != null) {
-                form.setFieldValue(
-                  ['items', field.name, 'quantity_requested'],
-                  ceilToPallet(current, product?.pallet_qty),
-                )
-              }
-            }
+            form.setFieldValue(['items', field.name, 'weight_kg'], product?.weight_kg)
+            roundCurrent()
           }}
         />
       </Form.Item>
@@ -174,31 +197,11 @@ function RequestItemRow({
         style={{ marginBottom: 0 }}
       >
         <InputNumber
-          min={0.01}
+          min={unit === 'т' ? 0.000001 : 0.01}
+          precision={unit === 'т' ? 6 : 2}
           placeholder="Кол-во"
           style={{ width: '100%' }}
-          onBlur={() => {
-            if (!palletMultiple) {
-              return
-            }
-            const current = form.getFieldValue([
-              'items',
-              field.name,
-              'quantity_requested',
-            ]) as number | undefined
-            const palletQty = form.getFieldValue([
-              'items',
-              field.name,
-              'pallet_qty',
-            ]) as number | null | undefined
-            if (current == null) {
-              return
-            }
-            form.setFieldValue(
-              ['items', field.name, 'quantity_requested'],
-              ceilToPallet(current, palletQty),
-            )
-          }}
+          onBlur={() => roundCurrent()}
         />
       </Form.Item>
       <Form.Item
@@ -211,6 +214,7 @@ function RequestItemRow({
             { value: 'шт', label: 'шт' },
             { value: 'т', label: 'т' },
           ]}
+          onChange={(nextUnit) => roundCurrent(nextUnit)}
         />
       </Form.Item>
       {!isOneTime ? (
@@ -290,7 +294,12 @@ export function CreateRequestPage() {
       product_code: Number(item.product_code),
       warehouse_code: Number(item.warehouse_code),
       quantity_requested: palletMultiple
-        ? ceilToPallet(Number(item.quantity_requested), item.pallet_qty)
+        ? ceilToPallet(
+            Number(item.quantity_requested),
+            item.pallet_qty,
+            item.unit ?? 'шт',
+            item.weight_kg,
+          )
         : Number(item.quantity_requested),
       unit: item.unit ?? 'шт',
     })),

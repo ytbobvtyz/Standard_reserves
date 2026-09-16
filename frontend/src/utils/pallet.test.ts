@@ -12,4 +12,10 @@ describe('ceilToPallet', () => {
     expect(ceilToPallet(10, null)).toBe(10)
     expect(ceilToPallet(10.1, undefined)).toBe(11)
   })
+
+  it('rounds tons up using piece weight and pallet qty', () => {
+    expect(ceilToPallet(1, 756, 'т', 0.82)).toBe(1.23984)
+    expect(ceilToPallet(1.23984, 756, 'т', 0.82)).toBe(1.23984)
+    expect(ceilToPallet(0.0001, 1, 'т', 0.82)).toBe(0.00082)
+  })
 })

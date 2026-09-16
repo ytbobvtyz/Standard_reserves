@@ -145,7 +145,7 @@ class ProductionRequestItem(TimestampMixin, SoftDeleteMixin, Base):
         ForeignKey("objects.code"),
         nullable=False,
     )
-    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(16, 6), nullable=False)
     unit: Mapped[str] = mapped_column(String(10), nullable=False)
     client_name: Mapped[str] = mapped_column(Text, nullable=False)
     category: Mapped[str] = mapped_column(CHAR(1), nullable=False)

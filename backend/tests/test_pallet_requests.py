@@ -11,7 +11,11 @@ from tests.test_requests import _create
 
 
 async def _set_pallet_mode(
-    *, enabled: bool, product_code: int, pallet_qty: int | None
+    *,
+    enabled: bool,
+    product_code: int,
+    pallet_qty: int | None,
+    weight_kg: Decimal | None = None,
 ) -> None:
     async with AsyncSessionLocal() as session:
         params = await session.get(Params, 1)
@@ -20,6 +24,8 @@ async def _set_pallet_mode(
         product = await session.get(Product, product_code)
         assert product is not None
         product.pallet_qty = pallet_qty
+        if weight_kg is not None:
+            product.weight_kg = weight_kg
         await session.commit()
 
 
@@ -179,3 +185,31 @@ async def test_approver_can_set_any_quantity_when_pallet_multiple_enabled(
     assert Decimal(str(item["quantity_requested"])) == Decimal("48")
     assert Decimal(str(item["quantity_approved"])) == Decimal("10")
     await delete_request(request_id)
+
+
+async def test_create_rounds_tons_via_weight_and_pallet_qty(
+    client: AsyncClient, test_user: AuthUser, catalog: dict[str, int]
+) -> None:
+    await _set_pallet_mode(
+        enabled=True,
+        product_code=catalog["product_code"],
+        pallet_qty=756,
+        weight_kg=Decimal("0.82"),
+    )
+    token = await login_token(client, test_user)
+    status, body = await _create(
+        client,
+        token,
+        items=[
+            {
+                "product_code": catalog["product_code"],
+                "warehouse_code": catalog["warehouse_code"],
+                "quantity_requested": 1,
+                "unit": "т",
+            }
+        ],
+    )
+    assert status == 201, body
+    item = body["data"]["items"][0]
+    assert Decimal(str(item["quantity_requested"])) == Decimal("1.23984")
+    await delete_request(body["data"]["id"])

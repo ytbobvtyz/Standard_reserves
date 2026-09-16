@@ -90,6 +90,157 @@ async def db_ready() -> AsyncGenerator[None, None]:
         await connection.execute(
             text("UPDATE products SET mark_control = false WHERE mark_control IS NULL")
         )
+        await connection.execute(
+            text(
+                """
+                DO $$
+                BEGIN
+                    ALTER TABLE request_items
+                        ALTER COLUMN quantity_requested TYPE NUMERIC(12, 6);
+                    ALTER TABLE request_items
+                        ALTER COLUMN quantity_approved TYPE NUMERIC(12, 6);
+                    ALTER TABLE request_item_history
+                        ALTER COLUMN old_value TYPE NUMERIC(12, 6);
+                EXCEPTION
+                    WHEN undefined_table THEN NULL;
+                END $$;
+                """
+            )
+        )
+        await connection.execute(text("DROP VIEW IF EXISTS deficit_view"))
+        await connection.execute(text("DROP VIEW IF EXISTS normatives_on_date"))
+        await connection.execute(
+            text(
+                """
+                DO $$
+                BEGIN
+                    ALTER TABLE production_request_items
+                        ALTER COLUMN quantity TYPE NUMERIC(16, 6);
+                    ALTER TABLE normatives
+                        ALTER COLUMN quantity TYPE NUMERIC(16, 6);
+                EXCEPTION
+                    WHEN undefined_table THEN NULL;
+                END $$;
+                """
+            )
+        )
+        await connection.execute(
+            text(
+                """
+                CREATE OR REPLACE VIEW normatives_on_date AS
+                SELECT
+                    n.warehouse_code,
+                    o.name AS warehouse_name,
+                    n.product_code,
+                    p.name AS product_name,
+                    n.quantity,
+                    n.unit,
+                    n.client_name,
+                    n.expiry_date,
+                    n.category,
+                    n.created_at,
+                    (
+                        SELECT SUM(n2.quantity)
+                        FROM normatives n2
+                        WHERE n2.warehouse_code = n.warehouse_code
+                          AND n2.product_code = n.product_code
+                          AND n2.created_at::date <= CURRENT_DATE
+                          AND n2.expiry_date >= CURRENT_DATE
+                          AND n2.deleted_at IS NULL
+                    ) AS total_normative_on_date
+                FROM normatives n
+                JOIN objects o ON n.warehouse_code = o.code
+                JOIN products p ON n.product_code = p.code
+                WHERE n.deleted_at IS NULL
+                """
+            )
+        )
+        await connection.execute(
+            text(
+                """
+                CREATE OR REPLACE VIEW deficit_view AS
+                SELECT
+                    n.warehouse_code,
+                    o.name AS warehouse_name,
+                    n.product_code,
+                    p.name AS product_name,
+                    p.category,
+                    n.quantity AS normative_quantity,
+                    n.quantity
+                        * CASE p.category
+                            WHEN 'A' THEN COALESCE(prm.category_a, 1)
+                            WHEN 'B' THEN COALESCE(prm.category_b, 1.5)
+                            WHEN 'C' THEN COALESCE(prm.category_c, 2)
+                            ELSE 1
+                          END
+                        * CASE
+                            WHEN o.long_distance THEN COALESCE(prm.remote_warehouse, 1.5)
+                            ELSE 1
+                          END
+                        AS requirement,
+                    n.unit AS normative_unit,
+                    COALESCE(ab.available, 0) AS available,
+                    COALESCE(ab.plan, 0) AS plan,
+                    COALESCE(ab.unit, 'шт') AS fact_unit,
+                    (
+                        n.quantity
+                        * CASE p.category
+                            WHEN 'A' THEN COALESCE(prm.category_a, 1)
+                            WHEN 'B' THEN COALESCE(prm.category_b, 1.5)
+                            WHEN 'C' THEN COALESCE(prm.category_c, 2)
+                            ELSE 1
+                          END
+                        * CASE
+                            WHEN o.long_distance THEN COALESCE(prm.remote_warehouse, 1.5)
+                            ELSE 1
+                          END
+                        - COALESCE(ab.plan, 0)
+                    ) AS deficit,
+                    n.expiry_date,
+                    n.client_name,
+                    CASE
+                        WHEN (
+                            n.quantity
+                            * CASE p.category
+                                WHEN 'A' THEN COALESCE(prm.category_a, 1)
+                                WHEN 'B' THEN COALESCE(prm.category_b, 1.5)
+                                WHEN 'C' THEN COALESCE(prm.category_c, 2)
+                                ELSE 1
+                              END
+                            * CASE
+                                WHEN o.long_distance THEN COALESCE(prm.remote_warehouse, 1.5)
+                                ELSE 1
+                              END
+                            - COALESCE(ab.plan, 0)
+                        ) > 0 THEN 'warning'
+                        ELSE 'ok'
+                    END AS status
+                FROM normatives n
+                JOIN objects o ON n.warehouse_code = o.code
+                JOIN products p ON n.product_code = p.code
+                LEFT JOIN params prm ON prm.id = 1
+                LEFT JOIN available_balances ab
+                    ON n.warehouse_code = ab.warehouse_code
+                    AND n.product_code = ab.product_code
+                WHERE n.deleted_at IS NULL
+                  AND n.expiry_date >= CURRENT_DATE
+                  AND (
+                        n.quantity
+                        * CASE p.category
+                            WHEN 'A' THEN COALESCE(prm.category_a, 1)
+                            WHEN 'B' THEN COALESCE(prm.category_b, 1.5)
+                            WHEN 'C' THEN COALESCE(prm.category_c, 2)
+                            ELSE 1
+                          END
+                        * CASE
+                            WHEN o.long_distance THEN COALESCE(prm.remote_warehouse, 1.5)
+                            ELSE 1
+                          END
+                        - COALESCE(ab.plan, 0)
+                      ) > 0
+                """
+            )
+        )
         await connection.execute(text("DROP INDEX IF EXISTS idx_products_gtin"))
         await connection.execute(
             text(

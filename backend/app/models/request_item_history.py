@@ -46,8 +46,8 @@ class RequestItemHistory(Base):
         nullable=False,
     )
     field_name: Mapped[str] = mapped_column(String(30), nullable=False)
-    old_value: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
-    new_value: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    old_value: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))
+    new_value: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))
     changed_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id"),
