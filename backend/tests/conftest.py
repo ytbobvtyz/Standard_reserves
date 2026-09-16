@@ -174,7 +174,8 @@ async def db_ready() -> AsyncGenerator[None, None]:
                             ELSE 1
                           END
                         * CASE
-                            WHEN o.long_distance THEN COALESCE(prm.remote_warehouse, 1.5)
+                            WHEN o.long_distance
+                            THEN COALESCE(prm.remote_warehouse, 1.5)
                             ELSE 1
                           END
                         AS requirement,
@@ -191,7 +192,8 @@ async def db_ready() -> AsyncGenerator[None, None]:
                             ELSE 1
                           END
                         * CASE
-                            WHEN o.long_distance THEN COALESCE(prm.remote_warehouse, 1.5)
+                            WHEN o.long_distance
+                            THEN COALESCE(prm.remote_warehouse, 1.5)
                             ELSE 1
                           END
                         - COALESCE(ab.plan, 0)
@@ -208,7 +210,8 @@ async def db_ready() -> AsyncGenerator[None, None]:
                                 ELSE 1
                               END
                             * CASE
-                                WHEN o.long_distance THEN COALESCE(prm.remote_warehouse, 1.5)
+                                WHEN o.long_distance
+                                THEN COALESCE(prm.remote_warehouse, 1.5)
                                 ELSE 1
                               END
                             - COALESCE(ab.plan, 0)
@@ -233,7 +236,8 @@ async def db_ready() -> AsyncGenerator[None, None]:
                             ELSE 1
                           END
                         * CASE
-                            WHEN o.long_distance THEN COALESCE(prm.remote_warehouse, 1.5)
+                            WHEN o.long_distance
+                            THEN COALESCE(prm.remote_warehouse, 1.5)
                             ELSE 1
                           END
                         - COALESCE(ab.plan, 0)

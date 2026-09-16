@@ -221,7 +221,7 @@ export function ApprovalModal({
                 render: (_value, record, index) => (
                   <InputNumber
                     min={record.unit === 'т' ? 0.000001 : 0.01}
-                    precision={record.unit === 'т' ? 6 : 2}
+                    precision={record.unit === 'т' ? 6 : undefined}
                     value={record.quantity_approved_input}
                     onChange={(value) => {
                       setEditableItems((current) =>
