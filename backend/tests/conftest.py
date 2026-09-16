@@ -90,9 +90,7 @@ async def db_ready() -> AsyncGenerator[None, None]:
         await connection.execute(
             text("UPDATE products SET mark_control = false WHERE mark_control IS NULL")
         )
-        await connection.execute(
-            text(
-                """
+        await connection.execute(text("""
                 DO $$
                 BEGIN
                     ALTER TABLE request_items
@@ -104,14 +102,10 @@ async def db_ready() -> AsyncGenerator[None, None]:
                 EXCEPTION
                     WHEN undefined_table THEN NULL;
                 END $$;
-                """
-            )
-        )
+                """))
         await connection.execute(text("DROP VIEW IF EXISTS deficit_view"))
         await connection.execute(text("DROP VIEW IF EXISTS normatives_on_date"))
-        await connection.execute(
-            text(
-                """
+        await connection.execute(text("""
                 DO $$
                 BEGIN
                     ALTER TABLE production_request_items
@@ -121,12 +115,8 @@ async def db_ready() -> AsyncGenerator[None, None]:
                 EXCEPTION
                     WHEN undefined_table THEN NULL;
                 END $$;
-                """
-            )
-        )
-        await connection.execute(
-            text(
-                """
+                """))
+        await connection.execute(text("""
                 CREATE OR REPLACE VIEW normatives_on_date AS
                 SELECT
                     n.warehouse_code,
@@ -152,12 +142,8 @@ async def db_ready() -> AsyncGenerator[None, None]:
                 JOIN objects o ON n.warehouse_code = o.code
                 JOIN products p ON n.product_code = p.code
                 WHERE n.deleted_at IS NULL
-                """
-            )
-        )
-        await connection.execute(
-            text(
-                """
+                """))
+        await connection.execute(text("""
                 CREATE OR REPLACE VIEW deficit_view AS
                 SELECT
                     n.warehouse_code,
@@ -242,9 +228,7 @@ async def db_ready() -> AsyncGenerator[None, None]:
                           END
                         - COALESCE(ab.plan, 0)
                       ) > 0
-                """
-            )
-        )
+                """))
         await connection.execute(text("DROP INDEX IF EXISTS idx_products_gtin"))
         await connection.execute(
             text(
