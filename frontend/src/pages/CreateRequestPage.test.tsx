@@ -26,7 +26,7 @@ vi.mock('../api/requests', () => ({
 }))
 
 const PALLET_HINT =
-  /Пополнение возможно только кратно поддонной норме/
+  'В настоящее время запросы на нормативный запас/разовое перемещение принимаются только кратно поддонной норме'
 
 describe('CreateRequestPage', () => {
   beforeEach(() => {
@@ -65,16 +65,39 @@ describe('CreateRequestPage', () => {
     })
   })
 
-  it('shows pallet hint for normative and one-time requests', async () => {
+  it('hides pallet hint when pallet_multiple is off', async () => {
     render(
       <MemoryRouter>
         <CreateRequestPage />
       </MemoryRouter>,
     )
     await waitFor(() => {
-      expect(screen.getByText('Создать запрос')).toBeTruthy()
+      expect(getParams).toHaveBeenCalled()
     })
-    expect(screen.getByText(PALLET_HINT)).toBeTruthy()
+    expect(screen.queryByText(PALLET_HINT)).toBeNull()
+  })
+
+  it('shows pallet hint for normative and one-time requests when pallet_multiple is on', async () => {
+    getParams.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: {
+          category_a: 1,
+          category_b: 1.5,
+          category_c: 2,
+          remote_warehouse: 1.5,
+          pallet_multiple: true,
+        },
+      },
+    })
+    render(
+      <MemoryRouter>
+        <CreateRequestPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByText(PALLET_HINT)).toBeTruthy()
+    })
 
     fireEvent.click(screen.getByRole('radio', { name: 'Разовое перемещение' }))
     expect(screen.getByText(PALLET_HINT)).toBeTruthy()

@@ -51,6 +51,11 @@ async def load_coefficient_set(db: AsyncSession) -> CoefficientSet:
     )
 
 
+async def is_pallet_multiple_enabled(db: AsyncSession) -> bool:
+    row = await db.get(Params, 1)
+    return bool(row.pallet_multiple) if row is not None else False
+
+
 def to_response(row: Params) -> ParamsResponse:
     user = row.modified_by_user
     return ParamsResponse(

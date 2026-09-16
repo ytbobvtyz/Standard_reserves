@@ -35,6 +35,7 @@ import {
   minExpiryDate,
 } from '../utils/expiryDate'
 import { formatInitiator } from '../utils/format'
+import { ceilToPallet } from '../utils/pallet'
 import {
   calculateRequirement,
   categoryLabel,
@@ -45,14 +46,15 @@ import {
   type CoefficientParams,
 } from '../utils/requirement'
 
-const PALLET_NORM_HINT =
-  'Пополнение возможно только кратно поддонной норме. Если вы укажете количество не кратное поддонной норме, перемещение будет выдано с округлением вашей потребности до поддонной нормы'
+export const PALLET_NORM_HINT =
+  'В настоящее время запросы на нормативный запас/разовое перемещение принимаются только кратно поддонной норме'
 
 interface ItemFormValue {
   product_code?: number
   product_name?: string
   warehouse_code?: number
   quantity_requested?: number
+  pallet_qty?: number | null
   unit?: 'шт' | 'т'
   category?: string
 }
@@ -76,6 +78,7 @@ function RequestItemRow({
   canRemove,
   isOneTime,
   coeffs,
+  palletMultiple,
   onRemove,
 }: {
   field: FormListFieldData
@@ -83,6 +86,7 @@ function RequestItemRow({
   canRemove: boolean
   isOneTime: boolean
   coeffs: CoefficientParams
+  palletMultiple: boolean
   onRemove: () => void
 }) {
   const form = Form.useFormInstance<FormValues>()
@@ -103,6 +107,9 @@ function RequestItemRow({
         </Form.Item>
         <Form.Item name={[field.name, 'category']}>
           <Input />
+        </Form.Item>
+        <Form.Item name={[field.name, 'pallet_qty']}>
+          <InputNumber />
         </Form.Item>
       </div>
       <div
@@ -125,6 +132,23 @@ function RequestItemRow({
           onChange={(_code, product) => {
             form.setFieldValue(['items', field.name, 'product_name'], product?.name)
             form.setFieldValue(['items', field.name, 'category'], product?.category)
+            form.setFieldValue(
+              ['items', field.name, 'pallet_qty'],
+              product?.pallet_qty ?? 1,
+            )
+            if (palletMultiple) {
+              const current = form.getFieldValue([
+                'items',
+                field.name,
+                'quantity_requested',
+              ]) as number | undefined
+              if (current != null) {
+                form.setFieldValue(
+                  ['items', field.name, 'quantity_requested'],
+                  ceilToPallet(current, product?.pallet_qty),
+                )
+              }
+            }
           }}
         />
       </Form.Item>
@@ -149,7 +173,33 @@ function RequestItemRow({
         rules={[{ required: true, message: 'Укажите количество' }]}
         style={{ marginBottom: 0 }}
       >
-        <InputNumber min={0.01} placeholder="Кол-во" style={{ width: '100%' }} />
+        <InputNumber
+          min={0.01}
+          placeholder="Кол-во"
+          style={{ width: '100%' }}
+          onBlur={() => {
+            if (!palletMultiple) {
+              return
+            }
+            const current = form.getFieldValue([
+              'items',
+              field.name,
+              'quantity_requested',
+            ]) as number | undefined
+            const palletQty = form.getFieldValue([
+              'items',
+              field.name,
+              'pallet_qty',
+            ]) as number | null | undefined
+            if (current == null) {
+              return
+            }
+            form.setFieldValue(
+              ['items', field.name, 'quantity_requested'],
+              ceilToPallet(current, palletQty),
+            )
+          }}
+        />
       </Form.Item>
       <Form.Item
         name={[field.name, 'unit']}
@@ -198,6 +248,7 @@ export function CreateRequestPage() {
   const user = useAuthStore((state) => state.user)
   const [warehouses, setWarehouses] = useState<ObjectListItem[]>([])
   const [coeffs, setCoeffs] = useState<CoefficientParams>(DEFAULT_COEFFICIENTS)
+  const [palletMultiple, setPalletMultiple] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const requestType = Form.useWatch('request_type', form)
   const isOneTime = requestType === 'one_time'
@@ -219,9 +270,11 @@ export function CreateRequestPage() {
           category_c: Number(data.data.category_c),
           remote_warehouse: Number(data.data.remote_warehouse),
         })
+        setPalletMultiple(Boolean(data.data.pallet_multiple))
       })
       .catch(() => {
         setCoeffs(DEFAULT_COEFFICIENTS)
+        setPalletMultiple(false)
       })
   }, [])
 
@@ -236,7 +289,9 @@ export function CreateRequestPage() {
     items: values.items.map((item) => ({
       product_code: Number(item.product_code),
       warehouse_code: Number(item.warehouse_code),
-      quantity_requested: Number(item.quantity_requested),
+      quantity_requested: palletMultiple
+        ? ceilToPallet(Number(item.quantity_requested), item.pallet_qty)
+        : Number(item.quantity_requested),
       unit: item.unit ?? 'шт',
     })),
   })
@@ -333,12 +388,14 @@ export function CreateRequestPage() {
             </Form.Item>
           ) : null}
           <Typography.Title level={5}>Позиции</Typography.Title>
-          <Alert
-            type="info"
-            showIcon
-            message={PALLET_NORM_HINT}
-            style={{ marginBottom: 12 }}
-          />
+          {palletMultiple ? (
+            <Alert
+              type="info"
+              showIcon
+              message={PALLET_NORM_HINT}
+              style={{ marginBottom: 12 }}
+            />
+          ) : null}
           <Form.List
             name="items"
             rules={[
@@ -385,6 +442,7 @@ export function CreateRequestPage() {
                     canRemove={fields.length > 1}
                     isOneTime={isOneTime}
                     coeffs={coeffs}
+                    palletMultiple={palletMultiple}
                     onRemove={() => remove(field.name)}
                   />
                 ))}

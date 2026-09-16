@@ -576,6 +576,7 @@ async def catalog(db_ready: None) -> dict[str, int]:
             existing.plant_id = item.plant_id
             existing.weight_kg = item.weight_kg
             existing.monthly_consumption = item.monthly_consumption
+            existing.pallet_qty = None
             existing.is_active = True
         await session.commit()
     return {

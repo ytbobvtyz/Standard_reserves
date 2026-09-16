@@ -862,7 +862,7 @@ CREATE TABLE params (
 CREATE INDEX idx_params_last_modified_by ON params(last_modified_by);
 INSERT INTO params (id) VALUES (1);
 
-Значения коэффициентов — от 1 до 3 с шагом 0,1. `pallet_multiple` сохраняется для будущей логики запросов НЗ.
+Значения коэффициентов — от 1 до 3 с шагом 0,1. Если `pallet_multiple = true`, при создании и правке черновика запроса коммерсантом/логистом `quantity_requested` округляется вверх до кратного `products.pallet_qty` (если норма не задана — шаг 1 шт.). Согласующие могут менять количество свободно.
 
 5.4. production_requests — Партии загрузки нормативов (Excel)
 

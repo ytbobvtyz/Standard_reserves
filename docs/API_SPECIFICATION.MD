@@ -265,6 +265,8 @@ json
 
 `department_id` в запрос **не передаётся** клиентом: при создании копируется `users.department_id` инициатора.
 
+Если в параметрах включён `pallet_multiple`, при `POST /requests` и `PUT /requests/{id}` (черновик) количество каждой позиции округляется **вверх** до кратного поддонной норме продукта. Пустая `pallet_qty` считается равной 1 шт. Согласование (`quantity_approved`) не округляется.
+
 `requirement` в каждой позиции = эффективное количество (`quantity_approved`, если задано, иначе `quantity_requested`) × коэффициент категории (A=1, B=1.5, C=2) × коэффициент удалённости склада (`long_distance` false=1, true=1.5). Результат округляется до 32 знаков после запятой.
 
 Errors:
@@ -2123,7 +2125,7 @@ json
     }
 }
 
-PUT /admin/params — тело: `category_a`, `category_b`, `category_c`, `remote_warehouse` (1–3, шаг 0,1), `pallet_multiple` (boolean). При сохранении обновляются `last_modified_by` и `last_modified_at`. Невалидный шаг или диапазон — 422. Потребность на дашборде пересчитывается сразу из новых коэффициентов.
+PUT /admin/params — тело: `category_a`, `category_b`, `category_c`, `remote_warehouse` (1–3, шаг 0,1), `pallet_multiple` (boolean). При сохранении обновляются `last_modified_by` и `last_modified_at`. Невалидный шаг или диапазон — 422. Потребность на дашборде пересчитывается сразу из новых коэффициентов. При `pallet_multiple = true` новые запросы коммерсанта/логиста принимаются только кратно поддонной норме (округление вверх на создании/правке черновика).
 
 10. УПРАВЛЕНИЕ ОСТАТКАМИ
 На MVP загрузка остатков выполняется через `POST /logistics/normative/upload` (Excel ERP, поля `available` и `plan`). Эндпоинты `/inventory/*` **не реализованы**.

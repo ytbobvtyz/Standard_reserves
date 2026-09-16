@@ -39,7 +39,8 @@ from app.schemas.request import (
 )
 from app.schemas.user import UserBrief
 from app.services.coefficients import CoefficientSet, item_coefficient_fields
-from app.services.params import load_coefficient_set
+from app.services.pallet import ceil_to_pallet
+from app.services.params import is_pallet_multiple_enabled, load_coefficient_set
 
 VIEW_ALL_ROLES = {"pp", "economist", "logistics"}
 
@@ -118,6 +119,40 @@ async def validate_items(db: AsyncSession, items: list[RequestItemCreate]) -> No
             )
         if not warehouse.is_active:
             raise APIError(400, "OBJECT_INACTIVE", f"Объект {code} неактивен")
+
+
+async def apply_pallet_rounding(
+    db: AsyncSession, items: list[RequestItemCreate]
+) -> list[RequestItemCreate]:
+    if not await is_pallet_multiple_enabled(db):
+        return items
+    codes = {item.product_code for item in items}
+    products = {
+        product.code: product
+        for product in (
+            await db.scalars(
+                select(Product).where(
+                    Product.code.in_(codes),
+                    Product.deleted_at.is_(None),
+                )
+            )
+        ).all()
+    }
+    rounded: list[RequestItemCreate] = []
+    for item in items:
+        product = products.get(item.product_code)
+        pallet_qty = None if product is None else product.pallet_qty
+        rounded.append(
+            item.model_copy(
+                update={
+                    "quantity_requested": ceil_to_pallet(
+                        Decimal(item.quantity_requested),
+                        pallet_qty,
+                    )
+                }
+            )
+        )
+    return rounded
 
 
 def _build_items(items: list[RequestItemCreate]) -> list[RequestItem]:
@@ -446,6 +481,7 @@ async def create_request(
         )
     validate_expiry_date_limit(body.expiry_date)
     await validate_items(db, body.items)
+    items = await apply_pallet_rounding(db, body.items)
 
     request = Request(
         request_type=body.request_type,
@@ -455,7 +491,7 @@ async def create_request(
         department_id=user.department_id,
         initiator_comment=body.comment,
         expiry_date=body.expiry_date,
-        items=_build_items(body.items),
+        items=_build_items(items),
     )
     db.add(request)
     await db.commit()
@@ -476,9 +512,10 @@ async def update_draft(
         request.expiry_date = body.expiry_date
     if body.items is not None:
         await validate_items(db, body.items)
+        items = await apply_pallet_rounding(db, body.items)
         request.items.clear()
         await db.flush()
-        request.items.extend(_build_items(body.items))
+        request.items.extend(_build_items(items))
     await db.commit()
     return await load_request(db, request.id, for_detail=False)
 
