@@ -99,3 +99,24 @@ body {
   > td {
   background: #fafafa;
 }
+
+.expiry-heatmap {
+  display: grid;
+  grid-template-columns: repeat(7, 18px);
+  gap: 4px;
+}
+
+.expiry-heatmap-cell {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+}
+
+.expiry-heatmap-cell.is-empty {
+  background: transparent;
+}
+
+.trend-chart-scroll {
+  width: 100%;
+  overflow-x: auto;
+}

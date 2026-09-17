@@ -4,6 +4,7 @@ from app.api.v1.endpoints import (
     admin_users,
     approvals,
     auth,
+    dashboard,
     logistics_normative,
     logistics_one_time,
     normatives,
@@ -23,6 +24,7 @@ api_router.include_router(products.router)
 api_router.include_router(production_requests.router)
 api_router.include_router(requests.router)
 api_router.include_router(approvals.router)
+api_router.include_router(dashboard.router)
 api_router.include_router(logistics_normative.router)
 api_router.include_router(logistics_one_time.router)
 api_router.include_router(normatives.router)

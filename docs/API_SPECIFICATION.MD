@@ -1179,6 +1179,158 @@ json
         "executed_comment": "Отгрузка произведена 18.08.2026"
     }
 }
+
+6.9. Дашборд нормативов (главная)
+
+Права: все авторизованные (`get_current_user`).
+
+| Метод | Эндпоинт | Описание | Права |
+|-------|----------|----------|-------|
+| GET | `/dashboard/summary` | North Star метрики | auth |
+| GET | `/dashboard/normative-trend` | Динамика нормативов | auth |
+| GET | `/dashboard/exceptions` | Список исключений (дефицит > 0) | auth |
+| GET | `/dashboard/warehouse-coverage` | Покрытие по складам | auth |
+| GET | `/dashboard/expiry-calendar` | Нормативы, истекающие по дням | auth |
+
+6.9.1. Сводка
+text
+GET /dashboard/summary
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": {
+        "active_count": 1245,
+        "deficit_quantity": 0.1,
+        "coverage_pct": 87,
+        "expiring_30d": 12,
+        "avg_remaining_days": 45,
+        "unit": "т"
+    }
+}
+
+Query: `unit` = `т` (по умолчанию) или `кг`, `warehouse_code` — общий фильтр склада. Количества — масса (штуки × `products.weight_kg`).
+
+`active_count` — число действующих записей `normatives`. `deficit_quantity` — сумма положительного дефицита в выбранной единице массы. `coverage_pct` — `plan / requirement * 100` (не больше 100); потребность = НЗ × коэффициент категории × коэффициент дальних перевозок. `expiring_30d` — НЗ с `expiry_date` в ближайшие 30 дней. `avg_remaining_days` — средний остаток срока, дни.
+
+6.9.2. Динамика нормативов
+text
+GET /dashboard/normative-trend
+Query:
+
+| Параметр | Тип | Описание |
+|----------|-----|----------|
+| product_code | integer | Артикул |
+| warehouse_code | integer | Склад |
+| date_from | date | Начало периода |
+| date_to | date | Конец периода |
+| group_by | string | `day` / `week` / `month` (по умолчанию `week`) |
+| period | string | Алиас `group_by` |
+| unit | string | `т` (по умолчанию) / `кг` |
+
+По умолчанию: 30 дней / 12 недель / 12 месяцев **назад** и 180 дней **вперёд**. НЗ попадает в бакет, если интервал действия пересекает период: коммерческий — `created_at::date` … `expiry_date`; партия Excel (`production_requests`) — `valid_from` … `expiry_date` (только `status = active`, не удалена). Без фильтра склада — серии по складам. При фильтре склада без артикула — серии по артикулам, не больше 9 крупнейших плюс серия «Остальные». `date_from` / `date_to` опциональны.
+
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": {
+        "group_by": "week",
+        "date_from": "2026-06-29",
+        "date_to": "2026-09-16",
+        "unit": "т",
+        "periods": ["2026-06-29", "2026-07-06"],
+        "series": [
+            {
+                "key": "warehouse:2001",
+                "warehouse_code": 2001,
+                "warehouse_name": "Склад Ростов",
+                "product_code": null,
+                "product_name": null,
+                "points": [
+                    {"period": "2026-06-29", "total_normative": 1000, "count_active": 1}
+                ]
+            }
+        ]
+    }
+}
+
+6.9.3. Исключения
+text
+GET /dashboard/exceptions
+Query: `warehouse_code`, `product_code`, `page`, `limit` (по умолчанию 20), `unit` (`т` / `кг`).
+
+В ответе только позиции с `deficit > 0`, сортировка по дефициту по убыванию. `status`: `critical` если дефицит ≥ 40% потребности, иначе `attention`. `request_id` — коммерческий запрос-основание, если есть.
+
+json
+{
+    "status": "success",
+    "data": [
+        {
+            "product_code": 10001,
+            "product_name": "Подшипник 6204ZZ",
+            "warehouse_code": 2001,
+            "warehouse_name": "Склад Ростов",
+            "normative_quantity": 1000,
+            "requirement": 1000,
+            "available": 600,
+            "plan": 600,
+            "deficit": 0.1,
+            "unit": "т",
+            "status": "critical",
+            "request_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        }
+    ],
+    "meta": {"page": 1, "limit": 20, "total": 1}
+}
+
+6.9.4. Календарь истечений
+text
+GET /dashboard/expiry-calendar
+Query: `date_from`, `date_to` (по умолчанию сегодня … +89 дней), `unit` (`т` / `кг`), `warehouse_code`. Группировка действующих НЗ по `expiry_date`. `quantity` — масса истекающих НЗ.
+
+json
+{
+    "status": "success",
+    "data": {
+        "date_from": "2026-09-16",
+        "date_to": "2026-12-13",
+        "unit": "т",
+        "days": [
+            {"date": "2026-10-01", "count": 3, "quantity": 1.5}
+        ]
+    }
+}
+
+6.9.5. Покрытие по складам
+text
+GET /dashboard/warehouse-coverage
+Query: `unit` (`т` / `кг`), `warehouse_code`. «Доступно» и `plan` — как шапка склада на дашборде логиста (`filter_mode=all`, включая остатки без НЗ и дочерние артикулы группы). `planned` = `plan - available` (≥ 0). Норматив и дефицит — только по действующим НЗ. `mismatch = true`, если стек выше норматива.
+
+json
+{
+    "status": "success",
+    "data": {
+        "unit": "т",
+        "warehouses": [
+            {
+                "warehouse_code": 2001,
+                "warehouse_name": "Склад Ростов",
+                "normative_quantity": 1.5,
+                "available": 1.2,
+                "planned": 0.3,
+                "deficit": 0.4,
+                "requirement": 1.6,
+                "coverage_pct": 75,
+                "mismatch": true,
+                "unit": "т"
+            }
+        ]
+    }
+}
+
 7. НОРМАТИВЫ
 7.1. Получить текущие нормативы
 text
@@ -2181,15 +2333,16 @@ json
 Справочники подразделения	/references/departments	1
 Администрирование	/admin/users, /admin/users/{id}, reset-password, /admin/departments	10
 Партии нормативов	/production-requests, template, upload, dates, delete	5
-ИТОГО реализовано		~63
+Дашборд нормативов	/dashboard/summary, normative-trend, exceptions, warehouse-coverage, expiry-calendar	5
+ИТОГО реализовано		~68
 Не реализовано (задел)	/inventory/*, /tariffs/*, /agent/*, /auth/register	—
 14.2. Ролевой доступ
 Роль	Доступные эндпоинты
-guest	Просмотр справочников, нормативов и дашборда логистики (только чтение)
-commercial	Создание запросов (нормативные + разовые), просмотр своих запросов, просмотр логистики (только чтение)
-pp	Согласование (ПП), просмотр всех запросов, CRUD продуктов, Excel-загрузка, просмотр логистики, управление партиями нормативов
-economist	Согласование (экономист), просмотр всех запросов, CRUD продуктов, Excel-загрузка, просмотр логистики, управление партиями нормативов
-logistics	Дашборд, формирование заказов, исполнение разовых, выгрузка Excel, выгрузка разнарядок B2B (ZIP), загрузка остатков, CRUD продуктов и объектов, управление партиями нормативов, администрирование пользователей и подразделений (`/admin/*`)
+guest	Просмотр справочников, нормативов, дашборда нормативов и дашборда логистики (только чтение)
+commercial	Создание запросов (нормативные + разовые), просмотр своих запросов, дашборд нормативов, просмотр логистики (только чтение)
+pp	Согласование (ПП), просмотр всех запросов, CRUD продуктов, Excel-загрузка, просмотр логистики, управление партиями нормативов, дашборд нормативов
+economist	Согласование (экономист), просмотр всех запросов, CRUD продуктов, Excel-загрузка, просмотр логистики, управление партиями нормативов, дашборд нормативов
+logistics	Дашборд нормативов, дашборд логиста, формирование заказов, исполнение разовых, выгрузка Excel, выгрузка разнарядок B2B (ZIP), загрузка остатков, CRUD продуктов и объектов, управление партиями нормативов, администрирование пользователей и подразделений (`/admin/*`)
 15. ПРИМЕР ПОЛНОГО FLOW
 15.1. Нормативный запас — полный цикл
 text
@@ -2390,6 +2543,6 @@ json
     "message": "Партия загрузки удалена"
 }
 
-Версия: 1.12
-Дата: 31.08.2026
+Версия: 1.13
+Дата: 16.09.2026
 Статус: Утверждена

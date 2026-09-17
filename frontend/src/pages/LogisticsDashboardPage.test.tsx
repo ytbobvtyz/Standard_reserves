@@ -278,9 +278,10 @@ describe('LogisticsDashboardPage', () => {
     )
     await expandWarehouse('Склад Ростов')
     expect(screen.getByText('Подшипник 6204ZZ')).toBeTruthy()
-    fireEvent.click(screen.getByRole('radio', { name: 'тонны' }))
+    expect(screen.getAllByText('0,25').length).toBeGreaterThan(0)
+    fireEvent.click(screen.getByRole('radio', { name: 'шт' }))
     await waitFor(() => {
-      expect(screen.getAllByText('0,25').length).toBeGreaterThan(0)
+      expect(screen.getAllByText('1 000').length).toBeGreaterThan(0)
     })
     expect(getDashboard).toHaveBeenCalledTimes(1)
     expect(getDashboard).toHaveBeenCalledWith({

@@ -1214,6 +1214,51 @@ FROM normatives n
 JOIN objects o ON n.warehouse_code = o.code
 JOIN products p ON n.product_code = p.code
 WHERE n.deleted_at IS NULL;
+
+8.3. Ежедневная агрегация нормативов (`mv_normative_daily`)
+
+Материализованное представление для дашборда (LOG-024). Группирует **действующие** нормативы (`deleted_at IS NULL`, `expiry_date >= CURRENT_DATE`) по дате создания записи.
+
+sql
+CREATE MATERIALIZED VIEW mv_normative_daily AS
+SELECT
+    n.created_at::date AS snapshot_date,
+    n.warehouse_code,
+    o.name AS warehouse_name,
+    n.product_code,
+    p.name AS product_name,
+    p.category,
+    SUM(n.quantity) AS total_normative,
+    COUNT(DISTINCT n.id) AS count_active
+FROM normatives n
+JOIN objects o ON n.warehouse_code = o.code
+JOIN products p ON n.product_code = p.code
+WHERE n.deleted_at IS NULL
+  AND n.expiry_date >= CURRENT_DATE
+GROUP BY
+    n.created_at::date,
+    n.warehouse_code,
+    o.name,
+    n.product_code,
+    p.name,
+    p.category;
+
+CREATE INDEX idx_mv_normative_daily
+    ON mv_normative_daily(snapshot_date, warehouse_code, product_code);
+
+CREATE OR REPLACE FUNCTION refresh_mv_normative_daily_job()
+RETURNS void AS $$
+BEGIN
+    REFRESH MATERIALIZED VIEW mv_normative_daily;
+END;
+$$ LANGUAGE plpgsql;
+Обновление:
+- после `POST /logistics/normative/upload` (Python вызывает `refresh_mv_normative_daily_job()`);
+- statement-level триггер `trg_refresh_mv_normative_daily_on_balances` на `available_balances`;
+- ежедневный cron: `SELECT refresh_mv_normative_daily_job();`
+
+Эндпоинты `/dashboard/*` считают агрегаты по живым таблицам. Сводка и исключения — те же фильтры активных НЗ, что у логиста (включая партии `production_requests`). График динамики растягивает НЗ на весь срок действия (коммерческий: `created_at`…`expiry_date`; Excel: `valid_from`…`expiry_date`) и переводит количество в кг/т через `weight_kg`. MV — кэш для аналитики и быстрых срезов по `snapshot_date`.
+
 9. ТРИГГЕРЫ
 9.1. Автоматическое создание события при создании запроса
 sql
@@ -1340,6 +1385,7 @@ EXECUTE FUNCTION trigger_create_normative();
 | 21 | `0021_request_qty_scale.py` | `request_items` / `request_item_history` quantity: DECIMAL(12,5) |
 | 22 | `0022_request_qty_6dp.py` | количества запроса в тоннах: DECIMAL(12,6) |
 | 23 | `0023_prod_qty_scale.py` | `production_request_items` / `normatives.quantity`: DECIMAL(16,6) |
+| 24 | `0024_mv_normative_daily.py` | `mv_normative_daily`, индекс, refresh-функция, триггер на `available_balances` |
 
 Начальные пользователи и объекты заполняются скриптом `backend/scripts/seed_data.py`, а не миграцией.
 
@@ -1425,11 +1471,12 @@ GROUP BY warehouse_code, product_code;
 Функция get_related_products()	✅ Для расчета по цепочке артикулов
 Коэффициент удаленности	✅ `objects.long_distance`: false → ×1, true → ×1,5
 Таблицы production_requests / production_request_items	✅ Excel-загрузка нормативов (роли pp, economist, logistics)
+mv_normative_daily	✅ Ежедневная агрегация действующих НЗ для дашборда
 
 14. ПРОИЗВОДСТВЕННЫЕ ЗАПРОСЫ — СМ. §5.4–5.5
 
 Полные DDL — в разделах 5.4 и 5.5. Кратко: партия Excel создаёт `production_requests` + `production_request_items` и активные `normatives` с `request_id IS NULL`. Удаление партии каскадно снимает позиции и нормативы. Миграция: `0017_production_requests.py`.
 
-Версия: 2.7
-Дата: 25.08.2026
+Версия: 2.8
+Дата: 16.09.2026
 Статус: Утверждена

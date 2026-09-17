@@ -105,6 +105,9 @@ async def db_ready() -> AsyncGenerator[None, None]:
                 """))
         await connection.execute(text("DROP VIEW IF EXISTS deficit_view"))
         await connection.execute(text("DROP VIEW IF EXISTS normatives_on_date"))
+        await connection.execute(
+            text("DROP MATERIALIZED VIEW IF EXISTS mv_normative_daily")
+        )
         await connection.execute(text("""
                 DO $$
                 BEGIN
@@ -229,6 +232,90 @@ async def db_ready() -> AsyncGenerator[None, None]:
                         - COALESCE(ab.plan, 0)
                       ) > 0
                 """))
+        await connection.execute(
+            text("DROP MATERIALIZED VIEW IF EXISTS mv_normative_daily")
+        )
+        await connection.execute(
+            text(
+                """
+                CREATE MATERIALIZED VIEW mv_normative_daily AS
+                SELECT
+                    n.created_at::date AS snapshot_date,
+                    n.warehouse_code,
+                    o.name AS warehouse_name,
+                    n.product_code,
+                    p.name AS product_name,
+                    p.category,
+                    SUM(n.quantity) AS total_normative,
+                    COUNT(DISTINCT n.id) AS count_active
+                FROM normatives n
+                JOIN objects o ON n.warehouse_code = o.code
+                JOIN products p ON n.product_code = p.code
+                WHERE n.deleted_at IS NULL
+                  AND n.expiry_date >= CURRENT_DATE
+                GROUP BY
+                    n.created_at::date,
+                    n.warehouse_code,
+                    o.name,
+                    n.product_code,
+                    p.name,
+                    p.category
+                """
+            )
+        )
+        await connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_mv_normative_daily
+                    ON mv_normative_daily(
+                        snapshot_date, warehouse_code, product_code
+                    )
+                """
+            )
+        )
+        await connection.execute(
+            text(
+                """
+                CREATE OR REPLACE FUNCTION refresh_mv_normative_daily_job()
+                RETURNS void AS $$
+                BEGIN
+                    REFRESH MATERIALIZED VIEW mv_normative_daily;
+                END;
+                $$ LANGUAGE plpgsql;
+                """
+            )
+        )
+        await connection.execute(
+            text(
+                """
+                CREATE OR REPLACE FUNCTION trigger_refresh_mv_normative_daily()
+                RETURNS trigger AS $$
+                BEGIN
+                    REFRESH MATERIALIZED VIEW mv_normative_daily;
+                    RETURN NULL;
+                END;
+                $$ LANGUAGE plpgsql;
+                """
+            )
+        )
+        await connection.execute(
+            text(
+                """
+                DROP TRIGGER IF EXISTS trg_refresh_mv_normative_daily_on_balances
+                    ON available_balances
+                """
+            )
+        )
+        await connection.execute(
+            text(
+                """
+                CREATE TRIGGER trg_refresh_mv_normative_daily_on_balances
+                AFTER INSERT OR UPDATE OR DELETE ON available_balances
+                FOR EACH STATEMENT
+                EXECUTE FUNCTION trigger_refresh_mv_normative_daily()
+                """
+            )
+        )
         await connection.execute(text("DROP INDEX IF EXISTS idx_products_gtin"))
         await connection.execute(
             text(

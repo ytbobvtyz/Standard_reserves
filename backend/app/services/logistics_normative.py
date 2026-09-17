@@ -1277,6 +1277,10 @@ async def upload_balances(
 
     await _touch_sync_metadata(db, user_id=user_id, synced_at=now)
     await db.commit()
+    from app.services.dashboard import refresh_mv_normative_daily
+
+    await refresh_mv_normative_daily(db)
+    await db.commit()
     loaded = created + updated
     return BalanceUploadResult(
         uploaded=loaded,

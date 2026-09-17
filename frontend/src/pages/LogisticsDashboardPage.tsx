@@ -197,7 +197,7 @@ export function LogisticsDashboardPage() {
   const navigate = useNavigate()
   const user = useAuthStore((state) => state.user)
   const canManage = user?.role === 'logistics'
-  const [unit, setUnit] = useState<Unit>('шт')
+  const [unit, setUnit] = useState<Unit>('т')
   const [filterMode, setFilterMode] = useState<FilterMode>('all')
   const [warehouseCode, setWarehouseCode] = useState<number | undefined>()
   const [search, setSearch] = useState('')

@@ -747,3 +747,104 @@ export interface SystemParamsUpdate {
   remote_warehouse: number
   pallet_multiple: boolean
 }
+
+export type DashboardGroupBy = 'day' | 'week' | 'month'
+export type DashboardMassUnit = 'кг' | 'т'
+export type DashboardExceptionStatus = 'critical' | 'attention'
+
+export interface DashboardSummary {
+  active_count: number
+  deficit_quantity: number
+  coverage_pct: number
+  expiring_30d: number
+  avg_remaining_days: number | null
+  unit: DashboardMassUnit
+}
+
+export interface DashboardTrendPoint {
+  period: string
+  total_normative: number
+  count_active: number
+}
+
+export interface DashboardTrendSeries {
+  key: string
+  warehouse_code: number
+  warehouse_name: string
+  product_code?: number | null
+  product_name?: string | null
+  points: DashboardTrendPoint[]
+}
+
+export interface DashboardTrendData {
+  group_by: DashboardGroupBy
+  date_from: string
+  date_to: string
+  unit: DashboardMassUnit
+  periods: string[]
+  series: DashboardTrendSeries[]
+}
+
+export interface DashboardTrendParams {
+  product_code?: number
+  warehouse_code?: number
+  date_from?: string
+  date_to?: string
+  group_by?: DashboardGroupBy
+  period?: DashboardGroupBy
+  unit?: DashboardMassUnit
+}
+
+export interface DashboardExceptionItem {
+  product_code: number
+  product_name: string
+  warehouse_code: number
+  warehouse_name: string
+  normative_quantity: number
+  requirement: number
+  available: number
+  plan: number
+  deficit: number
+  unit: string
+  status: DashboardExceptionStatus
+  request_id?: string | null
+}
+
+export interface DashboardExceptionParams {
+  warehouse_code?: number
+  product_code?: number
+  page?: number
+  limit?: number
+  unit?: DashboardMassUnit
+}
+
+export interface ExpiryCalendarDay {
+  date: string
+  count: number
+  quantity: number
+}
+
+export interface ExpiryCalendarData {
+  date_from: string
+  date_to: string
+  unit: DashboardMassUnit
+  days: ExpiryCalendarDay[]
+}
+
+export interface WarehouseCoverageItem {
+  warehouse_code: number
+  warehouse_name: string
+  normative_quantity: number
+  available: number
+  planned: number
+  deficit: number
+  requirement: number
+  coverage_pct: number
+  mismatch: boolean
+  unit: DashboardMassUnit
+}
+
+export interface WarehouseCoverageData {
+  unit: DashboardMassUnit
+  warehouses: WarehouseCoverageItem[]
+}
