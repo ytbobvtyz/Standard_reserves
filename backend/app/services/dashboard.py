@@ -277,7 +277,11 @@ async def get_normative_trend(
         bucket = grouped.setdefault(key, {})
         count_bucket = counts.setdefault(key, {})
         for period in periods:
-            if start <= _period_end(period, group_by) and normative.expiry_date >= period:
+            overlaps = (
+                start <= _period_end(period, group_by)
+                and normative.expiry_date >= period
+            )
+            if overlaps:
                 bucket.setdefault(period, []).append(mass)
                 count_bucket[period] = count_bucket.get(period, 0) + 1
 

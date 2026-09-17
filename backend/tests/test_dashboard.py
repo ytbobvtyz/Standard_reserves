@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
@@ -293,7 +293,7 @@ async def test_dashboard_trend_spans_validity_window(
         )
         assert normative is not None
         normative.created_at = datetime(
-            started.year, started.month, started.day, tzinfo=timezone.utc
+            started.year, started.month, started.day, tzinfo=UTC
         )
         normative.expiry_date = until
         await session.commit()
@@ -373,7 +373,7 @@ async def test_dashboard_trend_includes_excel_production_batches(
                 client_name="Партия дашборда",
                 expiry_date=valid_to,
                 category="A",
-                created_at=datetime.now(timezone.utc) - timedelta(days=30),
+                created_at=datetime.now(UTC) - timedelta(days=30),
             )
         )
         await session.commit()
@@ -397,9 +397,8 @@ async def test_dashboard_trend_includes_excel_production_batches(
         }
         assert points[date.today().isoformat()]["count_active"] == 0
         assert points[valid_from.isoformat()]["count_active"] == 1
-        assert Decimal(str(points[valid_from.isoformat()]["total_normative"])) == Decimal(
-            "2"
-        )
+        mass = Decimal(str(points[valid_from.isoformat()]["total_normative"]))
+        assert mass == Decimal("2")
         assert points[valid_to.isoformat()]["count_active"] == 1
 
         kg_response = await client.get(
