@@ -43,24 +43,19 @@ GROUP BY
 def upgrade() -> None:
     op.execute("DROP MATERIALIZED VIEW IF EXISTS mv_normative_daily")
     op.execute(MV_NORMATIVE_DAILY)
-    op.execute(
-        """
+    op.execute("""
         CREATE INDEX idx_mv_normative_daily
             ON mv_normative_daily(snapshot_date, warehouse_code, product_code)
-        """
-    )
-    op.execute(
-        """
+        """)
+    op.execute("""
         CREATE OR REPLACE FUNCTION refresh_mv_normative_daily_job()
         RETURNS void AS $$
         BEGIN
             REFRESH MATERIALIZED VIEW mv_normative_daily;
         END;
         $$ LANGUAGE plpgsql;
-        """
-    )
-    op.execute(
-        """
+        """)
+    op.execute("""
         CREATE OR REPLACE FUNCTION trigger_refresh_mv_normative_daily()
         RETURNS trigger AS $$
         BEGIN
@@ -68,22 +63,17 @@ def upgrade() -> None:
             RETURN NULL;
         END;
         $$ LANGUAGE plpgsql;
-        """
-    )
-    op.execute(
-        """
+        """)
+    op.execute("""
         DROP TRIGGER IF EXISTS trg_refresh_mv_normative_daily_on_balances
             ON available_balances
-        """
-    )
-    op.execute(
-        """
+        """)
+    op.execute("""
         CREATE TRIGGER trg_refresh_mv_normative_daily_on_balances
         AFTER INSERT OR UPDATE OR DELETE ON available_balances
         FOR EACH STATEMENT
         EXECUTE FUNCTION trigger_refresh_mv_normative_daily()
-        """
-    )
+        """)
 
 
 def downgrade() -> None:

@@ -151,9 +151,7 @@ async def test_dashboard_summary_metrics(
     dashboard_catalog: dict,
 ) -> None:
     token = await login_token(client, logistics_user)
-    response = await client.get(
-        "/api/v1/dashboard/summary", headers=auth_header(token)
-    )
+    response = await client.get("/api/v1/dashboard/summary", headers=auth_header(token))
     assert response.status_code == 200, response.text
     data = response.json()["data"]
     assert data["unit"] == "т"
@@ -422,9 +420,7 @@ async def test_dashboard_trend_includes_excel_production_batches(
                 delete(Normative).where(Normative.product_code == product_code)
             )
             await session.execute(
-                delete(ProductionRequestItem).where(
-                    ProductionRequestItem.id == item_id
-                )
+                delete(ProductionRequestItem).where(ProductionRequestItem.id == item_id)
             )
             await session.execute(
                 delete(ProductionRequest).where(ProductionRequest.id == batch_id)
