@@ -178,7 +178,7 @@ erDiagram
         uuid id PK "идентификатор"
         uuid request_item_id FK "позиция запроса"
         varchar field_name "quantity_requested / quantity_approved"
-        decimal old_value "старое значение"
+        decimal old_value "первое изменение quantity_approved = quantity_requested"
         decimal new_value "новое значение"
         uuid changed_by FK "кто изменил"
         timestamp changed_at "дата изменения"
@@ -728,11 +728,17 @@ CREATE INDEX idx_request_item_history_changed_by ON request_item_history(changed
 id	UUID	✅	Идентификатор (PK)
 request_item_id	UUID	✅	Позиция запроса → request_items.id (ON DELETE CASCADE)
 field_name	VARCHAR(30)	✅	quantity_requested / quantity_approved
-old_value	DECIMAL(12,6)	❌	Старое значение
+old_value	DECIMAL(12,6)	❌	Старое значение. Для `field_name = quantity_approved`: если у позиции ещё нет записей в `request_item_history`, это исходное `quantity_requested`; если записи уже есть — предыдущее `quantity_approved`
 new_value	DECIMAL(12,6)	❌	Новое значение
 changed_by	UUID	✅	Кто изменил → users.id
 changed_at	TIMESTAMP	✅	Дата изменения (по умолчанию NOW())
 comment	TEXT	❌	Комментарий
+
+Правило `old_value` при изменении `quantity_approved` (ПП или экономист):
+
+- первое изменение позиции — в истории ещё нет строк по этому `request_item_id`, поэтому `old_value` = исходное `quantity_requested`;
+- каждое следующее изменение — `old_value` = предыдущее `quantity_approved` (значение до текущей правки).
+
 5. ТАБЛИЦЫ ДЛЯ БИЗНЕС-ЛОГИКИ
 5.1. normatives — Активные нормативы
 Записывается после утверждения коммерческого запроса или после загрузки Excel-партии. На одном складе и артикуле может быть несколько нормативов под разных клиентов.
@@ -1477,6 +1483,6 @@ mv_normative_daily	✅ Ежедневная агрегация действую�
 
 Полные DDL — в разделах 5.4 и 5.5. Кратко: партия Excel создаёт `production_requests` + `production_request_items` и активные `normatives` с `request_id IS NULL`. Удаление партии каскадно снимает позиции и нормативы. Миграция: `0017_production_requests.py`.
 
-Версия: 2.8
-Дата: 16.09.2026
+Версия: 2.9
+Дата: 07.10.2026
 Статус: Утверждена

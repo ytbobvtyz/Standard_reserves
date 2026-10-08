@@ -1,7 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import dayjs from 'dayjs'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { CreateRequestPage } from './CreateRequestPage'
+import { CreateRequestPage, MONTHLY_QUANTITY_HINT } from './CreateRequestPage'
+import { DEFAULT_EXPIRY_HINT } from '../utils/expiryDate'
 import { useAuthStore } from '../stores/auth'
 
 const getObjects = vi.fn()
@@ -129,5 +131,39 @@ describe('CreateRequestPage', () => {
     expect(screen.getByText('Категория')).toBeTruthy()
     expect(screen.getByText('Удалённость')).toBeTruthy()
     expect(screen.getByText('Потребность')).toBeTruthy()
+  })
+
+  it('prefills normative expiry at three months and explains the default', async () => {
+    render(
+      <MemoryRouter>
+        <CreateRequestPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByText(DEFAULT_EXPIRY_HINT)).toBeTruthy()
+    })
+    expect(
+      screen.getByDisplayValue(dayjs().add(3, 'month').format('YYYY-MM-DD')),
+    ).toBeTruthy()
+  })
+
+  it('renames quantity to monthly amount and shows the hint for normative requests', async () => {
+    render(
+      <MemoryRouter>
+        <CreateRequestPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByText('Количество в месяц')).toBeTruthy()
+    })
+
+    fireEvent.mouseOver(screen.getByLabelText('Что такое количество в месяц'))
+    await waitFor(() => {
+      expect(screen.getByRole('tooltip').textContent).toContain(MONTHLY_QUANTITY_HINT)
+    })
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Разовое перемещение' }))
+    expect(screen.queryByText('Количество в месяц')).toBeNull()
+    expect(screen.getByText('Кол-во')).toBeTruthy()
   })
 })

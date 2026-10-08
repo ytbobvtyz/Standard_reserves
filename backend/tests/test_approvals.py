@@ -184,9 +184,75 @@ async def test_pp_edit(
             if float(row.new_value) == 800 and row.changed_by == pp_user.id
         ]
         assert matching
+        assert float(matching[0].old_value) == 1000
         assert matching[0].comment == (
             "Снижаем объем на 20% из-за ограничений по заводу"
         )
+    await delete_request(request_id)
+
+
+async def test_quantity_history_uses_requested_then_previous_approved(
+    client: AsyncClient,
+    test_user: AuthUser,
+    pp_user: AuthUser,
+    economist_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    commercial_token = await login_token(client, test_user)
+    pp_token = await login_token(client, pp_user)
+    economist_token = await login_token(client, economist_user)
+    request_id = await _create_submitted(client, commercial_token)
+
+    pp_response = await client.post(
+        f"/api/v1/approvals/pp/{request_id}/action",
+        headers=auth_header(pp_token),
+        json={
+            "action": "approve",
+            "items": [
+                {
+                    "product_code": catalog["product_code"],
+                    "warehouse_code": catalog["warehouse_code"],
+                    "quantity_approved": 800,
+                }
+            ],
+        },
+    )
+    assert pp_response.status_code == 200, pp_response.text
+
+    economy_response = await client.post(
+        f"/api/v1/approvals/economy/{request_id}/action",
+        headers=auth_header(economist_token),
+        json={
+            "action": "approve",
+            "items": [
+                {
+                    "product_code": catalog["product_code"],
+                    "warehouse_code": catalog["warehouse_code"],
+                    "quantity_approved": 600,
+                }
+            ],
+        },
+    )
+    assert economy_response.status_code == 200, economy_response.text
+
+    async with AsyncSessionLocal() as session:
+        item_ids = (
+            await session.scalars(
+                select(RequestItem.id).where(RequestItem.request_id == request_id)
+            )
+        ).all()
+        history = (
+            await session.scalars(
+                select(RequestItemHistory).where(
+                    RequestItemHistory.request_item_id.in_(item_ids)
+                )
+            )
+        ).all()
+        by_actor = {row.changed_by: row for row in history}
+        assert float(by_actor[pp_user.id].old_value) == 1000
+        assert float(by_actor[pp_user.id].new_value) == 800
+        assert float(by_actor[economist_user.id].old_value) == 800
+        assert float(by_actor[economist_user.id].new_value) == 600
     await delete_request(request_id)
 
 
@@ -394,6 +460,7 @@ async def test_economist_approve_with_quantity_change(
             )
         ).all()
         assert history
+        assert float(history[0].old_value) == 1000
         assert float(history[0].new_value) == 600
     await delete_request(request_id)
 

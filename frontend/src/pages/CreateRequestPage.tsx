@@ -14,7 +14,7 @@ import {
   message,
 } from 'antd'
 import type { FormListFieldData } from 'antd'
-import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons'
+import { MinusCircleOutlined, PlusOutlined, QuestionCircleOutlined } from '@ant-design/icons'
 import { type Dayjs } from 'dayjs'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -25,8 +25,8 @@ import type { ObjectListItem, RequestCreatePayload, RequestType } from '../api/t
 import { ProductAutocomplete } from '../components/requests/ProductAutocomplete'
 import { useAuthStore } from '../stores/auth'
 import {
+  DEFAULT_EXPIRY_HINT,
   EXPIRY_ERROR,
-  EXPIRY_HINT,
   EXPIRY_TOO_SOON,
   defaultExpiryDate,
   isExpiryTooFar,
@@ -49,6 +49,9 @@ import {
 export const PALLET_NORM_HINT =
   'В настоящее время запросы на нормативный запас/разовое перемещение принимаются только кратно поддонной норме'
 
+export const MONTHLY_QUANTITY_HINT =
+  'Необходимо указать месячную реализацию для вашего клиента. Логистика будет автоматически восполнять норматив до заданного уровня по мере реализации'
+
 interface ItemFormValue {
   product_code?: number
   product_name?: string
@@ -69,7 +72,7 @@ interface FormValues {
 }
 
 const ITEM_GRID =
-  'minmax(220px, 1.5fr) minmax(140px, 1.1fr) minmax(180px, 1.2fr) 110px 80px 110px 120px 150px 28px'
+  'minmax(220px, 1.5fr) minmax(140px, 1.1fr) minmax(180px, 1.2fr) 200px 80px 110px 120px 150px 28px'
 const ITEM_GRID_ONE_TIME =
   'minmax(220px, 1.5fr) minmax(140px, 1.1fr) minmax(180px, 1.2fr) 110px 80px 28px'
 
@@ -369,7 +372,7 @@ export function CreateRequestPage() {
             <Form.Item
               name="expiry_date"
               label="Срок действия"
-              extra={EXPIRY_HINT}
+              extra={DEFAULT_EXPIRY_HINT}
               rules={[
                 { required: true, message: 'Укажите срок действия' },
                 {
@@ -426,13 +429,22 @@ export function CreateRequestPage() {
                     gap: 8,
                     marginBottom: 8,
                     fontWeight: 600,
-                    minWidth: isOneTime ? 720 : 1100,
+                    minWidth: isOneTime ? 720 : 1280,
                   }}
                 >
                   <span>Артикул</span>
                   <span>Название</span>
                   <span>Склад</span>
-                  <span>Кол-во</span>
+                  {isOneTime ? (
+                    <span>Кол-во</span>
+                  ) : (
+                    <span>
+                      Количество в месяц{' '}
+                      <Tooltip title={MONTHLY_QUANTITY_HINT}>
+                        <QuestionCircleOutlined aria-label="Что такое количество в месяц" />
+                      </Tooltip>
+                    </span>
+                  )}
                   <span>Ед</span>
                   {!isOneTime ? (
                     <>

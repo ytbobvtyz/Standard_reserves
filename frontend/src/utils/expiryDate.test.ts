@@ -10,8 +10,8 @@ import {
 } from './expiryDate'
 
 describe('expiryDate', () => {
-  it('keeps the default date at six months', () => {
-    expect(defaultExpiryDate().startOf('day').isSame(dayjs().add(6, 'month').startOf('day'))).toBe(
+  it('keeps the default date at three months', () => {
+    expect(defaultExpiryDate().startOf('day').isSame(dayjs().add(3, 'month').startOf('day'))).toBe(
       true,
     )
   })

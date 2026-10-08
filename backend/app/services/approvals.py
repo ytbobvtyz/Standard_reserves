@@ -176,7 +176,7 @@ async def _apply_edits(
                 "ITEM_NOT_FOUND",
                 f"Позиция {change.product_code}/{change.warehouse_code} не найдена",
             )
-        old_value = item.quantity_approved
+        old_value = await _approved_quantity_old_value(db, item)
         item.quantity_approved = Decimal(change.quantity_approved)
         db.add(
             RequestItemHistory(
@@ -188,6 +188,23 @@ async def _apply_edits(
                 comment=comment,
             )
         )
+        await db.flush()
+
+
+async def _approved_quantity_old_value(
+    db: AsyncSession,
+    item: RequestItem,
+) -> Decimal:
+    has_history = await db.scalar(
+        select(RequestItemHistory.id)
+        .where(RequestItemHistory.request_item_id == item.id)
+        .limit(1)
+    )
+    if has_history is None:
+        return item.quantity_requested
+    if item.quantity_approved is not None:
+        return item.quantity_approved
+    return item.quantity_requested
 
 
 def _apply_expiry_update(

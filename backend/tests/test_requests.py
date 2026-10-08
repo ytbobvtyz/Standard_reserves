@@ -292,7 +292,7 @@ async def test_request_item_history(
     assert data
     entry = data[0]
     assert entry["field_name"] == "quantity_approved"
-    assert entry["old_value"] is None
+    assert entry["old_value"] == 1000
     assert entry["new_value"] == 800
     assert entry["changed_by"]["id"] == str(pp_user.id)
     assert entry["changed_by"]["full_name"] == pp_user.full_name

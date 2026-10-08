@@ -4,6 +4,8 @@ import dayjs from 'dayjs'
 export const MIN_EXPIRY_MONTHS = 3
 export const MAX_EXPIRY_MONTHS = 6
 export const EXPIRY_HINT = 'Минимальный срок — 3 месяца, максимальный — 6 месяцев'
+export const DEFAULT_EXPIRY_HINT =
+  'По умолчанию срок 3 месяца — минимальный для актуальности нормативов'
 export const EXPIRY_ERROR = 'Срок не может превышать 6 месяцев от даты создания'
 export const EXPIRY_TOO_SOON = 'Срок действия норматива не может быть менее 3 месяцев'
 export const EXPIRY_TOO_LATE = 'Дата окончания не может быть позже текущей'
@@ -22,7 +24,7 @@ export function maxExpiryDate(from?: string | Date | Dayjs | null): Dayjs {
 }
 
 export function defaultExpiryDate(): Dayjs {
-  return dayjs().add(MAX_EXPIRY_MONTHS, 'month')
+  return dayjs().add(MIN_EXPIRY_MONTHS, 'month')
 }
 
 export function isExpiryTooFar(
