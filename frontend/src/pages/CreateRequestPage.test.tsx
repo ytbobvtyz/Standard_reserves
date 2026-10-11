@@ -123,6 +123,9 @@ describe('CreateRequestPage', () => {
       expect(screen.getByText('Создать запрос')).toBeTruthy()
     })
 
+    expect(screen.queryByText('Название')).toBeNull()
+    expect(screen.getByText('Артикул')).toBeTruthy()
+
     // Initially normative
     expect(screen.getByText('Категория')).toBeTruthy()
     expect(screen.getByText('Удалённость')).toBeTruthy()

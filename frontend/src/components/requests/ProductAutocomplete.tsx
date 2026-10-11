@@ -63,6 +63,9 @@ export function ProductAutocomplete({
       disabled={disabled}
       placeholder="Артикул или название"
       filterOption={false}
+      style={{ width: '100%' }}
+      popupMatchSelectWidth={false}
+      styles={{ popup: { root: { minWidth: 560 } } }}
       loading={loading}
       notFoundContent={loading ? <Spin size="small" /> : 'Ничего не найдено'}
       optionLabelProp="label"

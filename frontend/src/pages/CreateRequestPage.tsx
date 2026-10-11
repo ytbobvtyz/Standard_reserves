@@ -78,9 +78,9 @@ interface FormValues {
 }
 
 const ITEM_GRID =
-  'minmax(220px, 1.5fr) minmax(140px, 1.1fr) minmax(180px, 1.2fr) 200px 80px 110px 120px 150px 28px'
+  'minmax(560px, 3.4fr) minmax(180px, 1.2fr) 200px 80px 110px 120px 150px 28px'
 const ITEM_GRID_ONE_TIME =
-  'minmax(220px, 1.5fr) minmax(140px, 1.1fr) minmax(180px, 1.2fr) 110px 80px 28px'
+  'minmax(560px, 3.4fr) minmax(180px, 1.2fr) 110px 80px 28px'
 
 function RequestItemRow({
   field,
@@ -100,7 +100,6 @@ function RequestItemRow({
   onRemove: () => void
 }) {
   const form = Form.useFormInstance<FormValues>()
-  const productName = Form.useWatch(['items', field.name, 'product_name'], form)
   const category = Form.useWatch(['items', field.name, 'category'], form)
   const quantity = Form.useWatch(['items', field.name, 'quantity_requested'], form)
   const unit = Form.useWatch(['items', field.name, 'unit'], form) ?? 'шт'
@@ -162,7 +161,7 @@ function RequestItemRow({
           gap: 8,
           alignItems: 'start',
           marginBottom: 8,
-          minWidth: isOneTime ? 720 : 1100,
+          minWidth: isOneTime ? 960 : 1420,
         }}
       >
         <Form.Item
@@ -184,9 +183,6 @@ function RequestItemRow({
           }}
         />
       </Form.Item>
-      <Typography.Text style={{ paddingTop: 5 }} ellipsis>
-        {productName || '—'}
-      </Typography.Text>
       <Form.Item
         name={[field.name, 'warehouse_code']}
         rules={[{ required: true, message: 'Выберите склад' }]}
@@ -448,11 +444,10 @@ export function CreateRequestPage() {
                     gap: 8,
                     marginBottom: 8,
                     fontWeight: 600,
-                    minWidth: isOneTime ? 720 : 1280,
+                    minWidth: isOneTime ? 960 : 1420,
                   }}
                 >
                   <span>Артикул</span>
-                  <span>Название</span>
                   <span>Склад</span>
                   {isOneTime ? (
                     <span>Кол-во</span>
