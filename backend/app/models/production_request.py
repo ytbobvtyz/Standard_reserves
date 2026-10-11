@@ -21,6 +21,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, SoftDeleteMixin, TimestampMixin
 
 if TYPE_CHECKING:
+    from app.models.client import Client
     from app.models.normative import Normative
     from app.models.object import Object
     from app.models.product import Product
@@ -44,6 +45,7 @@ class ProductionRequest(TimestampMixin, SoftDeleteMixin, Base):
         ),
         Index("uq_production_requests_batch_id", "batch_id", unique=True),
         Index("idx_production_requests_uploaded_by", "uploaded_by"),
+        Index("idx_production_requests_client_id", "client_id"),
         Index("idx_production_requests_status", "status"),
         Index(
             "idx_production_requests_deleted_at",
@@ -76,6 +78,12 @@ class ProductionRequest(TimestampMixin, SoftDeleteMixin, Base):
         nullable=False,
     )
     client_name: Mapped[str | None] = mapped_column(Text)
+    client_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("clients.id", ondelete="RESTRICT"),
+        nullable=False,
+        server_default=text("'00000000-0000-4000-8000-000000000001'"),
+    )
     valid_from: Mapped[date] = mapped_column(Date, nullable=False)
     valid_to: Mapped[date] = mapped_column(Date, nullable=False)
     status: Mapped[str] = mapped_column(
@@ -85,6 +93,7 @@ class ProductionRequest(TimestampMixin, SoftDeleteMixin, Base):
         server_default=text("'active'"),
     )
 
+    client: Mapped["Client"] = relationship("Client")
     uploader: Mapped["User"] = relationship(
         "User",
         back_populates="production_requests",
@@ -122,6 +131,7 @@ class ProductionRequestItem(TimestampMixin, SoftDeleteMixin, Base):
             "product_code",
             "warehouse_code",
         ),
+        Index("idx_production_request_items_client_id", "client_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -148,8 +158,15 @@ class ProductionRequestItem(TimestampMixin, SoftDeleteMixin, Base):
     quantity: Mapped[Decimal] = mapped_column(Numeric(16, 6), nullable=False)
     unit: Mapped[str] = mapped_column(String(10), nullable=False)
     client_name: Mapped[str] = mapped_column(Text, nullable=False)
+    client_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("clients.id", ondelete="RESTRICT"),
+        nullable=False,
+        server_default=text("'00000000-0000-4000-8000-000000000001'"),
+    )
     category: Mapped[str] = mapped_column(CHAR(1), nullable=False)
 
+    client: Mapped["Client"] = relationship("Client")
     production_request: Mapped["ProductionRequest"] = relationship(
         "ProductionRequest",
         back_populates="items",

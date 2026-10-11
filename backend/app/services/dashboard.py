@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql import text
 
+from app.models.client import Client
+from app.models.department import Department
 from app.models.normative import Normative
 from app.models.object import Object
 from app.models.product import Product
@@ -21,6 +23,10 @@ from app.schemas.dashboard import (
     GroupBy,
     MassUnit,
     NormativeTrendData,
+    NzByDepartmentData,
+    NzByDepartmentItem,
+    TopClientItem,
+    TopClientsData,
     TrendPoint,
     TrendSeries,
     WarehouseCoverageData,
@@ -582,3 +588,116 @@ async def get_expiry_calendar(
         for day, values in sorted(by_day.items())
     ]
     return ExpiryCalendarData(date_from=start, date_to=end, unit=unit, days=days)
+
+
+NO_DEPARTMENT = "Без управления"
+
+
+async def _active_normative_rows(db: AsyncSession, unit: MassUnit):
+    result = await db.execute(
+        select(
+            Normative.quantity,
+            Normative.unit,
+            Product.weight_kg,
+            Client.id,
+            Client.client_code,
+            Client.name,
+            Client.inn,
+            Client.department_id,
+            Department.name,
+        )
+        .join(Product, Product.code == Normative.product_code)
+        .join(Client, Client.id == Normative.client_id)
+        .outerjoin(Department, Department.id == Client.department_id)
+        .where(*_active_conditions())
+    )
+    return result.all(), unit
+
+
+async def get_nz_by_department(
+    db: AsyncSession, *, unit: MassUnit = "т"
+) -> NzByDepartmentData:
+    rows, unit = await _active_normative_rows(db, unit)
+    buckets: dict[UUID | None, dict[str, object]] = {}
+    for (
+        quantity,
+        source_unit,
+        weight_kg,
+        _client_id,
+        _code,
+        _name,
+        _inn,
+        department_id,
+        department_name,
+    ) in rows:
+        mass = to_mass(quantity, source_unit, weight_kg or ZERO, unit)
+        bucket = buckets.setdefault(
+            department_id,
+            {
+                "name": department_name or NO_DEPARTMENT,
+                "total": ZERO,
+            },
+        )
+        bucket["total"] = Decimal(str(bucket["total"])) + mass
+    items = [
+        NzByDepartmentItem(
+            department_id=department_id,
+            department_name=str(bucket["name"]),
+            nz_quantity=_quantize_mass(Decimal(str(bucket["total"])), unit),
+        )
+        for department_id, bucket in buckets.items()
+    ]
+    items.sort(key=lambda item: item.nz_quantity, reverse=True)
+    return NzByDepartmentData(unit=unit, items=items)
+
+
+async def get_top_clients(
+    db: AsyncSession, *, unit: MassUnit = "т", limit: int = 10
+) -> TopClientsData:
+    rows, unit = await _active_normative_rows(db, unit)
+    buckets: dict[UUID, dict[str, object]] = {}
+    for (
+        quantity,
+        source_unit,
+        weight_kg,
+        client_id,
+        client_code,
+        client_name,
+        inn,
+        _department_id,
+        department_name,
+    ) in rows:
+        mass = to_mass(quantity, source_unit, weight_kg or ZERO, unit)
+        bucket = buckets.setdefault(
+            client_id,
+            {
+                "code": client_code,
+                "name": client_name,
+                "inn": inn,
+                "department_name": department_name,
+                "total": ZERO,
+            },
+        )
+        bucket["total"] = Decimal(str(bucket["total"])) + mass
+    ranked = sorted(
+        buckets.items(),
+        key=lambda item: Decimal(str(item[1]["total"])),
+        reverse=True,
+    )
+    items = [
+        TopClientItem(
+            client_id=client_id,
+            client_code=int(str(bucket["code"])),
+            client_name=str(bucket["name"]),
+            inn=str(bucket["inn"]),
+            department_name=(
+                str(bucket["department_name"])
+                if bucket["department_name"] is not None
+                else None
+            ),
+            nz_quantity=_quantize_mass(Decimal(str(bucket["total"])), unit),
+        )
+        for client_id, bucket in ranked
+        if Decimal(str(bucket["total"])) > 0
+    ][:limit]
+    return TopClientsData(unit=unit, items=items)

@@ -9,6 +9,7 @@ from openpyxl import Workbook, load_workbook
 from sqlalchemy import func, select
 
 from app.core.database import AsyncSessionLocal
+from app.models.client import Client
 from app.models.normative import Normative
 from app.models.object import Object
 from app.models.product import Product
@@ -27,7 +28,7 @@ def _xlsx(rows: list[list[object]]) -> bytes:
             "Артикул",
             "Количество",
             "Ед.",
-            "Клиент",
+            "ID клиента (КССС)",
         ]
     )
     for row in rows:
@@ -61,6 +62,21 @@ async def test_upload_update_and_delete_production_request_batch(
     token = await login_token(client, logistics_user)
     valid_from = date.today() - timedelta(days=30)
     valid_to = date.today() + timedelta(days=90)
+    row_code = 8800000001
+    async with AsyncSessionLocal() as session:
+        existing = await session.scalar(
+            select(Client).where(Client.client_code == row_code)
+        )
+        if existing is None:
+            session.add(
+                Client(
+                    client_code=row_code,
+                    inn="8800000001",
+                    name="Клиент строки",
+                    is_active=True,
+                )
+            )
+            await session.commit()
     content = _xlsx(
         [
             [
@@ -69,7 +85,7 @@ async def test_upload_update_and_delete_production_request_batch(
                 catalog["product_code"],
                 1000,
                 "шт",
-                "Клиент строки",
+                row_code,
             ],
             [
                 catalog["erp_plant_code_2"],
@@ -271,7 +287,7 @@ async def test_upload_accepts_erp_plant_code_on_warehouse_only(
                     catalog["product_code"],
                     1000,
                     "шт",
-                    "Клиент ERP на складе",
+                    None,
                 ]
             ]
         )
@@ -350,8 +366,8 @@ async def test_upload_without_client_creates_batch(
         result = response.json()["data"]
         assert result["imported_count"] == 1
         assert result["error_count"] == 0
-        assert result["production_request"]["client_name"] is None
-        assert result["production_request"]["items"][0]["client_name"] == ""
+        assert result["production_request"]["client_name"] == "Общий клиент"
+        assert result["production_request"]["items"][0]["client_name"] == "Общий клиент"
         batch_id = UUID(result["production_request"]["id"])
     finally:
         async with AsyncSessionLocal() as session:
@@ -383,7 +399,7 @@ async def test_preview_and_upload_inactive_articles(
                 product_code,
                 100,
                 "шт",
-                "Исторический клиент",
+                None,
             ]
         ]
     )
@@ -488,7 +504,7 @@ async def test_upload_keeps_fractional_tons(
                 catalog["product_code"],
                 0.004,
                 "т",
-                "Ретро",
+                None,
             ]
         ]
     )

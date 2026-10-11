@@ -20,6 +20,14 @@ vi.mock('../api/references', () => ({
   },
 }))
 
+vi.mock('../api/clients', () => ({
+  clientsApi: {
+    list: vi.fn().mockResolvedValue({ data: { status: 'success', data: [] } }),
+    get: vi.fn(),
+    create: vi.fn(),
+  },
+}))
+
 vi.mock('../api/requests', () => ({
   requestsApi: {
     create: vi.fn(),

@@ -16,6 +16,7 @@ import { ObjectsPage } from '../pages/ObjectsPage'
 import { ReferencesPage } from '../pages/ReferencesPage'
 import { AdminUsersPage } from '../pages/AdminUsersPage'
 import { AdminDepartmentsPage } from '../pages/AdminDepartmentsPage'
+import { AdminClientsPage } from '../pages/AdminClientsPage'
 import { AdminParamsPage } from '../pages/AdminParamsPage'
 import { NotFoundPage } from '../pages/NotFoundPage'
 
@@ -51,6 +52,7 @@ export function AppRouter() {
             <Route element={<ProtectedRoute roles={['logistics']} />}>
               <Route path="/admin/users" element={<AdminUsersPage />} />
               <Route path="/admin/departments" element={<AdminDepartmentsPage />} />
+              <Route path="/admin/clients" element={<AdminClientsPage />} />
               <Route path="/admin/params" element={<AdminParamsPage />} />
             </Route>
           </Route>

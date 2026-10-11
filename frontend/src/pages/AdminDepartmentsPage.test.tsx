@@ -65,6 +65,8 @@ describe('AdminDepartmentsPage', () => {
     })
     expect(screen.getByText('Администрирование подразделений')).toBeTruthy()
     expect(screen.getByRole('button', { name: /Создать подразделение/ })).toBeTruthy()
+    expect(screen.getByRole('columnheader', { name: 'ID подразделения' })).toBeTruthy()
+    expect(screen.getByText(emptyDepartment.id)).toBeTruthy()
     expect(screen.getByRole('columnheader', { name: 'Название' })).toBeTruthy()
     expect(screen.getByRole('columnheader', { name: 'Пользователей' })).toBeTruthy()
     expect(screen.getByText('Коммерческий отдел')).toBeTruthy()

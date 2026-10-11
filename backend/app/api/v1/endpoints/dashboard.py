@@ -13,6 +13,8 @@ from app.schemas.dashboard import (
     GroupBy,
     MassUnit,
     NormativeTrendData,
+    NzByDepartmentData,
+    TopClientsData,
     WarehouseCoverageData,
 )
 from app.services import dashboard as service
@@ -110,4 +112,28 @@ async def get_expiry_calendar(
         unit=unit,
         warehouse_code=warehouse_code,
     )
+    return SuccessResponse(data=data)
+
+
+@router.get(
+    "/nz-by-department",
+    response_model=SuccessResponse[NzByDepartmentData],
+)
+async def get_nz_by_department(
+    unit: MassUnit = Query(default="т"),
+    _user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[NzByDepartmentData]:
+    data = await service.get_nz_by_department(db, unit=unit)
+    return SuccessResponse(data=data)
+
+
+@router.get("/top-clients", response_model=SuccessResponse[TopClientsData])
+async def get_top_clients(
+    unit: MassUnit = Query(default="т"),
+    limit: int = Query(default=10, ge=1, le=50),
+    _user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[TopClientsData]:
+    data = await service.get_top_clients(db, unit=unit, limit=limit)
     return SuccessResponse(data=data)

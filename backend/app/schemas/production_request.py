@@ -2,7 +2,7 @@ from datetime import date, datetime
 from typing import Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, model_validator
 
 from app.schemas.common import DecimalNumber
 from app.schemas.user import UserBrief
@@ -14,6 +14,7 @@ class ProductionRequestItemData(BaseModel):
     warehouse_code: int
     quantity: DecimalNumber
     unit: str
+    client_id: UUID
     client_name: str
     category: str
 
@@ -23,7 +24,10 @@ class ProductionRequestListItem(BaseModel):
     batch_id: UUID
     source: str
     uploaded_by: UserBrief
+    client_id: UUID
+    client_code: int | None = None
     client_name: str | None = None
+    client_directory_name: str | None = None
     valid_from: date
     valid_to: date
     status: str
@@ -80,5 +84,4 @@ class ProductionRequestPreview(BaseModel):
 
 
 class ProductionRequestUploadOptions(ProductionRequestDateRange):
-    client_name: str | None = Field(default=None, max_length=500)
     inactive_policy: InactivePolicy = "active_only"

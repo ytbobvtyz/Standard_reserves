@@ -26,7 +26,6 @@ export const productionRequestsApi = {
   upload: (
     file: File,
     payload: ProductionRequestDatesPayload & {
-      client_name?: string
       inactive_policy?: 'active_only' | 'include_inactive'
     },
   ) => {
@@ -34,9 +33,6 @@ export const productionRequestsApi = {
     form.append('file', file)
     form.append('valid_from', payload.valid_from)
     form.append('valid_to', payload.valid_to)
-    if (payload.client_name?.trim()) {
-      form.append('client_name', payload.client_name.trim())
-    }
     form.append('inactive_policy', payload.inactive_policy ?? 'active_only')
     return api.post<ApiSuccess<ProductionRequestUploadResult>>(
       '/production-requests/upload',

@@ -18,6 +18,7 @@ import dayjs from 'dayjs'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getApiErrorMessage } from '../api/client'
+import { ClientAutocomplete } from '../components/clients/ClientAutocomplete'
 import { requestsApi } from '../api/requests'
 import type {
   RequestDetail,
@@ -208,7 +209,26 @@ export function RequestDetailPage() {
           <Descriptions.Item label="Тип">
             {TYPE_LABEL[request.request_type] ?? request.request_type}
           </Descriptions.Item>
-          <Descriptions.Item label="Клиент">{request.client_name}</Descriptions.Item>
+          <Descriptions.Item label="Клиент">
+            {isOwner && isDraft && request.client_id ? (
+              <ClientAutocomplete
+                value={request.client_id}
+                onChange={(clientId) => {
+                  if (!clientId || clientId === request.client_id || !id) {
+                    return
+                  }
+                  void requestsApi
+                    .update(id, { client_id: clientId })
+                    .then(() => load())
+                    .catch((error) => {
+                      message.error(getApiErrorMessage(error, 'Не удалось сменить клиента'))
+                    })
+                }}
+              />
+            ) : (
+              request.client_name
+            )}
+          </Descriptions.Item>
           <Descriptions.Item label="Инициатор">
             {formatInitiator(
               request.initiator.full_name,

@@ -146,6 +146,7 @@ export function AppLayout() {
             children: [
               { key: '/admin/users', label: 'Пользователи' },
               { key: '/admin/departments', label: 'Подразделения' },
+              { key: '/admin/clients', label: 'Клиенты' },
               { key: '/admin/params', label: 'Параметры' },
             ],
           },

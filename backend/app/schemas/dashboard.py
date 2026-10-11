@@ -90,6 +90,31 @@ class WarehouseCoverageData(BaseModel):
     warehouses: list[WarehouseCoverageItem]
 
 
+class NzByDepartmentItem(BaseModel):
+    department_id: UUID | None = None
+    department_name: str
+    nz_quantity: DecimalNumber
+
+
+class NzByDepartmentData(BaseModel):
+    unit: MassUnit = "т"
+    items: list[NzByDepartmentItem]
+
+
+class TopClientItem(BaseModel):
+    client_id: UUID
+    client_code: int
+    client_name: str
+    inn: str
+    department_name: str | None = None
+    nz_quantity: DecimalNumber
+
+
+class TopClientsData(BaseModel):
+    unit: MassUnit = "т"
+    items: list[TopClientItem]
+
+
 class DashboardExceptionsResponse(BaseModel):
     status: str = Field(default="success")
     data: list[DashboardExceptionItem]

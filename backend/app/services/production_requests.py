@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import APIError
 from app.core.pagination import paginate
+from app.models.client import Client
 from app.models.normative import Normative
 from app.models.object import Object
 from app.models.product import Product
@@ -28,6 +29,7 @@ from app.schemas.production_request import (
     ProductionRequestUploadResult,
 )
 from app.schemas.user import UserBrief
+from app.services.clients import resolve_production_client, system_client
 
 HEADERS = (
     "Завод ERP",
@@ -35,7 +37,7 @@ HEADERS = (
     "Артикул",
     "Количество",
     "Ед.",
-    "Клиент",
+    "ID клиента (КССС)",
 )
 HEADER_ALIASES = {
     "завод erp": "erp_plant_code",
@@ -52,8 +54,10 @@ HEADER_ALIASES = {
     "ед.": "unit",
     "единица": "unit",
     "unit": "unit",
-    "клиент": "client_name",
-    "client_name": "client_name",
+    "id клиента (кссс)": "client_code",
+    "id клиента": "client_code",
+    "кссс": "client_code",
+    "client_code": "client_code",
 }
 REQUIRED_COLUMNS = {
     "erp_plant_code",
@@ -79,7 +83,7 @@ class ParsedRow:
     product_code: int
     quantity: Decimal
     unit: str
-    client_name: str | None
+    client_code: int | None
 
 
 @dataclass(frozen=True)
@@ -94,7 +98,7 @@ def build_template_xlsx() -> bytes:
     sheet = workbook.active
     sheet.title = "Нормативы"
     sheet.append(HEADERS)
-    sheet.append([2401, "F005", 10001, 1000, "шт", "ООО Ромашка"])
+    sheet.append([2401, "F005", 10001, 1000, "шт", None])
     sheet.freeze_panes = "A2"
     widths = {"A": 16, "B": 16, "C": 16, "D": 16, "E": 12, "F": 32}
     for column, width in widths.items():
@@ -106,6 +110,17 @@ def build_template_xlsx() -> bytes:
 
 def _text(value: object) -> str:
     return "" if value is None else str(value).strip()
+
+
+def _parse_optional_client_code(value: object) -> int | None:
+    text = _text(value)
+    if text.endswith(".0") and text[:-2].isdigit():
+        text = text[:-2]
+    if not text:
+        return None
+    if not text.isdigit() or len(text) > 10:
+        raise ValueError("ID клиента (КССС): ожидается целое число до 10 знаков")
+    return int(text)
 
 
 def _parse_int(value: object, label: str) -> int:
@@ -211,7 +226,6 @@ def parse_xlsx(content: bytes, filename: str) -> ParsedFile:
             continue
         total_rows += 1
         try:
-            row_client = _text(_value(row, columns, "client_name")) or None
             unit = _parse_unit(_value(row, columns, "unit"))
             parsed.append(
                 ParsedRow(
@@ -229,7 +243,9 @@ def parse_xlsx(content: bytes, filename: str) -> ParsedFile:
                     ),
                     quantity=_parse_quantity(_value(row, columns, "quantity"), unit),
                     unit=unit,
-                    client_name=row_client,
+                    client_code=_parse_optional_client_code(
+                        _value(row, columns, "client_code")
+                    ),
                 )
             )
         except ValueError as exc:
@@ -241,13 +257,24 @@ def parse_xlsx(content: bytes, filename: str) -> ParsedFile:
     return ParsedFile(rows=parsed, total_rows=total_rows, errors=errors)
 
 
+def _loaded_client(entity: ProductionRequest) -> Client | None:
+    client = entity.__dict__.get("client")
+    if isinstance(client, Client):
+        return client
+    return None
+
+
 def _to_list_item(batch: ProductionRequest) -> ProductionRequestListItem:
+    directory = _loaded_client(batch)
     return ProductionRequestListItem(
         id=batch.id,
         batch_id=batch.batch_id,
         source=batch.source,
         uploaded_by=UserBrief.model_validate(batch.uploader),
+        client_id=batch.client_id,
+        client_code=directory.client_code if directory is not None else None,
         client_name=batch.client_name,
+        client_directory_name=directory.name if directory is not None else None,
         valid_from=batch.valid_from,
         valid_to=batch.valid_to,
         status=batch.status,
@@ -266,6 +293,7 @@ def _to_detail(batch: ProductionRequest) -> ProductionRequestDetail:
                 warehouse_code=item.warehouse_code,
                 quantity=item.quantity,
                 unit=item.unit,
+                client_id=item.client_id,
                 client_name=item.client_name,
                 category=item.category.strip(),
             )
@@ -279,6 +307,7 @@ async def _load_batch(db: AsyncSession, batch_id: UUID) -> ProductionRequest:
         select(ProductionRequest)
         .options(
             selectinload(ProductionRequest.uploader),
+            selectinload(ProductionRequest.client),
             selectinload(ProductionRequest.items),
         )
         .where(
@@ -352,6 +381,7 @@ async def list_batches(
             select(ProductionRequest)
             .options(
                 selectinload(ProductionRequest.uploader),
+                selectinload(ProductionRequest.client),
                 selectinload(ProductionRequest.items),
             )
             .where(*conditions)
@@ -407,8 +437,7 @@ async def upload_batch(
             )
 
     errors = list(parsed_file.errors)
-    valid_rows: list[tuple[ParsedRow, Product, Object]] = []
-    common_client = options.client_name.strip() if options.client_name else None
+    valid_rows: list[tuple[ParsedRow, Product, Object, Client]] = []
     include_inactive = options.inactive_policy == "include_inactive"
     for row in parsed_file.rows:
         row_errors: list[str] = []
@@ -425,6 +454,12 @@ async def upload_batch(
                 "активный склад ERP "
                 f"{row.erp_plant_code}/{row.erp_warehouse_code} не найден"
             )
+        resolved_client: Client | None = None
+        if not row_errors:
+            try:
+                resolved_client = await resolve_production_client(db, row.client_code)
+            except ValueError as exc:
+                row_errors.append(str(exc))
         if row_errors:
             errors.append(
                 ProductionRequestUploadError(
@@ -433,8 +468,12 @@ async def upload_batch(
                 )
             )
             continue
-        if product is not None and warehouse is not None:
-            valid_rows.append((row, product, warehouse))
+        if (
+            product is not None
+            and warehouse is not None
+            and resolved_client is not None
+        ):
+            valid_rows.append((row, product, warehouse, resolved_client))
 
     errors.sort(key=lambda error: error.row)
     if not valid_rows:
@@ -448,9 +487,15 @@ async def upload_batch(
             error_details=errors,
         )
 
+    client_ids = {client.id for _, _, _, client in valid_rows}
+    if len(client_ids) == 1:
+        batch_client = valid_rows[0][3]
+    else:
+        batch_client = await system_client(db)
     batch = ProductionRequest(
         uploaded_by=user.id,
-        client_name=common_client or None,
+        client_id=batch_client.id,
+        client_name=batch_client.name,
         valid_from=options.valid_from,
         valid_to=options.valid_to,
         status="active",
@@ -458,15 +503,15 @@ async def upload_batch(
     db.add(batch)
     await db.flush()
 
-    for row, product, warehouse in valid_rows:
-        effective_client = row.client_name or common_client or ""
+    for row, product, warehouse, row_client in valid_rows:
         item = ProductionRequestItem(
             production_request_id=batch.id,
             product_code=row.product_code,
             warehouse_code=warehouse.code,
             quantity=row.quantity,
             unit=row.unit,
-            client_name=effective_client,
+            client_id=row_client.id,
+            client_name=row_client.name,
             category=product.category.strip(),
         )
         db.add(item)
@@ -479,7 +524,8 @@ async def upload_batch(
                 warehouse_code=warehouse.code,
                 quantity=row.quantity,
                 unit=row.unit,
-                client_name=effective_client,
+                client_id=row_client.id,
+                client_name=row_client.name,
                 expiry_date=options.valid_to,
                 category=product.category.strip(),
             )

@@ -51,7 +51,21 @@ async def rbac_pp_only(user: User = Depends(require_roles("pp"))):
 async def db_ready() -> AsyncGenerator[None, None]:
     await check_database_connection()
     async with engine.begin() as connection:
+        await connection.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
         await connection.run_sync(Base.metadata.create_all)
+        await connection.execute(text("""
+            INSERT INTO clients (
+                id, client_code, inn, name, is_system, is_active
+            ) VALUES (
+                '00000000-0000-4000-8000-000000000001',
+                9999999999,
+                '0000000000',
+                'Общий клиент',
+                true,
+                true
+            )
+            ON CONFLICT (id) DO NOTHING
+            """))
         await connection.execute(
             text("ALTER TABLE requests " "ADD COLUMN IF NOT EXISTS executed_by UUID")
         )
@@ -801,6 +815,33 @@ async def login_token(client: AsyncClient, user: AuthUser) -> str:
     )
     assert response.status_code == 200, response.text
     return response.json()["data"]["access_token"]
+
+
+async def ensure_client(name: str) -> uuid.UUID:
+    from app.models.client import Client
+
+    cleaned = name.strip()
+    async with AsyncSessionLocal() as session:
+        rows = (
+            await session.scalars(select(Client).where(Client.deleted_at.is_(None)))
+        ).all()
+        for row in rows:
+            if row.name.strip().casefold() == cleaned.casefold():
+                return row.id
+        used = {row.client_code for row in rows if row.client_code < 9999999999}
+        code = max(used or {0}) + 1
+        while code in used:
+            code += 1
+        client = Client(
+            client_code=code,
+            inn=f"{code:010d}",
+            name=cleaned,
+            is_active=True,
+            is_system=False,
+        )
+        session.add(client)
+        await session.commit()
+        return client.id
 
 
 def auth_header(token: str) -> dict[str, str]:

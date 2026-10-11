@@ -15,6 +15,8 @@ const getNormativeTrend = vi.fn()
 const getExceptions = vi.fn()
 const getWarehouseCoverage = vi.fn()
 const getExpiryCalendar = vi.fn()
+const getNzByDepartment = vi.fn()
+const getTopClients = vi.fn()
 const getProducts = vi.fn()
 const getObjects = vi.fn()
 
@@ -25,6 +27,8 @@ vi.mock('../api/dashboard', () => ({
     getExceptions: (...args: unknown[]) => getExceptions(...args),
     getWarehouseCoverage: (...args: unknown[]) => getWarehouseCoverage(...args),
     getExpiryCalendar: (...args: unknown[]) => getExpiryCalendar(...args),
+    getNzByDepartment: (...args: unknown[]) => getNzByDepartment(...args),
+    getTopClients: (...args: unknown[]) => getTopClients(...args),
   },
 }))
 
@@ -172,6 +176,31 @@ describe('DashboardPage', () => {
       },
     })
     getExpiryCalendar.mockResolvedValue({ data: { data: calendar } })
+    getNzByDepartment.mockResolvedValue({
+      data: {
+        data: {
+          unit: 'т',
+          items: [{ department_id: null, department_name: 'Без управления', nz_quantity: 1.5 }],
+        },
+      },
+    })
+    getTopClients.mockResolvedValue({
+      data: {
+        data: {
+          unit: 'т',
+          items: [
+            {
+              client_id: 'c1',
+              client_code: 7701000001,
+              client_name: 'ООО Ромашка',
+              inn: '7701000001',
+              department_name: null,
+              nz_quantity: 1.5,
+            },
+          ],
+        },
+      },
+    })
     getProducts.mockResolvedValue({ data: { data: [{ code: 10001, name: 'Подшипник' }] } })
     getObjects.mockResolvedValue({
       data: { data: [{ code: 2001, name: 'Ростов' }] },
@@ -186,6 +215,8 @@ describe('DashboardPage', () => {
     expect(screen.getByText('Текущее покрытие по складам')).toBeTruthy()
     expect(screen.getByText('Требуют внимания')).toBeTruthy()
     expect(screen.getByText(/ещё 20 скрыто/)).toBeTruthy()
+    expect(screen.getByText('НЗ в разрезе управлений продаж')).toBeTruthy()
+    expect(screen.getByText('Топ-10 клиентов по объёму НЗ')).toBeTruthy()
     expect(screen.getByText('Календарь истечений')).toBeTruthy()
     expect(screen.getByText('10001')).toBeTruthy()
     expect(screen.getByText('Критично')).toBeTruthy()
@@ -219,6 +250,8 @@ describe('DashboardPage', () => {
       expect(getExpiryCalendar).toHaveBeenCalledWith(
         expect.objectContaining({ warehouse_code: 2001 }),
       )
+      expect(getNzByDepartment).toHaveBeenCalledWith({ unit: 'т' })
+      expect(getTopClients).toHaveBeenCalledWith({ unit: 'т', limit: 10 })
     })
   })
 
@@ -228,6 +261,8 @@ describe('DashboardPage', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'кг' }))
     await waitFor(() => {
       expect(getSummary).toHaveBeenCalledWith({ unit: 'кг' })
+      expect(getNzByDepartment).toHaveBeenCalledWith({ unit: 'кг' })
+      expect(getTopClients).toHaveBeenCalledWith({ unit: 'кг', limit: 10 })
       expect(getNormativeTrend).toHaveBeenCalledWith(
         expect.objectContaining({ unit: 'кг' }),
       )

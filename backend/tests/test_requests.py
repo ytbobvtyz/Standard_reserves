@@ -7,7 +7,13 @@ from sqlalchemy import select
 from app.core.database import AsyncSessionLocal
 from app.models.normative import Normative
 from app.models.request import Request
-from tests.conftest import AuthUser, auth_header, delete_request, login_token
+from tests.conftest import (
+    AuthUser,
+    auth_header,
+    delete_request,
+    ensure_client,
+    login_token,
+)
 
 
 def valid_expiry_date(months: int = 3) -> str:
@@ -42,10 +48,14 @@ def request_payload(**overrides):
 
 
 async def _create(client: AsyncClient, token: str, **overrides) -> tuple[int, dict]:
+    payload = request_payload(**overrides)
+    name = payload.pop("client_name", None)
+    if name and "client_id" not in payload:
+        payload["client_id"] = str(await ensure_client(name))
     response = await client.post(
         "/api/v1/requests",
         headers=auth_header(token),
-        json=request_payload(**overrides),
+        json=payload,
     )
     return response.status_code, response.json()
 
@@ -135,7 +145,10 @@ async def test_update_draft_success(
     response = await client.put(
         f"/api/v1/requests/{request_id}",
         headers=auth_header(token),
-        json={"client_name": "ООО Тюльпан", "comment": "Уточненный объем"},
+        json={
+            "client_id": str(await ensure_client("ООО Тюльпан")),
+            "comment": "Уточненный объем",
+        },
     )
     assert response.status_code == 200, response.text
     assert response.json()["data"]["status"] == "draft"
@@ -164,7 +177,7 @@ async def test_update_not_draft_fails(
     response = await client.put(
         f"/api/v1/requests/{request_id}",
         headers=auth_header(token),
-        json={"client_name": "ООО Тюльпан"},
+        json={"client_id": str(await ensure_client("ООО Тюльпан"))},
     )
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "INVALID_STATUS"

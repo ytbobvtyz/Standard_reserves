@@ -69,7 +69,7 @@ class RequestItemCreate(BaseModel):
 
 class RequestCreate(BaseModel):
     request_type: Literal["normative", "one_time"]
-    client_name: str = Field(min_length=1, max_length=500)
+    client_id: UUID
     expiry_date: date | None = Field(
         default=None,
         description="От 3 до 6 месяцев от даты создания",
@@ -88,7 +88,7 @@ class RequestCreate(BaseModel):
 
 
 class RequestUpdate(BaseModel):
-    client_name: str | None = Field(default=None, min_length=1, max_length=500)
+    client_id: UUID | None = None
     expiry_date: date | None = Field(
         default=None,
         description="От 3 до 6 месяцев от даты создания запроса",
@@ -120,6 +120,7 @@ class RequestCreated(BaseModel):
     id: UUID
     request_type: str
     status: str
+    client_id: UUID
     client_name: str
     initiator_id: UUID
     department_id: UUID | None = None
@@ -132,6 +133,7 @@ class RequestListItem(BaseModel):
     id: UUID
     request_type: str
     status: str
+    client_id: UUID
     client_name: str
     initiator: UserBrief
     department_id: UUID | None = None
@@ -210,6 +212,7 @@ class RequestDetail(BaseModel):
     id: UUID
     request_type: str
     status: str
+    client_id: UUID
     client_name: str
     initiator: UserBrief
     department_id: UUID | None = None

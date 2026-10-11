@@ -22,6 +22,7 @@ MIN_EXPIRY_MONTHS = 3
 MAX_EXPIRY_MONTHS = 6
 
 if TYPE_CHECKING:
+    from app.models.client import Client
     from app.models.department import Department
     from app.models.event import Event
     from app.models.normative import Normative
@@ -56,6 +57,7 @@ class Request(TimestampMixin, SoftDeleteMixin, Base):
         Index("idx_requests_initiator_id", "initiator_id"),
         Index("idx_requests_department_id", "department_id"),
         Index("idx_requests_client_name", "client_name"),
+        Index("idx_requests_client_id", "client_id"),
         Index("idx_requests_created_at", "created_at"),
         Index(
             "idx_requests_expiry_date",
@@ -78,6 +80,12 @@ class Request(TimestampMixin, SoftDeleteMixin, Base):
         server_default=text("'draft'"),
     )
     client_name: Mapped[str] = mapped_column(Text, nullable=False)
+    client_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("clients.id", ondelete="RESTRICT"),
+        nullable=False,
+        server_default=text("'00000000-0000-4000-8000-000000000001'"),
+    )
     initiator_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id"),
@@ -114,6 +122,7 @@ class Request(TimestampMixin, SoftDeleteMixin, Base):
     )
     economy_action: Mapped[str | None] = mapped_column(String(20))
 
+    client: Mapped["Client"] = relationship("Client")
     initiator: Mapped["User"] = relationship(
         "User",
         foreign_keys=[initiator_id],

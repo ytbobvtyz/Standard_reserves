@@ -8,7 +8,13 @@ from app.models.normative import Normative
 from app.models.request import Request
 from app.models.request_item import RequestItem
 from app.models.request_item_history import RequestItemHistory
-from tests.conftest import AuthUser, auth_header, delete_request, login_token
+from tests.conftest import (
+    AuthUser,
+    auth_header,
+    delete_request,
+    ensure_client,
+    login_token,
+)
 
 
 def valid_expiry_date(months: int = 3) -> str:
@@ -39,10 +45,14 @@ def request_payload(**overrides):
 
 
 async def _create_submitted(client: AsyncClient, token: str, **overrides) -> str:
+    payload = request_payload(**overrides)
+    name = payload.pop("client_name", None)
+    if name and "client_id" not in payload:
+        payload["client_id"] = str(await ensure_client(name))
     response = await client.post(
         "/api/v1/requests",
         headers=auth_header(token),
-        json=request_payload(**overrides),
+        json=payload,
     )
     assert response.status_code == 201, response.text
     request_id = response.json()["data"]["id"]
@@ -631,10 +641,12 @@ async def test_cannot_approve_wrong_status(
 ) -> None:
     commercial_token = await login_token(client, test_user)
     pp_token = await login_token(client, pp_user)
+    draft = request_payload()
+    draft["client_id"] = str(await ensure_client(draft.pop("client_name")))
     created = await client.post(
         "/api/v1/requests",
         headers=auth_header(commercial_token),
-        json=request_payload(),
+        json=draft,
     )
     assert created.status_code == 201, created.text
     request_id = created.json()["data"]["id"]

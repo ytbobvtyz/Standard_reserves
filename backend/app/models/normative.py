@@ -21,6 +21,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, SoftDeleteMixin, TimestampMixin
 
 if TYPE_CHECKING:
+    from app.models.client import Client
     from app.models.object import Object
     from app.models.product import Product
     from app.models.production_request import ProductionRequestItem
@@ -42,6 +43,7 @@ class Normative(TimestampMixin, SoftDeleteMixin, Base):
             postgresql_where=text("deleted_at IS NULL"),
         ),
         Index("idx_normatives_created_at", "created_at"),
+        Index("idx_normatives_client_id", "client_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -74,9 +76,16 @@ class Normative(TimestampMixin, SoftDeleteMixin, Base):
     quantity: Mapped[Decimal] = mapped_column(Numeric(16, 6), nullable=False)
     unit: Mapped[str] = mapped_column(String(10), nullable=False)
     client_name: Mapped[str] = mapped_column(Text, nullable=False)
+    client_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("clients.id", ondelete="RESTRICT"),
+        nullable=False,
+        server_default=text("'00000000-0000-4000-8000-000000000001'"),
+    )
     expiry_date: Mapped[date] = mapped_column(Date, nullable=False)
     category: Mapped[str] = mapped_column(CHAR(1), nullable=False)
 
+    client: Mapped["Client"] = relationship("Client")
     request: Mapped["Request | None"] = relationship(
         "Request",
         back_populates="normatives",

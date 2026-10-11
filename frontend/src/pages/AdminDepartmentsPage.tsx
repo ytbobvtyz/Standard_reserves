@@ -99,6 +99,16 @@ export function AdminDepartmentsPage() {
   }
 
   const columns: ColumnsType<DepartmentListItem> = [
+    {
+      title: 'ID подразделения',
+      dataIndex: 'id',
+      width: 360,
+      render: (value: string) => (
+        <Typography.Text copyable={{ text: value, tooltips: ['Копировать', 'Скопировано'] }}>
+          {value}
+        </Typography.Text>
+      ),
+    },
     { title: 'Название', dataIndex: 'name' },
     {
       title: 'Пользователей',

@@ -86,7 +86,6 @@ async def upload_production_request(
     file: UploadFile = File(...),
     valid_from: date = Form(...),
     valid_to: date = Form(...),
-    client_name: str | None = Form(default=None),
     inactive_policy: Literal["active_only", "include_inactive"] = Form(
         default="active_only"
     ),
@@ -103,7 +102,6 @@ async def upload_production_request(
             "Дата окончания не может быть раньше даты начала",
         )
     options = ProductionRequestUploadOptions(
-        client_name=client_name,
         valid_from=valid_from,
         valid_to=valid_to,
         inactive_policy=inactive_policy,

@@ -8,6 +8,8 @@ import type {
   DashboardTrendData,
   DashboardTrendParams,
   ExpiryCalendarData,
+  NzByDepartmentData,
+  TopClientsData,
   WarehouseCoverageData,
 } from './types'
 
@@ -35,4 +37,10 @@ export const dashboardApi = {
     unit?: DashboardMassUnit
     warehouse_code?: number
   }) => api.get<ApiSuccess<ExpiryCalendarData>>('/dashboard/expiry-calendar', { params }),
+
+  getNzByDepartment: (params?: { unit?: DashboardMassUnit }) =>
+    api.get<ApiSuccess<NzByDepartmentData>>('/dashboard/nz-by-department', { params }),
+
+  getTopClients: (params?: { unit?: DashboardMassUnit; limit?: number }) =>
+    api.get<ApiSuccess<TopClientsData>>('/dashboard/top-clients', { params }),
 }

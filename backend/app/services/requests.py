@@ -38,6 +38,7 @@ from app.schemas.request import (
     validate_expiry_date_limit,
 )
 from app.schemas.user import UserBrief
+from app.services.clients import require_client
 from app.services.coefficients import CoefficientSet, item_coefficient_fields
 from app.services.pallet import ceil_to_pallet
 from app.services.params import is_pallet_multiple_enabled, load_coefficient_set
@@ -199,6 +200,13 @@ def _item_created(
     )
 
 
+def _client_label(request: Request) -> str:
+    client = request.__dict__.get("client")
+    if client is not None:
+        return client.name
+    return request.client_name
+
+
 def _department_name(request: Request) -> str | None:
     if request.department is not None:
         return request.department.name
@@ -214,7 +222,8 @@ def _created_schema(
         id=request.id,
         request_type=request.request_type,
         status=request.status,
-        client_name=request.client_name,
+        client_id=request.client_id,
+        client_name=_client_label(request),
         initiator_id=request.initiator_id,
         department_id=request.department_id,
         expiry_date=request.expiry_date,
@@ -232,7 +241,8 @@ def to_list_item(request: Request) -> RequestListItem:
         id=request.id,
         request_type=request.request_type,
         status=request.status,
-        client_name=request.client_name,
+        client_id=request.client_id,
+        client_name=_client_label(request),
         initiator=UserBrief.model_validate(request.initiator),
         department_id=request.department_id,
         department_name=_department_name(request),
@@ -310,7 +320,8 @@ def to_detail(request: Request, coeffs: CoefficientSet | None = None) -> Request
         id=request.id,
         request_type=request.request_type,
         status=request.status,
-        client_name=request.client_name,
+        client_id=request.client_id,
+        client_name=_client_label(request),
         initiator=UserBrief.model_validate(request.initiator),
         department_id=request.department_id,
         department_name=_department_name(request),
@@ -383,6 +394,7 @@ def to_detail(request: Request, coeffs: CoefficientSet | None = None) -> Request
 DETAIL_OPTIONS = (
     selectinload(Request.items).selectinload(RequestItem.product),
     selectinload(Request.items).selectinload(RequestItem.warehouse),
+    selectinload(Request.client),
     selectinload(Request.initiator),
     selectinload(Request.department),
     selectinload(Request.pp_approver),
@@ -392,6 +404,7 @@ DETAIL_OPTIONS = (
 
 LIST_OPTIONS = (
     selectinload(Request.items),
+    selectinload(Request.client),
     selectinload(Request.initiator),
     selectinload(Request.department),
 )
@@ -486,10 +499,12 @@ async def create_request(
     await validate_items(db, body.items)
     items = await apply_pallet_rounding(db, body.items)
 
+    client = await require_client(db, body.client_id)
     request = Request(
         request_type=body.request_type,
         status="draft",
-        client_name=body.client_name,
+        client_id=client.id,
+        client_name=client.name,
         initiator_id=user.id,
         department_id=user.department_id,
         initiator_comment=body.comment,
@@ -506,8 +521,10 @@ async def create_request(
 async def update_draft(
     db: AsyncSession, request: Request, body: RequestUpdate
 ) -> Request:
-    if body.client_name is not None:
-        request.client_name = body.client_name
+    if body.client_id is not None:
+        client = await require_client(db, body.client_id)
+        request.client_id = client.id
+        request.client_name = client.name
     if body.comment is not None:
         request.initiator_comment = body.comment
     if body.expiry_date is not None:

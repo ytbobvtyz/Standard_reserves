@@ -21,7 +21,13 @@ import { useNavigate } from 'react-router-dom'
 import { getApiErrorMessage } from '../api/client'
 import { referencesApi } from '../api/references'
 import { requestsApi } from '../api/requests'
-import type { ObjectListItem, RequestCreatePayload, RequestType } from '../api/types'
+import type { ClientListItem, ObjectListItem, RequestCreatePayload, RequestType } from '../api/types'
+import { ClientAutocomplete } from '../components/clients/ClientAutocomplete'
+import {
+  ClientFormModal,
+  createClientFromForm,
+  type ClientFormValues,
+} from '../components/clients/ClientFormModal'
 import { ProductAutocomplete } from '../components/requests/ProductAutocomplete'
 import { useAuthStore } from '../stores/auth'
 import {
@@ -65,7 +71,7 @@ interface ItemFormValue {
 
 interface FormValues {
   request_type: RequestType
-  client_name: string
+  client_id: string
   expiry_date?: Dayjs
   comment?: string
   items: ItemFormValue[]
@@ -257,6 +263,9 @@ export function CreateRequestPage() {
   const [coeffs, setCoeffs] = useState<CoefficientParams>(DEFAULT_COEFFICIENTS)
   const [palletMultiple, setPalletMultiple] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [clientModalOpen, setClientModalOpen] = useState(false)
+  const [creatingClient, setCreatingClient] = useState(false)
+  const [pinnedClient, setPinnedClient] = useState<ClientListItem | null>(null)
   const requestType = Form.useWatch('request_type', form)
   const isOneTime = requestType === 'one_time'
   const isLogistics = user?.role === 'logistics'
@@ -287,7 +296,7 @@ export function CreateRequestPage() {
 
   const buildPayload = (values: FormValues): RequestCreatePayload => ({
     request_type: values.request_type,
-    client_name: values.client_name,
+    client_id: values.client_id,
     expiry_date:
       values.request_type === 'normative'
         ? values.expiry_date?.format('YYYY-MM-DD')
@@ -354,12 +363,22 @@ export function CreateRequestPage() {
               <Radio.Button value="one_time">Разовое перемещение</Radio.Button>
             </Radio.Group>
           </Form.Item>
-          <Form.Item
-            name="client_name"
-            label="Клиент"
-            rules={[{ required: true, message: 'Укажите клиента' }]}
-          >
-            <Input placeholder="ООО Ромашка" />
+          <Form.Item label="Клиент" required>
+            <Space.Compact style={{ width: '100%' }}>
+              <Form.Item
+                name="client_id"
+                noStyle
+                rules={[{ required: true, message: 'Укажите клиента' }]}
+              >
+                <ClientAutocomplete pinned={pinnedClient} />
+              </Form.Item>
+              <Button
+                onClick={() => setClientModalOpen(true)}
+                disabled={!user?.department && !user?.department_id}
+              >
+                Создать клиента
+              </Button>
+            </Space.Compact>
           </Form.Item>
           {user ? (
             <Form.Item label="Инициатор">
@@ -496,6 +515,30 @@ export function CreateRequestPage() {
           </Space>
         </Form>
       </Card>
+      <ClientFormModal
+        open={clientModalOpen}
+        mode="create-request"
+        departmentName={user?.department}
+        canCreate={Boolean(user?.department || user?.department_id)}
+        confirmLoading={creatingClient}
+        onCancel={() => setClientModalOpen(false)}
+        onSubmit={async (values: ClientFormValues) => {
+          setCreatingClient(true)
+          try {
+            const created = await createClientFromForm(values, 'create-request')
+            setPinnedClient(created)
+            form.setFieldValue('client_id', created.id)
+            setClientModalOpen(false)
+            message.success('Клиент создан')
+          } catch (error) {
+            message.error(
+              error instanceof Error ? error.message : 'Не удалось создать клиента',
+            )
+          } finally {
+            setCreatingClient(false)
+          }
+        }}
+      />
     </Space>
   )
 }

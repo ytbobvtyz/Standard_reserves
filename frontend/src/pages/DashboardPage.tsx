@@ -24,8 +24,10 @@ import type {
   DashboardSummary,
   DashboardTrendData,
   ExpiryCalendarData,
+  NzByDepartmentData,
   ObjectListItem,
   ProductListItem,
+  TopClientsData,
   WarehouseCoverageData,
 } from '../api/types'
 import { NorthStarRow } from '../components/dashboard/NorthStarRow'
@@ -33,6 +35,8 @@ import { NormativeTrendChart } from '../components/dashboard/NormativeTrendChart
 import { WarehouseCoverageChart } from '../components/dashboard/WarehouseCoverageChart'
 import { ExceptionsTable } from '../components/dashboard/ExceptionsTable'
 import { ExpiryHeatmap } from '../components/dashboard/ExpiryHeatmap'
+import { NzByDepartmentChart } from '../components/dashboard/NzByDepartmentChart'
+import { TopClientsChart } from '../components/dashboard/TopClientsChart'
 import { formatMass } from '../components/dashboard/formatMass'
 
 const EXCEPTIONS_LIMIT = 20
@@ -46,6 +50,8 @@ export function DashboardPage() {
   const [exceptionsTotal, setExceptionsTotal] = useState(0)
   const [coverage, setCoverage] = useState<WarehouseCoverageData | null>(null)
   const [calendar, setCalendar] = useState<ExpiryCalendarData | null>(null)
+  const [nzByDepartment, setNzByDepartment] = useState<NzByDepartmentData | null>(null)
+  const [topClients, setTopClients] = useState<TopClientsData | null>(null)
   const [products, setProducts] = useState<ProductListItem[]>([])
   const [warehouses, setWarehouses] = useState<ObjectListItem[]>([])
   const [productCode, setProductCode] = useState<number | undefined>()
@@ -71,31 +77,42 @@ export function DashboardPage() {
     setError(null)
     const warehouse = warehouseCode ? { warehouse_code: warehouseCode } : {}
     try {
-      const [summaryResp, trendResp, exceptionsResp, coverageResp, calendarResp] =
-        await Promise.all([
-          dashboardApi.getSummary({ unit, ...warehouse }),
-          dashboardApi.getNormativeTrend({
-            product_code: productCode,
-            group_by: groupBy,
-            date_from: dateFrom,
-            date_to: dateTo,
-            unit,
-            ...warehouse,
-          }),
-          dashboardApi.getExceptions({
-            limit: EXCEPTIONS_LIMIT,
-            unit,
-            ...warehouse,
-          }),
-          dashboardApi.getWarehouseCoverage({ unit, ...warehouse }),
-          dashboardApi.getExpiryCalendar({ unit, ...warehouse }),
-        ])
+      const [
+        summaryResp,
+        trendResp,
+        exceptionsResp,
+        coverageResp,
+        calendarResp,
+        nzResp,
+        topResp,
+      ] = await Promise.all([
+        dashboardApi.getSummary({ unit, ...warehouse }),
+        dashboardApi.getNormativeTrend({
+          product_code: productCode,
+          group_by: groupBy,
+          date_from: dateFrom,
+          date_to: dateTo,
+          unit,
+          ...warehouse,
+        }),
+        dashboardApi.getExceptions({
+          limit: EXCEPTIONS_LIMIT,
+          unit,
+          ...warehouse,
+        }),
+        dashboardApi.getWarehouseCoverage({ unit, ...warehouse }),
+        dashboardApi.getExpiryCalendar({ unit, ...warehouse }),
+        dashboardApi.getNzByDepartment({ unit }),
+        dashboardApi.getTopClients({ unit, limit: 10 }),
+      ])
       setSummary(summaryResp.data.data)
       setTrend(trendResp.data.data)
       setExceptions(exceptionsResp.data.data)
       setExceptionsTotal(exceptionsResp.data.meta?.total ?? exceptionsResp.data.data.length)
       setCoverage(coverageResp.data.data)
       setCalendar(calendarResp.data.data)
+      setNzByDepartment(nzResp.data.data)
+      setTopClients(topResp.data.data)
     } catch (loadError) {
       const text = getApiErrorMessage(loadError, 'Не удалось загрузить дашборд')
       setError(text)
@@ -266,6 +283,14 @@ export function DashboardPage() {
                 ]}
               />
             ) : null}
+          </Card>
+
+          <Card title="НЗ в разрезе управлений продаж">
+            <NzByDepartmentChart data={nzByDepartment} unit={massUnit} />
+          </Card>
+
+          <Card title="Топ-10 клиентов по объёму НЗ">
+            <TopClientsChart data={topClients} unit={massUnit} />
           </Card>
 
           <Card title="Текущее покрытие по складам">

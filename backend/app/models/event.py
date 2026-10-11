@@ -27,7 +27,8 @@ class Event(CreatedAtMixin, Base):
             "event_type IN ("
             "'request_created', 'request_approved', 'request_rejected', "
             "'normative_active', 'normative_expired', "
-            "'deficit_detected', 'deficit_resolved')",
+            "'deficit_detected', 'deficit_resolved', "
+            "'normative_replaced_by_name')",
             name="ck_events_event_type",
         ),
         Index(

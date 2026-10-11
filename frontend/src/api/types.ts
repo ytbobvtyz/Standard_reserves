@@ -134,7 +134,7 @@ export interface RequestItemPayload {
 
 export interface RequestCreatePayload {
   request_type: RequestType
-  client_name: string
+  client_id: string
   expiry_date?: string | null
   items: RequestItemPayload[]
   comment?: string
@@ -188,6 +188,7 @@ export interface RequestDetail {
   id: string
   request_type: RequestType
   status: RequestStatus
+  client_id?: string
   client_name: string
   initiator: User
   department_id?: string | null
@@ -283,6 +284,50 @@ export interface DepartmentListItem {
   name: string
   is_active: boolean
   users_count?: number
+}
+
+export interface ClientListItem {
+  id: string
+  client_code: number
+  inn: string
+  name: string
+  kpp?: string | null
+  department_id?: string | null
+  department_name?: string | null
+  is_active: boolean
+  is_system: boolean
+}
+
+export interface ClientCreatePayload {
+  client_code: number
+  inn: string
+  name: string
+  kpp?: string | null
+  department_id?: string | null
+}
+
+export interface ClientUpdatePayload {
+  name: string
+  kpp?: string | null
+  is_active: boolean
+  department_id?: string | null
+}
+
+export interface ClientListParams {
+  q?: string
+  department_id?: string
+  is_active?: boolean
+  include_inactive?: boolean
+  include_deleted?: boolean
+  page?: number
+  limit?: number
+}
+
+export interface ClientUploadResult {
+  created: number
+  errors: number
+  message: string
+  error_details: Array<{ row: number; message: string }>
 }
 
 export interface ProductListParams {
@@ -620,7 +665,10 @@ export interface ProductionRequestListItem {
   batch_id: string
   source: 'excel_upload'
   uploaded_by: User
+  client_id?: string
+  client_code?: number | null
   client_name?: string | null
+  client_directory_name?: string | null
   valid_from: string
   valid_to: string
   status: 'active' | 'archived' | 'cancelled'
@@ -793,6 +841,31 @@ export interface DashboardTrendParams {
   group_by?: DashboardGroupBy
   period?: DashboardGroupBy
   unit?: DashboardMassUnit
+}
+
+export interface NzByDepartmentItem {
+  department_id?: string | null
+  department_name: string
+  nz_quantity: number
+}
+
+export interface NzByDepartmentData {
+  unit: DashboardMassUnit
+  items: NzByDepartmentItem[]
+}
+
+export interface TopClientItem {
+  client_id: string
+  client_code: number
+  client_name: string
+  inn: string
+  department_name?: string | null
+  nz_quantity: number
+}
+
+export interface TopClientsData {
+  unit: DashboardMassUnit
+  items: TopClientItem[]
 }
 
 export interface DashboardExceptionItem {

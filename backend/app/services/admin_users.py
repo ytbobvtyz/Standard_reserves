@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 from app.core.exceptions import APIError
 from app.core.pagination import paginate
 from app.core.security import generate_secure_password, hash_password
+from app.models.client import Client
 from app.models.department import Department
 from app.models.session import Session
 from app.models.user import User
@@ -469,6 +470,20 @@ async def delete_department(db: AsyncSession, department_id: UUID, actor: User) 
             409,
             "HAS_RELATIONS",
             "Нельзя удалить подразделение: есть назначенные пользователи",
+        )
+    clients_count = await db.scalar(
+        select(func.count())
+        .select_from(Client)
+        .where(
+            Client.department_id == department.id,
+            Client.deleted_at.is_(None),
+        )
+    )
+    if clients_count:
+        raise APIError(
+            409,
+            "HAS_RELATIONS",
+            "Нельзя удалить подразделение: есть привязанные клиенты",
         )
     department.deleted_at = datetime.now(UTC)
     add_audit_log(

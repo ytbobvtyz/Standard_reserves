@@ -9,7 +9,6 @@ import {
   Button,
   DatePicker,
   Form,
-  Input,
   Modal,
   Popconfirm,
   Space,
@@ -35,7 +34,6 @@ import { downloadBlob } from '../../utils/download'
 const { RangePicker } = DatePicker
 
 interface UploadValues {
-  client_name?: string
   dates: [Dayjs, Dayjs]
 }
 
@@ -92,7 +90,6 @@ export function ProductionRequestsTab({
 
   const openUpload = () => {
     uploadForm.setFieldsValue({
-      client_name: undefined,
       dates: [dayjs(), dayjs().add(3, 'month')],
     })
     setFileList([])
@@ -114,7 +111,6 @@ export function ProductionRequestsTab({
     setSubmitting(true)
     try {
       const { data } = await productionRequestsApi.upload(file, {
-        client_name: values.client_name,
         valid_from: values.dates[0].format('YYYY-MM-DD'),
         valid_to: values.dates[1].format('YYYY-MM-DD'),
         inactive_policy: policy,
@@ -228,9 +224,21 @@ export function ProductionRequestsTab({
       dataIndex: ['uploaded_by', 'full_name'],
     },
     {
-      title: 'Общий клиент',
+      title: 'ID клиента (КССС)',
+      dataIndex: 'client_code',
+      width: 160,
+      render: (value?: number | null) => value ?? '—',
+    },
+    {
+      title: 'Клиент',
       dataIndex: 'client_name',
-      render: (value?: string | null) => value || 'По строкам файла',
+      render: (value: string | null | undefined, record) => {
+        const current = record.client_directory_name
+        if (current && value && current !== value) {
+          return `${current} (в партии: ${value})`
+        }
+        return current || value || 'Общий клиент'
+      },
     },
     {
       title: 'Действует с',
@@ -330,7 +338,7 @@ export function ProductionRequestsTab({
           <Form.Item
             label="Excel-файл"
             required
-            extra="Колонки: Завод ERP, Склад ERP, Артикул, Количество, Ед., Клиент"
+            extra="Колонки: Завод ERP, Склад ERP, Артикул, Количество, Ед., ID клиента (КССС). Пустая ячейка — Общий клиент."
           >
             <Upload
               accept=".xlsx"
@@ -341,13 +349,6 @@ export function ProductionRequestsTab({
             >
               <Button icon={<UploadOutlined />}>Выбрать файл</Button>
             </Upload>
-          </Form.Item>
-          <Form.Item
-            name="client_name"
-            label="Общий клиент"
-            extra="Необязательно. Если не задан и в строке Excel нет клиента, норматив всё равно загружается"
-          >
-            <Input maxLength={500} />
           </Form.Item>
           <Form.Item
             name="dates"
