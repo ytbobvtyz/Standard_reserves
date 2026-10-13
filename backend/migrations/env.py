@@ -16,22 +16,26 @@ if config.config_file_name is not None:
 
 
 def database_url_from_environment() -> str:
-    """Alembic URL from DATABASE_URL only. Driver is asyncpg for the online runner."""
-    url = os.environ["DATABASE_URL"].replace("+asyncpg", "")
-    if url.startswith("postgres://"):
-        url = "postgresql://" + url.removeprefix("postgres://")
+    return os.environ["DATABASE_URL"]
+
+
+def async_database_url_from_environment() -> str:
+    """Same URL as DATABASE_URL. Plain postgresql:// needs the asyncpg driver."""
+    url = database_url_from_environment()
+    if url.startswith("postgresql+asyncpg://"):
+        return url
     if url.startswith("postgresql://"):
-        url = "postgresql+asyncpg://" + url.removeprefix("postgresql://")
-    # ConfigParser interpolates %; a password with % would not round-trip.
-    return url.replace("%", "%%")
+        return "postgresql+asyncpg://" + url.removeprefix("postgresql://")
+    if url.startswith("postgres://"):
+        return "postgresql+asyncpg://" + url.removeprefix("postgres://")
+    return url
 
 
-config.set_main_option("sqlalchemy.url", database_url_from_environment())
 target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
-    url = config.get_main_option("sqlalchemy.url")
+    url = database_url_from_environment()
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -57,7 +61,7 @@ def do_run_migrations(connection: Connection) -> None:
 
 async def run_async_migrations() -> None:
     configuration = config.get_section(config.config_ini_section, {})
-    configuration["sqlalchemy.url"] = config.get_main_option("sqlalchemy.url")
+    configuration["sqlalchemy.url"] = async_database_url_from_environment()
     connectable = async_engine_from_config(
         configuration,
         prefix="sqlalchemy.",
