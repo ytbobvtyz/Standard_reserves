@@ -11,6 +11,13 @@ from app.models import Base
 
 config = context.config
 
+
+import os
+config.set_main_option(
+    "sqlalchemy.url",
+    os.environ["DATABASE_URL"].replace("+asyncpg", "")
+)
+
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
