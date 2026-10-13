@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
+        case_sensitive=False,
         extra="ignore",
     )
 
@@ -15,7 +16,7 @@ class Settings(BaseSettings):
     debug: bool = False
     log_level: str = "INFO"
     secret_key: str = "change-me-in-production"
-    database_url: str = "postgresql://postgres:postgres@postgres:5432/standart_reserve"
+    database_url: str  # обязательно из окружения, DATABASE_URL или database_url
     backend_cors_origins: list[str] = [
         "http://localhost:5173",
         "http://localhost",
