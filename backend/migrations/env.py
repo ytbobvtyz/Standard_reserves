@@ -1,4 +1,5 @@
 import asyncio
+import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -6,27 +7,31 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from app.core.config import settings
 from app.models import Base
 
 config = context.config
 
-
-import os
-config.set_main_option(
-    "sqlalchemy.url",
-    os.environ["DATABASE_URL"].replace("+asyncpg", "")
-)
-
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", settings.async_database_url)
+
+def database_url_from_environment() -> str:
+    """Alembic URL from DATABASE_URL only. Driver is asyncpg for the online runner."""
+    url = os.environ["DATABASE_URL"].replace("+asyncpg", "")
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url.removeprefix("postgres://")
+    if url.startswith("postgresql://"):
+        url = "postgresql+asyncpg://" + url.removeprefix("postgresql://")
+    # ConfigParser interpolates %; a password with % would not round-trip.
+    return url.replace("%", "%%")
+
+
+config.set_main_option("sqlalchemy.url", database_url_from_environment())
 target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
-    url = settings.async_database_url
+    url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -51,8 +56,10 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_async_migrations() -> None:
+    configuration = config.get_section(config.config_ini_section, {})
+    configuration["sqlalchemy.url"] = config.get_main_option("sqlalchemy.url")
     connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
