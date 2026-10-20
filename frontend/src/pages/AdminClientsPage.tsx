@@ -23,13 +23,19 @@ import { useCallback, useEffect, useState } from 'react'
 import { adminApi } from '../api/admin'
 import { clientsApi } from '../api/clients'
 import { getApiErrorMessage } from '../api/client'
-import type { ClientListItem, ClientUploadResult, DepartmentListItem } from '../api/types'
+import type {
+  ClientListItem,
+  ClientUploadPreview,
+  ClientUploadResult,
+  DepartmentListItem,
+} from '../api/types'
 import {
   ClientFormModal,
   createClientFromForm,
   departmentIdFromForm,
   type ClientFormValues,
 } from '../components/clients/ClientFormModal'
+import { ClientUploadPreviewModal } from '../components/clients/ClientUploadPreviewModal'
 import { downloadBlob } from '../utils/download'
 
 export function AdminClientsPage() {
@@ -44,7 +50,11 @@ export function AdminClientsPage() {
   const [editing, setEditing] = useState<ClientListItem | null>(null)
   const [saving, setSaving] = useState(false)
   const [uploadResult, setUploadResult] = useState<ClientUploadResult | null>(null)
+  const [preview, setPreview] = useState<ClientUploadPreview | null>(null)
+  const [previewing, setPreviewing] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [fileList, setFileList] = useState<UploadFile[]>([])
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -139,23 +149,40 @@ export function AdminClientsPage() {
     }
   }
 
-  const uploadExcel = async () => {
-    const file = fileList[0]?.originFileObj
-    if (!file) {
+  const previewExcel = async () => {
+    if (!uploadFile) {
       message.error('Выберите Excel-файл')
       return
     }
-    setSaving(true)
+    setPreviewing(true)
     try {
-      const { data } = await clientsApi.upload(file)
+      const { data } = await clientsApi.preview(uploadFile)
+      setPreview(data.data)
+    } catch (error) {
+      message.error(getApiErrorMessage(error, 'Не удалось проверить файл'))
+    } finally {
+      setPreviewing(false)
+    }
+  }
+
+  const confirmUpload = async () => {
+    if (!uploadFile) {
+      message.error('Выберите Excel-файл')
+      return
+    }
+    setUploading(true)
+    try {
+      const { data } = await clientsApi.upload(uploadFile)
       setUploadResult(data.data)
+      setPreview(null)
       setFileList([])
+      setUploadFile(null)
       message.success(data.data.message)
       await load()
     } catch (error) {
       message.error(getApiErrorMessage(error, 'Не удалось загрузить файл'))
     } finally {
-      setSaving(false)
+      setUploading(false)
     }
   }
 
@@ -243,13 +270,28 @@ export function AdminClientsPage() {
           accept=".xlsx"
           maxCount={1}
           fileList={fileList}
-          beforeUpload={() => false}
-          onChange={({ fileList: next }) => setFileList(next.slice(-1))}
+          beforeUpload={(file) => {
+            setUploadFile(file)
+            setPreview(null)
+            return false
+          }}
+          onChange={({ fileList: next }) => {
+            const list = next.slice(-1)
+            setFileList(list)
+            if (list.length === 0) {
+              setUploadFile(null)
+            }
+            setPreview(null)
+          }}
         >
           <Button icon={<UploadOutlined />}>Выбрать Excel</Button>
         </Upload>
-        <Button loading={saving} onClick={() => void uploadExcel()}>
-          Загрузить из Excel
+        <Button
+          loading={previewing}
+          disabled={uploadFile == null}
+          onClick={() => void previewExcel()}
+        >
+          Проверить файл
         </Button>
       </Space>
       {uploadResult ? (
@@ -277,6 +319,13 @@ export function AdminClientsPage() {
           showSizeChanger: false,
           onChange: (next) => setPage(next),
         }}
+      />
+      <ClientUploadPreviewModal
+        preview={preview}
+        fileName={fileList[0]?.name}
+        confirming={uploading}
+        onCancel={() => setPreview(null)}
+        onConfirm={() => void confirmUpload()}
       />
       <ClientFormModal
         open={createOpen}

@@ -11,6 +11,7 @@ from app.schemas.client import (
     ClientCreate,
     ClientListItem,
     ClientUpdate,
+    ClientUploadPreview,
     ClientUploadResult,
 )
 from app.schemas.common import MessageResponse, PaginatedResponse, SuccessResponse
@@ -70,6 +71,24 @@ async def export_clients(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": 'attachment; filename="clients.xlsx"'},
     )
+
+
+@router.post(
+    "/preview",
+    response_model=SuccessResponse[ClientUploadPreview],
+)
+async def preview_clients(
+    file: UploadFile = File(...),
+    _user: User = Depends(LOGISTICS),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[ClientUploadPreview]:
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise APIError(400, "INVALID_FILE", "Размер файла не должен превышать 10 МБ")
+    data = await service.preview_clients_xlsx(
+        db, content, file.filename or "clients.xlsx"
+    )
+    return SuccessResponse(data=data)
 
 
 @router.post(

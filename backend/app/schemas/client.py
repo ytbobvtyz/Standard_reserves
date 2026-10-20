@@ -50,3 +50,19 @@ class ClientUploadResult(BaseModel):
     errors: int
     message: str
     error_details: list[ClientUploadError]
+
+
+class ClientUploadDepartmentPlan(BaseModel):
+    department_id: UUID | None = None
+    department_name: str
+    count: int
+
+
+class ClientUploadPreview(BaseModel):
+    file_rows: int
+    to_create: int
+    errors: int
+    without_department: int
+    departments: list[ClientUploadDepartmentPlan]
+    message: str
+    error_details: list[ClientUploadError]

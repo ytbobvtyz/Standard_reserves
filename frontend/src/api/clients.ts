@@ -5,6 +5,7 @@ import type {
   ClientListItem,
   ClientListParams,
   ClientUpdatePayload,
+  ClientUploadPreview,
   ClientUploadResult,
 } from './types'
 
@@ -28,6 +29,12 @@ export const clientsApi = {
 
   exportExcel: () =>
     api.get<Blob>('/references/clients/export', { responseType: 'blob' }),
+
+  preview: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post<ApiSuccess<ClientUploadPreview>>('/references/clients/preview', form)
+  },
 
   upload: (file: File) => {
     const form = new FormData()

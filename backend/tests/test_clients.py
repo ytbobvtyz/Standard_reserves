@@ -23,17 +23,31 @@ from tests.test_approvals import _create_submitted
 from tests.test_requests import valid_expiry_date
 
 
-def _clients_xlsx(rows: list[list[object]]) -> bytes:
+def _clients_xlsx(
+    rows: list[list[object]],
+    headers: list[str] | None = None,
+) -> bytes:
     workbook = Workbook()
     sheet = workbook.active
     sheet.append(
-        ["ID клиента (КССС)", "Наименование", "ИНН", "КПП", "ID подразделения"]
+        headers
+        or ["ID клиента (КССС)", "Наименование", "ИНН", "КПП", "ID подразделения"]
     )
     for row in rows:
         sheet.append(row)
     buffer = BytesIO()
     workbook.save(buffer)
     return buffer.getvalue()
+
+
+def _upload_file(content: bytes) -> dict[str, tuple[str, bytes, str]]:
+    return {
+        "file": (
+            "clients.xlsx",
+            content,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    }
 
 
 async def test_create_client_inherits_department_and_rejects_duplicate(
@@ -128,13 +142,7 @@ async def test_excel_department_by_name(
     response = await client.post(
         "/api/v1/references/clients/upload",
         headers=auth_header(token),
-        files={
-            "file": (
-                "clients.xlsx",
-                content,
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-        },
+        files=_upload_file(content),
     )
     assert response.status_code == 200, response.text
     assert response.json()["data"]["created"] == 1
@@ -155,6 +163,112 @@ async def test_excel_department_by_name(
     book = load_workbook(BytesIO(template.content))
     assert book.active["E1"].comment is not None
     assert "Коммерческий отдел" in book.active["E1"].comment.text
+
+
+async def test_excel_binds_department_by_sales_name_when_id_empty(
+    client: AsyncClient, logistics_user: AuthUser
+) -> None:
+    token = await login_token(client, logistics_user)
+    department_name = f"Sales Office {uuid4().hex[:6]}"
+    async with AsyncSessionLocal() as session:
+        department = Department(name=department_name, is_active=True)
+        session.add(department)
+        await session.commit()
+        department_id = department.id
+    headers = [
+        "ID клиента (КССС)",
+        "Наименование",
+        "ИНН",
+        "КПП",
+        "ID подразделения",
+        "Управление продаж",
+        "Статус",
+    ]
+    content = _clients_xlsx(
+        [
+            [
+                7703000011,
+                "По имени",
+                "7703000011",
+                "",
+                None,
+                f"  {department_name}  ",
+                "Активен",
+            ],
+            [
+                7703000012,
+                "Частичное",
+                "7703000012",
+                "",
+                None,
+                department_name[:8],
+                "Активен",
+            ],
+            [
+                7703000013,
+                "Без управления",
+                "7703000013",
+                "",
+                None,
+                None,
+                "Активен",
+            ],
+        ],
+        headers,
+    )
+    preview = await client.post(
+        "/api/v1/references/clients/preview",
+        headers=auth_header(token),
+        files=_upload_file(content),
+    )
+    assert preview.status_code == 200, preview.text
+    body = preview.json()["data"]
+    assert body["to_create"] == 2
+    assert body["errors"] == 1
+    assert body["without_department"] == 1
+    bound = next(item for item in body["departments"] if item["department_id"])
+    assert bound["department_name"] == department_name
+    assert bound["count"] == 1
+    assert any(
+        item["department_name"] == "Без управления" for item in body["departments"]
+    )
+    assert "не найдено" in body["error_details"][0]["message"]
+
+    listed_before = await client.get(
+        "/api/v1/references/clients",
+        headers=auth_header(token),
+        params={"q": "7703000011", "include_inactive": True},
+    )
+    assert listed_before.json()["data"] == []
+
+    uploaded = await client.post(
+        "/api/v1/references/clients/upload",
+        headers=auth_header(token),
+        files=_upload_file(content),
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    assert uploaded.json()["data"]["created"] == 2
+
+    async def client_by_code(code: int) -> dict | None:
+        response = await client.get(
+            "/api/v1/references/clients",
+            headers=auth_header(token),
+            params={"q": str(code), "include_inactive": True},
+        )
+        assert response.status_code == 200
+        return next(
+            (item for item in response.json()["data"] if item["client_code"] == code),
+            None,
+        )
+
+    matched = await client_by_code(7703000011)
+    unbound = await client_by_code(7703000013)
+    skipped = await client_by_code(7703000012)
+    assert matched is not None
+    assert matched["department_id"] == str(department_id)
+    assert unbound is not None
+    assert unbound["department_id"] is None
+    assert skipped is None
 
 
 async def test_name_replacement_writes_event_and_same_client_does_not(

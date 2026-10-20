@@ -323,11 +323,32 @@ export interface ClientListParams {
   limit?: number
 }
 
+export interface ClientUploadError {
+  row: number
+  message: string
+}
+
 export interface ClientUploadResult {
   created: number
   errors: number
   message: string
-  error_details: Array<{ row: number; message: string }>
+  error_details: ClientUploadError[]
+}
+
+export interface ClientUploadDepartmentPlan {
+  department_id?: string | null
+  department_name: string
+  count: number
+}
+
+export interface ClientUploadPreview {
+  file_rows: number
+  to_create: number
+  errors: number
+  without_department: number
+  departments: ClientUploadDepartmentPlan[]
+  message: string
+  error_details: ClientUploadError[]
 }
 
 export interface ProductListParams {
