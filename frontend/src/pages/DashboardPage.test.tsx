@@ -18,8 +18,11 @@ const getExpiryCalendar = vi.fn()
 const getNzByDepartment = vi.fn()
 const getTopClients = vi.fn()
 const getProducts = vi.fn()
+const getProduct = vi.fn()
 const getObjects = vi.fn()
 const getDepartments = vi.fn()
+const listClients = vi.fn()
+const getClient = vi.fn()
 
 vi.mock('../api/dashboard', () => ({
   dashboardApi: {
@@ -36,8 +39,16 @@ vi.mock('../api/dashboard', () => ({
 vi.mock('../api/references', () => ({
   referencesApi: {
     getProducts: (...args: unknown[]) => getProducts(...args),
+    getProduct: (...args: unknown[]) => getProduct(...args),
     getObjects: (...args: unknown[]) => getObjects(...args),
     getDepartments: (...args: unknown[]) => getDepartments(...args),
+  },
+}))
+
+vi.mock('../api/clients', () => ({
+  clientsApi: {
+    list: (...args: unknown[]) => listClients(...args),
+    get: (...args: unknown[]) => getClient(...args),
   },
 }))
 
@@ -68,6 +79,7 @@ vi.mock('recharts', () => ({
     </div>
   ),
   Bar: () => null,
+  Cell: () => null,
   CartesianGrid: () => null,
   Legend: () => null,
   Tooltip: () => null,
@@ -186,7 +198,15 @@ describe('DashboardPage', () => {
       data: {
         data: {
           unit: 'т',
-          items: [{ department_id: null, department_name: 'Без управления', nz_quantity: 1.5 }],
+          items: [
+            {
+              department_id: null,
+              department_name: 'Без управления',
+              warehouses: [
+                { warehouse_code: 2001, warehouse_name: 'Ростов', nz_quantity: 1.5 },
+              ],
+            },
+          ],
         },
       },
     })
@@ -214,6 +234,35 @@ describe('DashboardPage', () => {
     getDepartments.mockResolvedValue({
       data: {
         data: [{ id: 'dept-1', name: 'Коммерческий отдел', is_active: true }],
+      },
+    })
+    getProduct.mockResolvedValue({
+      data: { data: { code: 10001, name: 'Подшипник', is_active: true } },
+    })
+    listClients.mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: 'c-romashka',
+            client_code: 7701000001,
+            name: 'ООО Ромашка',
+            inn: '7701000001',
+            is_active: true,
+            is_system: false,
+          },
+        ],
+      },
+    })
+    getClient.mockResolvedValue({
+      data: {
+        data: {
+          id: 'c-romashka',
+          client_code: 7701000001,
+          name: 'ООО Ромашка',
+          inn: '7701000001',
+          is_active: true,
+          is_system: false,
+        },
       },
     })
   })
@@ -268,8 +317,15 @@ describe('DashboardPage', () => {
       expect(getExpiryCalendar).toHaveBeenCalledWith(
         expect.objectContaining({ warehouse_code: 2001 }),
       )
-      expect(getNzByDepartment).toHaveBeenCalledWith({ unit: 'т' })
-      expect(getTopClients).toHaveBeenCalledWith({ unit: 'т', limit: 10 })
+      expect(getNzByDepartment).toHaveBeenCalledWith({
+        unit: 'т',
+        warehouse_code: 2001,
+      })
+      expect(getTopClients).toHaveBeenCalledWith({
+        unit: 'т',
+        limit: 10,
+        warehouse_code: 2001,
+      })
     })
   })
 
@@ -307,6 +363,29 @@ describe('DashboardPage', () => {
         limit: 10,
         department_id: 'dept-1',
       })
+    })
+  })
+
+  it('searches any product and filters the trend by client', async () => {
+    renderPage()
+    await screen.findByText('Дашборд нормативов')
+    const productInput = screen.getByTestId('product-filter').querySelector('input')
+    expect(productInput).toBeTruthy()
+    fireEvent.change(productInput as HTMLInputElement, { target: { value: '99999' } })
+    await waitFor(() => {
+      expect(getProducts).toHaveBeenCalledWith(
+        expect.objectContaining({ search: '99999', is_active: true }),
+      )
+    })
+
+    const clientSelect = screen.getByTestId('client-filter').querySelector('.ant-select-selector')
+    expect(clientSelect).toBeTruthy()
+    fireEvent.mouseDown(clientSelect as Element)
+    fireEvent.click(await screen.findByText('7701000001 — ООО Ромашка'))
+    await waitFor(() => {
+      expect(getNormativeTrend).toHaveBeenCalledWith(
+        expect.objectContaining({ client_id: 'c-romashka' }),
+      )
     })
   })
 

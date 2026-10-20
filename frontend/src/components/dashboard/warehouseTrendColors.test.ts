@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DashboardTrendSeries } from '../../api/types'
-import { rankWarehouses, TOP_WAREHOUSE_COLORS } from './warehouseTrendColors'
+import { rankWarehouseVolumes, rankWarehouses, TOP_WAREHOUSE_COLORS } from './warehouseTrendColors'
 
 function series(
   code: number,
@@ -65,5 +65,16 @@ describe('rankWarehouses', () => {
     expect(before[0].warehouseName).toBe('Б')
     expect(after[0].warehouseName).toBe('А')
     expect(after[0].color).toBe(TOP_WAREHOUSE_COLORS[0])
+  })
+
+  it('assigns the same palette when ranking warehouse volumes directly', () => {
+    const ranked = rankWarehouseVolumes([
+      { warehouseCode: 2, warehouseName: 'Средний', volume: 50 },
+      { warehouseCode: 3, warehouseName: 'Крупный', volume: 80 },
+    ])
+    expect(ranked.map((item) => item.color)).toEqual([
+      TOP_WAREHOUSE_COLORS[0],
+      TOP_WAREHOUSE_COLORS[1],
+    ])
   })
 })

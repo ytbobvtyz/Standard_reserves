@@ -26,6 +26,7 @@ from app.schemas.dashboard import (
     NormativeTrendData,
     NzByDepartmentData,
     NzByDepartmentItem,
+    NzByDepartmentWarehouse,
     TopClientItem,
     TopClientsData,
     TrendPoint,
@@ -319,6 +320,7 @@ async def get_normative_trend(
     group_by: GroupBy,
     unit: MassUnit = "т",
     department_id: UUID | None = None,
+    client_id: UUID | None = None,
 ) -> NormativeTrendData:
     today = date.today()
     if date_from is None or date_to is None:
@@ -352,6 +354,8 @@ async def get_normative_trend(
         conditions.append(Normative.warehouse_code == warehouse_code)
     if department_id is not None:
         conditions.append(Client.department_id == department_id)
+    if client_id is not None:
+        conditions.append(Normative.client_id == client_id)
 
     stmt = (
         select(Normative, ProductionRequest.valid_from)
@@ -719,14 +723,19 @@ async def _active_normative_rows(
     unit: MassUnit,
     *,
     department_id: UUID | None = None,
+    warehouse_code: int | None = None,
 ):
     conditions = _active_conditions()
     if department_id is not None:
         conditions.append(Client.department_id == department_id)
+    if warehouse_code is not None:
+        conditions.append(Normative.warehouse_code == warehouse_code)
     result = await db.execute(
         select(
             Normative.quantity,
             Normative.unit,
+            Normative.warehouse_code,
+            Object.name,
             Product.weight_kg,
             Client.id,
             Client.client_code,
@@ -736,6 +745,7 @@ async def _active_normative_rows(
             Department.name,
         )
         .join(Product, Product.code == Normative.product_code)
+        .join(Object, Object.code == Normative.warehouse_code)
         .join(Client, Client.id == Normative.client_id)
         .outerjoin(Department, Department.id == Client.department_id)
         .where(*conditions)
@@ -743,43 +753,81 @@ async def _active_normative_rows(
     return result.all(), unit
 
 
+def _department_total(item: NzByDepartmentItem) -> Decimal:
+    return sum((warehouse.nz_quantity for warehouse in item.warehouses), ZERO)
+
+
+class _WarehouseSlot:
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.total = ZERO
+
+
+class _DepartmentBucket:
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.warehouses: dict[int, _WarehouseSlot] = {}
+
+
 async def get_nz_by_department(
     db: AsyncSession,
     *,
     unit: MassUnit = "т",
     department_id: UUID | None = None,
+    warehouse_code: int | None = None,
 ) -> NzByDepartmentData:
-    rows, unit = await _active_normative_rows(db, unit, department_id=department_id)
-    buckets: dict[UUID | None, dict[str, object]] = {}
+    rows, unit = await _active_normative_rows(
+        db,
+        unit,
+        department_id=department_id,
+        warehouse_code=warehouse_code,
+    )
+    buckets: dict[UUID | None, _DepartmentBucket] = {}
     for (
         quantity,
         source_unit,
+        row_warehouse_code,
+        warehouse_name,
         weight_kg,
         _client_id,
         _code,
         _name,
         _inn,
-        department_id,
+        row_department_id,
         department_name,
     ) in rows:
         mass = to_mass(quantity, source_unit, weight_kg or ZERO, unit)
         bucket = buckets.setdefault(
-            department_id,
-            {
-                "name": department_name or NO_DEPARTMENT,
-                "total": ZERO,
-            },
+            row_department_id,
+            _DepartmentBucket(department_name or NO_DEPARTMENT),
         )
-        bucket["total"] = Decimal(str(bucket["total"])) + mass
-    items = [
-        NzByDepartmentItem(
-            department_id=department_id,
-            department_name=str(bucket["name"]),
-            nz_quantity=_quantize_mass(Decimal(str(bucket["total"])), unit),
+        slot = bucket.warehouses.setdefault(
+            row_warehouse_code,
+            _WarehouseSlot(str(warehouse_name)),
         )
-        for department_id, bucket in buckets.items()
-    ]
-    items.sort(key=lambda item: item.nz_quantity, reverse=True)
+        slot.total += mass
+    items: list[NzByDepartmentItem] = []
+    for row_department_id, bucket in buckets.items():
+        warehouse_items = [
+            NzByDepartmentWarehouse(
+                warehouse_code=code,
+                warehouse_name=slot.name,
+                nz_quantity=_quantize_mass(slot.total, unit),
+            )
+            for code, slot in bucket.warehouses.items()
+            if slot.total > 0
+        ]
+        warehouse_items.sort(key=lambda item: item.nz_quantity, reverse=True)
+        if not warehouse_items:
+            continue
+        items.append(
+            NzByDepartmentItem(
+                department_id=row_department_id,
+                department_name=bucket.name,
+                warehouses=warehouse_items,
+            )
+        )
+    items.sort(key=_department_total, reverse=True)
     return NzByDepartmentData(unit=unit, items=items)
 
 
@@ -789,18 +837,26 @@ async def get_top_clients(
     unit: MassUnit = "т",
     limit: int = 10,
     department_id: UUID | None = None,
+    warehouse_code: int | None = None,
 ) -> TopClientsData:
-    rows, unit = await _active_normative_rows(db, unit, department_id=department_id)
+    rows, unit = await _active_normative_rows(
+        db,
+        unit,
+        department_id=department_id,
+        warehouse_code=warehouse_code,
+    )
     buckets: dict[UUID, dict[str, object]] = {}
     for (
         quantity,
         source_unit,
+        _warehouse_code,
+        _warehouse_name,
         weight_kg,
         client_id,
         client_code,
         client_name,
         inn,
-        _department_id,
+        _row_department_id,
         department_name,
     ) in rows:
         mass = to_mass(quantity, source_unit, weight_kg or ZERO, unit)
@@ -816,10 +872,16 @@ async def get_top_clients(
         )
         bucket["total"] = Decimal(str(bucket["total"])) + mass
     ranked = sorted(
-        buckets.items(),
+        (
+            (client_id, bucket)
+            for client_id, bucket in buckets.items()
+            if Decimal(str(bucket["total"])) > 0
+        ),
         key=lambda item: Decimal(str(item[1]["total"])),
         reverse=True,
     )
+    visible = ranked[:limit]
+    hidden = ranked[limit:]
     items = [
         TopClientItem(
             client_id=client_id,
@@ -832,8 +894,20 @@ async def get_top_clients(
                 else None
             ),
             nz_quantity=_quantize_mass(Decimal(str(bucket["total"])), unit),
+            is_other=False,
         )
-        for client_id, bucket in ranked
-        if Decimal(str(bucket["total"])) > 0
-    ][:limit]
+        for client_id, bucket in visible
+    ]
+    others_total = sum(
+        (Decimal(str(bucket["total"])) for _client_id, bucket in hidden),
+        ZERO,
+    )
+    if others_total > 0:
+        items.append(
+            TopClientItem(
+                client_name=OTHERS_LABEL,
+                nz_quantity=_quantize_mass(others_total, unit),
+                is_other=True,
+            )
+        )
     return TopClientsData(unit=unit, items=items)

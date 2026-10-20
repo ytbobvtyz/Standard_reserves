@@ -94,10 +94,16 @@ class WarehouseCoverageData(BaseModel):
     warehouses: list[WarehouseCoverageItem]
 
 
+class NzByDepartmentWarehouse(BaseModel):
+    warehouse_code: int
+    warehouse_name: str
+    nz_quantity: DecimalNumber
+
+
 class NzByDepartmentItem(BaseModel):
     department_id: UUID | None = None
     department_name: str
-    nz_quantity: DecimalNumber
+    warehouses: list[NzByDepartmentWarehouse]
 
 
 class NzByDepartmentData(BaseModel):
@@ -106,12 +112,13 @@ class NzByDepartmentData(BaseModel):
 
 
 class TopClientItem(BaseModel):
-    client_id: UUID
-    client_code: int
+    client_id: UUID | None = None
+    client_code: int | None = None
     client_name: str
-    inn: str
+    inn: str | None = None
     department_name: str | None = None
     nz_quantity: DecimalNumber
+    is_other: bool = False
 
 
 class TopClientsData(BaseModel):

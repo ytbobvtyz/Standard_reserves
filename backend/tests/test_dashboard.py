@@ -655,3 +655,159 @@ async def test_dashboard_summary_department_filter_and_coverage(
             )
             await session.execute(delete(Product).where(Product.code == product_code))
             await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_dashboard_charts_filters_stack_and_others(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    product_code = 29131
+    sales_id = uuid4()
+    planning_id = uuid4()
+    client_ids = [uuid4() for _ in range(6)]
+    quantities = [
+        (client_ids[0], sales_id, catalog["warehouse_code"], Decimal("3")),
+        (client_ids[1], sales_id, catalog["warehouse_code_2"], Decimal("2.5")),
+        (client_ids[2], sales_id, catalog["warehouse_code"], Decimal("1.2")),
+        (client_ids[3], sales_id, catalog["warehouse_code"], Decimal("1.1")),
+        (client_ids[4], sales_id, catalog["warehouse_code_2"], Decimal("1")),
+        (client_ids[5], planning_id, catalog["warehouse_code"], Decimal("0.4")),
+    ]
+    token = await login_token(client, logistics_user)
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            delete(Normative).where(Normative.product_code == product_code)
+        )
+        await session.execute(delete(Product).where(Product.code == product_code))
+        await session.commit()
+    async with AsyncSessionLocal() as session:
+        session.add(
+            Department(
+                id=sales_id,
+                name=f"График продажи {sales_id.hex[:8]}",
+                is_active=True,
+            )
+        )
+        session.add(
+            Department(
+                id=planning_id,
+                name=f"График план {planning_id.hex[:8]}",
+                is_active=True,
+            )
+        )
+        session.add(
+            Product(
+                code=product_code,
+                name="График дашборда",
+                category="A",
+                plant_id=catalog["plant_code"],
+                weight_kg=Decimal("1"),
+                is_active=True,
+            )
+        )
+        for index, client_id in enumerate(client_ids):
+            session.add(
+                Client(
+                    id=client_id,
+                    client_code=8_811_000_000 + index,
+                    inn=f"{8811000000 + index:010d}",
+                    name=f"График клиент {index}",
+                    department_id=quantities[index][1],
+                    is_active=True,
+                    is_system=False,
+                )
+            )
+        for client_id, _department, warehouse, quantity in quantities:
+            session.add(
+                Normative(
+                    product_code=product_code,
+                    warehouse_code=warehouse,
+                    quantity=quantity,
+                    unit="т",
+                    client_name="График",
+                    client_id=client_id,
+                    expiry_date=date.today() + timedelta(days=40),
+                    category="A",
+                )
+            )
+        await session.commit()
+
+    try:
+        headers = auth_header(token)
+        stacked = await client.get(
+            "/api/v1/dashboard/nz-by-department",
+            headers=headers,
+            params={"department_id": str(sales_id), "unit": "т"},
+        )
+        assert stacked.status_code == 200, stacked.text
+        items = stacked.json()["data"]["items"]
+        assert len(items) == 1
+        assert items[0]["department_id"] == str(sales_id)
+        by_warehouse = {
+            row["warehouse_code"]: Decimal(str(row["nz_quantity"]))
+            for row in items[0]["warehouses"]
+        }
+        assert by_warehouse[catalog["warehouse_code"]] == Decimal("5.3")
+        assert by_warehouse[catalog["warehouse_code_2"]] == Decimal("3.5")
+
+        one_warehouse = await client.get(
+            "/api/v1/dashboard/nz-by-department",
+            headers=headers,
+            params={
+                "department_id": str(sales_id),
+                "warehouse_code": catalog["warehouse_code_2"],
+            },
+        )
+        assert one_warehouse.status_code == 200, one_warehouse.text
+        warehouses = one_warehouse.json()["data"]["items"][0]["warehouses"]
+        assert [row["warehouse_code"] for row in warehouses] == [
+            catalog["warehouse_code_2"]
+        ]
+
+        top = await client.get(
+            "/api/v1/dashboard/top-clients",
+            headers=headers,
+            params={"department_id": str(sales_id), "limit": 2, "unit": "т"},
+        )
+        assert top.status_code == 200, top.text
+        clients = top.json()["data"]["items"]
+        assert [row["client_name"] for row in clients[:2]] == [
+            "График клиент 0",
+            "График клиент 1",
+        ]
+        assert clients[-1]["is_other"] is True
+        assert clients[-1]["client_name"] == "Остальные"
+        assert Decimal(str(clients[-1]["nz_quantity"])) == Decimal("3.3")
+        assert Decimal(str(clients[-1]["nz_quantity"])) > Decimal(
+            str(clients[0]["nz_quantity"])
+        )
+
+        today = date.today().isoformat()
+        trend = await client.get(
+            "/api/v1/dashboard/normative-trend",
+            headers=headers,
+            params={
+                "group_by": "day",
+                "date_from": today,
+                "date_to": today,
+                "client_id": str(client_ids[1]),
+                "product_code": product_code,
+            },
+        )
+        assert trend.status_code == 200, trend.text
+        series = trend.json()["data"]["series"]
+        assert len(series) == 1
+        assert Decimal(str(series[0]["points"][0]["total_normative"])) == Decimal("2.5")
+    finally:
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                delete(Normative).where(Normative.product_code == product_code)
+            )
+            await session.execute(delete(Client).where(Client.id.in_(client_ids)))
+            await session.execute(
+                delete(Department).where(Department.id.in_([sales_id, planning_id]))
+            )
+            await session.execute(delete(Product).where(Product.code == product_code))
+            await session.commit()

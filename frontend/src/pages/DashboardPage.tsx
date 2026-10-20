@@ -17,6 +17,8 @@ import { useNavigate } from 'react-router-dom'
 import { dashboardApi } from '../api/dashboard'
 import { referencesApi } from '../api/references'
 import { getApiErrorMessage } from '../api/client'
+import { ClientAutocomplete } from '../components/clients/ClientAutocomplete'
+import { ProductAutocomplete } from '../components/requests/ProductAutocomplete'
 import type {
   DashboardExceptionItem,
   DashboardGroupBy,
@@ -27,7 +29,6 @@ import type {
   ExpiryCalendarData,
   NzByDepartmentData,
   ObjectListItem,
-  ProductListItem,
   TopClientsData,
   WarehouseCoverageData,
 } from '../api/types'
@@ -53,10 +54,10 @@ export function DashboardPage() {
   const [calendar, setCalendar] = useState<ExpiryCalendarData | null>(null)
   const [nzByDepartment, setNzByDepartment] = useState<NzByDepartmentData | null>(null)
   const [topClients, setTopClients] = useState<TopClientsData | null>(null)
-  const [products, setProducts] = useState<ProductListItem[]>([])
   const [warehouses, setWarehouses] = useState<ObjectListItem[]>([])
   const [departments, setDepartments] = useState<DepartmentListItem[]>([])
   const [productCode, setProductCode] = useState<number | undefined>()
+  const [clientId, setClientId] = useState<string | undefined>()
   const [warehouseCode, setWarehouseCode] = useState<number | undefined>()
   const [departmentId, setDepartmentId] = useState<string | undefined>()
   const [groupBy, setGroupBy] = useState<DashboardGroupBy>('week')
@@ -67,12 +68,10 @@ export function DashboardPage() {
   const [error, setError] = useState<string | null>(null)
 
   const loadFilters = useCallback(async () => {
-    const [productsResp, objectsResp, departmentsResp] = await Promise.all([
-      referencesApi.getProducts({ is_active: true, limit: 200 }),
+    const [objectsResp, departmentsResp] = await Promise.all([
       referencesApi.getObjects({ type: 'warehouse', is_active: true, limit: 200 }),
       referencesApi.getDepartments({ has_normatives: true }),
     ])
-    setProducts(productsResp.data.data)
     setWarehouses(objectsResp.data.data)
     setDepartments(departmentsResp.data.data)
   }, [])
@@ -80,9 +79,10 @@ export function DashboardPage() {
   const loadDashboard = useCallback(async () => {
     setLoading(true)
     setError(null)
-    const warehouse = warehouseCode ? { warehouse_code: warehouseCode } : {}
-    const department = departmentId ? { department_id: departmentId } : {}
-    const scope = { ...warehouse, ...department }
+    const scope = {
+      ...(warehouseCode ? { warehouse_code: warehouseCode } : {}),
+      ...(departmentId ? { department_id: departmentId } : {}),
+    }
     try {
       const [
         summaryResp,
@@ -96,6 +96,7 @@ export function DashboardPage() {
         dashboardApi.getSummary({ unit, ...scope }),
         dashboardApi.getNormativeTrend({
           product_code: productCode,
+          client_id: clientId,
           group_by: groupBy,
           date_from: dateFrom,
           date_to: dateTo,
@@ -109,8 +110,8 @@ export function DashboardPage() {
         }),
         dashboardApi.getWarehouseCoverage({ unit, ...scope }),
         dashboardApi.getExpiryCalendar({ unit, ...scope }),
-        dashboardApi.getNzByDepartment({ unit, ...department }),
-        dashboardApi.getTopClients({ unit, limit: 10, ...department }),
+        dashboardApi.getNzByDepartment({ unit, ...scope }),
+        dashboardApi.getTopClients({ unit, limit: 10, ...scope }),
       ])
       setSummary(summaryResp.data.data)
       setTrend(trendResp.data.data)
@@ -127,7 +128,7 @@ export function DashboardPage() {
     } finally {
       setLoading(false)
     }
-  }, [productCode, warehouseCode, departmentId, groupBy, dateFrom, dateTo, unit])
+  }, [productCode, clientId, warehouseCode, departmentId, groupBy, dateFrom, dateTo, unit])
 
   useEffect(() => {
     void loadFilters()
@@ -229,22 +230,24 @@ export function DashboardPage() {
             title="Динамика нормативов"
             extra={
               <Space wrap>
-                <Select
-                  allowClear
-                  showSearch
-                  optionFilterProp="label"
-                  placeholder="Артикул"
-                  style={{ minWidth: 180 }}
-                  value={productCode}
-                  onChange={(value) => {
-                    setSelectedPeriod(null)
-                    setProductCode(value)
-                  }}
-                  options={products.map((item) => ({
-                    value: item.code,
-                    label: `${item.code} · ${item.name}`,
-                  }))}
-                />
+                <div data-testid="product-filter" style={{ minWidth: 240 }}>
+                  <ProductAutocomplete
+                    value={productCode}
+                    onChange={(code) => {
+                      setSelectedPeriod(null)
+                      setProductCode(code)
+                    }}
+                  />
+                </div>
+                <div data-testid="client-filter" style={{ minWidth: 260 }}>
+                  <ClientAutocomplete
+                    value={clientId}
+                    onChange={(id) => {
+                      setSelectedPeriod(null)
+                      setClientId(id)
+                    }}
+                  />
+                </div>
                 <DatePicker
                   placeholder="От"
                   allowClear

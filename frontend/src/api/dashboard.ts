@@ -43,12 +43,16 @@ export const dashboardApi = {
     department_id?: string
   }) => api.get<ApiSuccess<ExpiryCalendarData>>('/dashboard/expiry-calendar', { params }),
 
-  getNzByDepartment: (params?: { unit?: DashboardMassUnit; department_id?: string }) =>
-    api.get<ApiSuccess<NzByDepartmentData>>('/dashboard/nz-by-department', { params }),
+  getNzByDepartment: (params?: {
+    unit?: DashboardMassUnit
+    department_id?: string
+    warehouse_code?: number
+  }) => api.get<ApiSuccess<NzByDepartmentData>>('/dashboard/nz-by-department', { params }),
 
   getTopClients: (params?: {
     unit?: DashboardMassUnit
     limit?: number
     department_id?: string
+    warehouse_code?: number
   }) => api.get<ApiSuccess<TopClientsData>>('/dashboard/top-clients', { params }),
 }

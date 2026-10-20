@@ -867,12 +867,19 @@ export interface DashboardTrendParams {
   group_by?: DashboardGroupBy
   period?: DashboardGroupBy
   unit?: DashboardMassUnit
+  client_id?: string
+}
+
+export interface NzByDepartmentWarehouse {
+  warehouse_code: number
+  warehouse_name: string
+  nz_quantity: number
 }
 
 export interface NzByDepartmentItem {
   department_id?: string | null
   department_name: string
-  nz_quantity: number
+  warehouses: NzByDepartmentWarehouse[]
 }
 
 export interface NzByDepartmentData {
@@ -881,12 +888,13 @@ export interface NzByDepartmentData {
 }
 
 export interface TopClientItem {
-  client_id: string
-  client_code: number
+  client_id?: string | null
+  client_code?: number | null
   client_name: string
-  inn: string
+  inn?: string | null
   department_name?: string | null
   nz_quantity: number
+  is_other?: boolean
 }
 
 export interface TopClientsData {

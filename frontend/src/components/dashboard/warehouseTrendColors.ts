@@ -16,12 +16,37 @@ const PALE_WAREHOUSE_COLORS = [
   '#b7eb8f',
 ] as const
 
-export interface WarehouseLegendEntry {
+export interface WarehouseVolume {
   warehouseCode: number
   warehouseName: string
   volume: number
+}
+
+export interface WarehouseLegendEntry extends WarehouseVolume {
   rank: number
   color: string
+}
+
+export function colorForRank(rank: number): string {
+  if (rank < TOP_WAREHOUSE_COLORS.length) {
+    return TOP_WAREHOUSE_COLORS[rank]
+  }
+  const paleIndex = (rank - TOP_WAREHOUSE_COLORS.length) % PALE_WAREHOUSE_COLORS.length
+  return PALE_WAREHOUSE_COLORS[paleIndex]
+}
+
+export function rankWarehouseVolumes(items: WarehouseVolume[]): WarehouseLegendEntry[] {
+  const ranked = [...items].sort((left, right) => {
+    if (right.volume !== left.volume) {
+      return right.volume - left.volume
+    }
+    return left.warehouseName.localeCompare(right.warehouseName, 'ru')
+  })
+  return ranked.map((item, index) => ({
+    ...item,
+    rank: index,
+    color: colorForRank(index),
+  }))
 }
 
 function periodOnCurrentDate(periods: string[], today: Date): string | undefined {
@@ -60,28 +85,13 @@ export function rankWarehouses(
       names.set(item.warehouse_code, item.warehouse_name)
     }
   }
-  const ranked = [...volumes.entries()]
-    .map(([warehouseCode, volume]) => ({
+  return rankWarehouseVolumes(
+    [...volumes.entries()].map(([warehouseCode, volume]) => ({
       warehouseCode,
       warehouseName: names.get(warehouseCode) ?? String(warehouseCode),
       volume,
-    }))
-    .sort((left, right) => {
-      if (right.volume !== left.volume) {
-        return right.volume - left.volume
-      }
-      return left.warehouseName.localeCompare(right.warehouseName, 'ru')
-    })
-  return ranked.map((item, index) => ({
-    ...item,
-    rank: index,
-    color:
-      index < TOP_WAREHOUSE_COLORS.length
-        ? TOP_WAREHOUSE_COLORS[index]
-        : PALE_WAREHOUSE_COLORS[
-            (index - TOP_WAREHOUSE_COLORS.length) % PALE_WAREHOUSE_COLORS.length
-          ],
-  }))
+    })),
+  )
 }
 
 export function colorForSeries(

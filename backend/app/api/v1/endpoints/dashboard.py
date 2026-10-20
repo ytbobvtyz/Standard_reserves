@@ -49,6 +49,7 @@ async def get_normative_trend(
     ),
     unit: MassUnit = Query(default="т"),
     department_id: UUID | None = Query(default=None),
+    client_id: UUID | None = Query(default=None),
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[NormativeTrendData]:
@@ -61,6 +62,7 @@ async def get_normative_trend(
         group_by=period or group_by,
         unit=unit,
         department_id=department_id,
+        client_id=client_id,
     )
     return SuccessResponse(data=data)
 
@@ -136,11 +138,15 @@ async def get_expiry_calendar(
 async def get_nz_by_department(
     unit: MassUnit = Query(default="т"),
     department_id: UUID | None = Query(default=None),
+    warehouse_code: int | None = Query(default=None),
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[NzByDepartmentData]:
     data = await service.get_nz_by_department(
-        db, unit=unit, department_id=department_id
+        db,
+        unit=unit,
+        department_id=department_id,
+        warehouse_code=warehouse_code,
     )
     return SuccessResponse(data=data)
 
@@ -150,10 +156,15 @@ async def get_top_clients(
     unit: MassUnit = Query(default="т"),
     limit: int = Query(default=10, ge=1, le=50),
     department_id: UUID | None = Query(default=None),
+    warehouse_code: int | None = Query(default=None),
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[TopClientsData]:
     data = await service.get_top_clients(
-        db, unit=unit, limit=limit, department_id=department_id
+        db,
+        unit=unit,
+        limit=limit,
+        department_id=department_id,
+        warehouse_code=warehouse_code,
     )
     return SuccessResponse(data=data)
