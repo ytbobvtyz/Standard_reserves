@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import APIError
 from app.models.available_balance import AvailableBalance
+from app.models.client import Client
 from app.models.normative import Normative
 from app.models.object import Object
 from app.models.product import Product
@@ -381,6 +382,7 @@ async def collect_deficit_rows(
     filter_mode: FilterMode = "with_normatives",
     unit: Unit = "шт",
     product_codes: list[int] | None = None,
+    department_id: UUID | None = None,
 ) -> list[DeficitRow]:
     coeffs = await load_coefficient_set(db)
     if product_codes:
@@ -415,8 +417,10 @@ async def collect_deficit_rows(
         conditions.append(Normative.warehouse_code.in_(warehouse_codes))
     if product_codes:
         conditions.append(Normative.product_code.in_(product_codes))
+    if department_id is not None:
+        conditions.append(Client.department_id == department_id)
 
-    result = await db.execute(
+    normative_stmt = (
         select(Normative)
         .options(
             selectinload(Normative.product).selectinload(Product.plant),
@@ -424,9 +428,11 @@ async def collect_deficit_rows(
         )
         .join(Product, Product.code == Normative.product_code)
         .join(Object, Object.code == Normative.warehouse_code)
+        .join(Client, Client.id == Normative.client_id)
         .where(*conditions)
         .order_by(Normative.warehouse_code, Normative.product_code)
     )
+    result = await db.execute(normative_stmt)
     normatives = list(result.scalars().unique().all())
 
     aggregated: dict[tuple[int, int], dict] = {}

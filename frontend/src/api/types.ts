@@ -802,9 +802,13 @@ export type DashboardExceptionStatus = 'critical' | 'attention'
 
 export interface DashboardSummary {
   active_count: number
+  active_quantity: number
   deficit_quantity: number
   coverage_pct: number
+  coverage_with_transfers: number
+  coverage_available_only: number
   expiring_30d: number
+  expiring_30d_quantity: number
   avg_remaining_days: number | null
   unit: DashboardMassUnit
 }
@@ -836,6 +840,7 @@ export interface DashboardTrendData {
 export interface DashboardTrendParams {
   product_code?: number
   warehouse_code?: number
+  department_id?: string
   date_from?: string
   date_to?: string
   group_by?: DashboardGroupBy
@@ -885,6 +890,7 @@ export interface DashboardExceptionItem {
 
 export interface DashboardExceptionParams {
   warehouse_code?: number
+  department_id?: string
   product_code?: number
   page?: number
   limit?: number

@@ -1,77 +1,97 @@
 import { Card, Col, Row, Statistic, Tooltip, Typography } from 'antd'
 import { QuestionCircleOutlined } from '@ant-design/icons'
 import type { DashboardMassUnit } from '../../api/types'
-import { COVERAGE_HINT, formatMass } from './formatMass'
+import {
+  COVERAGE_AVAILABLE_HINT,
+  COVERAGE_WITH_TRANSFERS_HINT,
+  formatKpiMass,
+} from './formatMass'
 
 interface NorthStarRowProps {
-  activeCount: number
+  activeQuantity: number
   deficitQuantity: number
-  coveragePct: number
-  expiring30d: number
-  avgRemainingDays: number | null
+  coverageWithTransfers: number
+  coverageAvailableOnly: number
+  expiring30dQuantity: number
   unit: DashboardMassUnit
 }
 
+function MassStatistic({
+  title,
+  value,
+  unit,
+}: {
+  title: string
+  value: number
+  unit: DashboardMassUnit
+}) {
+  return (
+    <Statistic title={title} value={formatKpiMass(value)} suffix={unit} />
+  )
+}
+
 export function NorthStarRow({
-  activeCount,
+  activeQuantity,
   deficitQuantity,
-  coveragePct,
-  expiring30d,
-  avgRemainingDays,
+  coverageWithTransfers,
+  coverageAvailableOnly,
+  expiring30dQuantity,
   unit,
 }: NorthStarRowProps) {
   return (
     <Row gutter={[16, 16]}>
-      <Col xs={24} sm={12} lg={4}>
+      <Col flex="1 1 200px">
         <Card>
-          <Statistic title="Активных НЗ" value={activeCount} />
+          <MassStatistic title="Активных НЗ" value={activeQuantity} unit={unit} />
         </Card>
       </Col>
-      <Col xs={24} sm={12} lg={5}>
+      <Col flex="1 1 200px">
         <Card>
-          <Statistic
-            title="Дефицит"
-            value={formatMass(deficitQuantity, unit)}
-            suffix={unit}
-          />
+          <MassStatistic title="Дефицит" value={deficitQuantity} unit={unit} />
         </Card>
       </Col>
-      <Col xs={24} sm={12} lg={5}>
+      <Col flex="1 1 220px">
         <Card>
           <Statistic
             title={
               <span>
-                Покрытие{' '}
-                <Tooltip title={COVERAGE_HINT}>
-                  <QuestionCircleOutlined aria-label="Что такое покрытие" />
+                Покрытие с учётом перемещений{' '}
+                <Tooltip title={COVERAGE_WITH_TRANSFERS_HINT}>
+                  <QuestionCircleOutlined aria-label="Что такое покрытие с учётом перемещений" />
                 </Tooltip>
               </span>
             }
-            value={coveragePct}
+            value={coverageWithTransfers}
             suffix="%"
-            precision={0}
+            precision={2}
           />
         </Card>
       </Col>
-      <Col xs={24} sm={12} lg={5}>
-        <Card>
-          <Statistic title="Истекают 30д" value={expiring30d} />
-        </Card>
-      </Col>
-      <Col xs={24} sm={12} lg={5}>
+      <Col flex="1 1 220px">
         <Card>
           <Statistic
-            title="Средний срок"
-            value={avgRemainingDays ?? 0}
-            suffix="дней"
-            precision={0}
-            formatter={avgRemainingDays == null ? () => '—' : undefined}
+            title={
+              <span>
+                Покрытие доступным стоком{' '}
+                <Tooltip title={COVERAGE_AVAILABLE_HINT}>
+                  <QuestionCircleOutlined aria-label="Что такое покрытие доступным стоком" />
+                </Tooltip>
+              </span>
+            }
+            value={coverageAvailableOnly}
+            suffix="%"
+            precision={2}
           />
+        </Card>
+      </Col>
+      <Col flex="1 1 200px">
+        <Card>
+          <MassStatistic title="Истекают 30д" value={expiring30dQuantity} unit={unit} />
         </Card>
       </Col>
       <Col span={24}>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-          {COVERAGE_HINT}
+          {COVERAGE_WITH_TRANSFERS_HINT} {COVERAGE_AVAILABLE_HINT}
         </Typography.Paragraph>
       </Col>
     </Row>

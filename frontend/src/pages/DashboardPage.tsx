@@ -23,6 +23,7 @@ import type {
   DashboardMassUnit,
   DashboardSummary,
   DashboardTrendData,
+  DepartmentListItem,
   ExpiryCalendarData,
   NzByDepartmentData,
   ObjectListItem,
@@ -54,8 +55,10 @@ export function DashboardPage() {
   const [topClients, setTopClients] = useState<TopClientsData | null>(null)
   const [products, setProducts] = useState<ProductListItem[]>([])
   const [warehouses, setWarehouses] = useState<ObjectListItem[]>([])
+  const [departments, setDepartments] = useState<DepartmentListItem[]>([])
   const [productCode, setProductCode] = useState<number | undefined>()
   const [warehouseCode, setWarehouseCode] = useState<number | undefined>()
+  const [departmentId, setDepartmentId] = useState<string | undefined>()
   const [groupBy, setGroupBy] = useState<DashboardGroupBy>('week')
   const [dateFrom, setDateFrom] = useState<string | undefined>()
   const [dateTo, setDateTo] = useState<string | undefined>()
@@ -64,18 +67,22 @@ export function DashboardPage() {
   const [error, setError] = useState<string | null>(null)
 
   const loadFilters = useCallback(async () => {
-    const [productsResp, objectsResp] = await Promise.all([
+    const [productsResp, objectsResp, departmentsResp] = await Promise.all([
       referencesApi.getProducts({ is_active: true, limit: 200 }),
       referencesApi.getObjects({ type: 'warehouse', is_active: true, limit: 200 }),
+      referencesApi.getDepartments({ has_normatives: true }),
     ])
     setProducts(productsResp.data.data)
     setWarehouses(objectsResp.data.data)
+    setDepartments(departmentsResp.data.data)
   }, [])
 
   const loadDashboard = useCallback(async () => {
     setLoading(true)
     setError(null)
     const warehouse = warehouseCode ? { warehouse_code: warehouseCode } : {}
+    const department = departmentId ? { department_id: departmentId } : {}
+    const scope = { ...warehouse, ...department }
     try {
       const [
         summaryResp,
@@ -86,24 +93,24 @@ export function DashboardPage() {
         nzResp,
         topResp,
       ] = await Promise.all([
-        dashboardApi.getSummary({ unit, ...warehouse }),
+        dashboardApi.getSummary({ unit, ...scope }),
         dashboardApi.getNormativeTrend({
           product_code: productCode,
           group_by: groupBy,
           date_from: dateFrom,
           date_to: dateTo,
           unit,
-          ...warehouse,
+          ...scope,
         }),
         dashboardApi.getExceptions({
           limit: EXCEPTIONS_LIMIT,
           unit,
-          ...warehouse,
+          ...scope,
         }),
-        dashboardApi.getWarehouseCoverage({ unit, ...warehouse }),
-        dashboardApi.getExpiryCalendar({ unit, ...warehouse }),
-        dashboardApi.getNzByDepartment({ unit }),
-        dashboardApi.getTopClients({ unit, limit: 10 }),
+        dashboardApi.getWarehouseCoverage({ unit, ...scope }),
+        dashboardApi.getExpiryCalendar({ unit, ...scope }),
+        dashboardApi.getNzByDepartment({ unit, ...department }),
+        dashboardApi.getTopClients({ unit, limit: 10, ...department }),
       ])
       setSummary(summaryResp.data.data)
       setTrend(trendResp.data.data)
@@ -120,7 +127,7 @@ export function DashboardPage() {
     } finally {
       setLoading(false)
     }
-  }, [productCode, warehouseCode, groupBy, dateFrom, dateTo, unit])
+  }, [productCode, warehouseCode, departmentId, groupBy, dateFrom, dateTo, unit])
 
   useEffect(() => {
     void loadFilters()
@@ -176,6 +183,24 @@ export function DashboardPage() {
               }))}
             />
           </div>
+          <div data-testid="department-filter">
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              placeholder="Все подразделения"
+              style={{ minWidth: 240 }}
+              value={departmentId}
+              onChange={(value) => {
+                setSelectedPeriod(null)
+                setDepartmentId(value)
+              }}
+              options={departments.map((item) => ({
+                value: item.id,
+                label: item.name,
+              }))}
+            />
+          </div>
           <Radio.Group
             optionType="button"
             buttonStyle="solid"
@@ -192,11 +217,11 @@ export function DashboardPage() {
       <Spin spinning={loading}>
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
           <NorthStarRow
-            activeCount={summary?.active_count ?? 0}
+            activeQuantity={summary?.active_quantity ?? 0}
             deficitQuantity={summary?.deficit_quantity ?? 0}
-            coveragePct={summary?.coverage_pct ?? 0}
-            expiring30d={summary?.expiring_30d ?? 0}
-            avgRemainingDays={summary?.avg_remaining_days ?? null}
+            coverageWithTransfers={summary?.coverage_with_transfers ?? 0}
+            coverageAvailableOnly={summary?.coverage_available_only ?? 0}
+            expiring30dQuantity={summary?.expiring_30d_quantity ?? 0}
             unit={massUnit}
           />
 

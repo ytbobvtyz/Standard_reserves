@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql import text
 
+from app.models.available_balance import AvailableBalance
 from app.models.client import Client
 from app.models.department import Department
 from app.models.normative import Normative
@@ -45,6 +46,21 @@ OTHERS_LABEL = "Остальные"
 
 def _quantize_pct(value: Decimal) -> Decimal:
     return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _round_kpi_mass(value: Decimal) -> Decimal:
+    return value.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+
+
+def _coverage_ratio(total: Decimal, deficit: Decimal) -> Decimal:
+    if total == 0:
+        return ZERO
+    value = (total - deficit) / total * HUNDRED
+    if value <= 0:
+        return ZERO
+    if value >= HUNDRED:
+        return HUNDRED
+    return _quantize_pct(value)
 
 
 def _quantize_mass(value: Decimal, unit: MassUnit) -> Decimal:
@@ -151,12 +167,96 @@ def _validity_start(created_at: datetime, valid_from: date | None) -> date:
     return _to_date(created_at)
 
 
+async def _kpi_position_masses(
+    db: AsyncSession,
+    *,
+    unit: MassUnit,
+    warehouse_code: int | None,
+    department_id: UUID | None,
+) -> tuple[Decimal, Decimal, Decimal, Decimal]:
+    """Норматив, дефицит к плану, дефицит к доступному и истекающие 30 дней."""
+    today = date.today()
+    horizon = today + timedelta(days=30)
+    conditions = _active_conditions()
+    if warehouse_code is not None:
+        conditions.append(Normative.warehouse_code == warehouse_code)
+    if department_id is not None:
+        conditions.append(Client.department_id == department_id)
+    rows = (
+        await db.execute(
+            select(
+                Normative.warehouse_code,
+                Normative.product_code,
+                Normative.quantity,
+                Normative.unit,
+                Normative.expiry_date,
+                Product.weight_kg,
+            )
+            .join(Product, Product.code == Normative.product_code)
+            .join(Client, Client.id == Normative.client_id)
+            .where(*conditions)
+        )
+    ).all()
+    total = ZERO
+    expiring = ZERO
+    positions: dict[tuple[int, int], dict[str, Decimal]] = {}
+    for warehouse, product, quantity, source_unit, expiry, weight in rows:
+        weight_kg = weight or ZERO
+        mass = to_mass(quantity, source_unit, weight_kg, unit)
+        total += mass
+        if expiry <= horizon:
+            expiring += mass
+        slot = positions.setdefault(
+            (warehouse, product),
+            {"norm": ZERO, "weight": weight_kg},
+        )
+        slot["norm"] += mass
+        slot["weight"] = weight_kg
+    balances: dict[tuple[int, int], AvailableBalance] = {}
+    if positions:
+        balances = {
+            (item.warehouse_code, item.product_code): item
+            for item in (
+                await db.execute(
+                    select(AvailableBalance).where(
+                        tuple_(
+                            AvailableBalance.warehouse_code,
+                            AvailableBalance.product_code,
+                        ).in_(list(positions))
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        }
+    deficit_transfers = ZERO
+    deficit_available = ZERO
+    for key, slot in positions.items():
+        balance = balances.get(key)
+        weight_kg = slot["weight"]
+        if balance is None:
+            plan_mass = ZERO
+            available_mass = ZERO
+        else:
+            plan_mass = to_mass(balance.plan, balance.unit, weight_kg, unit)
+            available_mass = to_mass(balance.available, balance.unit, weight_kg, unit)
+        deficit_transfers += max(ZERO, slot["norm"] - plan_mass)
+        deficit_available += max(ZERO, slot["norm"] - available_mass)
+    return total, deficit_transfers, deficit_available, expiring
+
+
 async def get_summary(
-    db: AsyncSession, *, unit: MassUnit = "т", warehouse_code: int | None = None
+    db: AsyncSession,
+    *,
+    unit: MassUnit = "т",
+    warehouse_code: int | None = None,
+    department_id: UUID | None = None,
 ) -> DashboardNorthStar:
     conditions = _active_conditions()
     if warehouse_code is not None:
         conditions.append(Normative.warehouse_code == warehouse_code)
+    if department_id is not None:
+        conditions.append(Client.department_id == department_id)
     today = date.today()
     horizon = today + timedelta(days=30)
     stats = (
@@ -165,31 +265,31 @@ async def get_summary(
                 func.count(Normative.id),
                 func.avg(Normative.expiry_date - today),
                 func.count(Normative.id).filter(Normative.expiry_date <= horizon),
-            ).where(*conditions)
+            )
+            .select_from(Normative)
+            .join(Client, Client.id == Normative.client_id)
+            .where(*conditions)
         )
     ).one()
     active_count = int(stats[0] or 0)
     avg_days = stats[1]
     expiring_30d = int(stats[2] or 0)
 
-    rows = await collect_deficit_rows(
-        db, filter_mode="with_normatives", warehouse_code=warehouse_code
+    total, deficit_transfers, deficit_available, expiring_mass = (
+        await _kpi_position_masses(
+            db,
+            unit=unit,
+            warehouse_code=warehouse_code,
+            department_id=department_id,
+        )
     )
-    mains = [row for row in rows if not row.hide_group_metrics]
-    requirement = sum((row.requirement for row in mains), ZERO)
-    plan = sum((row.plan for row in mains), ZERO)
-    deficit = sum(
-        (
-            to_mass(row.deficit, "шт", row.weight_kg, unit)
-            for row in mains
-            if row.deficit > 0
-        ),
-        ZERO,
+    active_quantity = _round_kpi_mass(total)
+    deficit_quantity = _round_kpi_mass(deficit_transfers)
+    expiring_quantity = _round_kpi_mass(expiring_mass)
+    coverage_with_transfers = _coverage_ratio(active_quantity, deficit_quantity)
+    coverage_available_only = _coverage_ratio(
+        active_quantity, _round_kpi_mass(deficit_available)
     )
-    if requirement <= 0:
-        coverage = HUNDRED
-    else:
-        coverage = min(HUNDRED, _quantize_pct(plan / requirement * HUNDRED))
     avg_remaining = None
     if avg_days is not None:
         avg_remaining = Decimal(str(avg_days)).quantize(
@@ -197,9 +297,13 @@ async def get_summary(
         )
     return DashboardNorthStar(
         active_count=active_count,
-        deficit_quantity=deficit,
-        coverage_pct=coverage,
+        active_quantity=active_quantity,
+        deficit_quantity=deficit_quantity,
+        coverage_pct=coverage_with_transfers,
+        coverage_with_transfers=coverage_with_transfers,
+        coverage_available_only=coverage_available_only,
         expiring_30d=expiring_30d,
+        expiring_30d_quantity=expiring_quantity,
         avg_remaining_days=avg_remaining,
         unit=unit,
     )
@@ -214,6 +318,7 @@ async def get_normative_trend(
     date_to: date | None,
     group_by: GroupBy,
     unit: MassUnit = "т",
+    department_id: UUID | None = None,
 ) -> NormativeTrendData:
     today = date.today()
     if date_from is None or date_to is None:
@@ -245,6 +350,8 @@ async def get_normative_trend(
         conditions.append(Normative.product_code == product_code)
     if warehouse_code is not None:
         conditions.append(Normative.warehouse_code == warehouse_code)
+    if department_id is not None:
+        conditions.append(Client.department_id == department_id)
 
     stmt = (
         select(Normative, ProductionRequest.valid_from)
@@ -254,6 +361,7 @@ async def get_normative_trend(
         )
         .join(Product, Product.code == Normative.product_code)
         .join(Object, Object.code == Normative.warehouse_code)
+        .join(Client, Client.id == Normative.client_id)
         .outerjoin(
             ProductionRequestItem,
             ProductionRequestItem.id == Normative.production_request_item_id,
@@ -434,12 +542,14 @@ async def list_exceptions(
     page: int = 1,
     limit: int = 50,
     unit: MassUnit = "т",
+    department_id: UUID | None = None,
 ) -> tuple[list[DashboardExceptionItem], PaginationMeta]:
     rows = await collect_deficit_rows(
         db,
         warehouse_code=warehouse_code,
         product_codes=[product_code] if product_code is not None else None,
         filter_mode="deficit_only",
+        department_id=department_id,
     )
     items: list[DashboardExceptionItem] = []
     keys: list[tuple[int, int]] = []
@@ -479,10 +589,17 @@ async def list_exceptions(
 
 
 async def get_warehouse_coverage(
-    db: AsyncSession, *, unit: MassUnit = "т", warehouse_code: int | None = None
+    db: AsyncSession,
+    *,
+    unit: MassUnit = "т",
+    warehouse_code: int | None = None,
+    department_id: UUID | None = None,
 ) -> WarehouseCoverageData:
     rows = await collect_deficit_rows(
-        db, filter_mode="all", warehouse_code=warehouse_code
+        db,
+        filter_mode="all",
+        warehouse_code=warehouse_code,
+        department_id=department_id,
     )
     buckets: dict[int, dict[str, Decimal | str]] = {}
     for row in rows:
@@ -551,6 +668,7 @@ async def get_expiry_calendar(
     date_to: date | None = None,
     unit: MassUnit = "т",
     warehouse_code: int | None = None,
+    department_id: UUID | None = None,
 ) -> ExpiryCalendarData:
     today = date.today()
     start = date_from or today
@@ -560,6 +678,8 @@ async def get_expiry_calendar(
     conditions = _active_conditions()
     if warehouse_code is not None:
         conditions.append(Normative.warehouse_code == warehouse_code)
+    if department_id is not None:
+        conditions.append(Client.department_id == department_id)
     conditions.extend(
         [
             Normative.expiry_date >= start,
@@ -570,6 +690,7 @@ async def get_expiry_calendar(
         await db.execute(
             select(Normative, Product.weight_kg)
             .join(Product, Product.code == Normative.product_code)
+            .join(Client, Client.id == Normative.client_id)
             .where(*conditions)
         )
     ).all()
@@ -593,7 +714,15 @@ async def get_expiry_calendar(
 NO_DEPARTMENT = "Без управления"
 
 
-async def _active_normative_rows(db: AsyncSession, unit: MassUnit):
+async def _active_normative_rows(
+    db: AsyncSession,
+    unit: MassUnit,
+    *,
+    department_id: UUID | None = None,
+):
+    conditions = _active_conditions()
+    if department_id is not None:
+        conditions.append(Client.department_id == department_id)
     result = await db.execute(
         select(
             Normative.quantity,
@@ -609,15 +738,18 @@ async def _active_normative_rows(db: AsyncSession, unit: MassUnit):
         .join(Product, Product.code == Normative.product_code)
         .join(Client, Client.id == Normative.client_id)
         .outerjoin(Department, Department.id == Client.department_id)
-        .where(*_active_conditions())
+        .where(*conditions)
     )
     return result.all(), unit
 
 
 async def get_nz_by_department(
-    db: AsyncSession, *, unit: MassUnit = "т"
+    db: AsyncSession,
+    *,
+    unit: MassUnit = "т",
+    department_id: UUID | None = None,
 ) -> NzByDepartmentData:
-    rows, unit = await _active_normative_rows(db, unit)
+    rows, unit = await _active_normative_rows(db, unit, department_id=department_id)
     buckets: dict[UUID | None, dict[str, object]] = {}
     for (
         quantity,
@@ -652,9 +784,13 @@ async def get_nz_by_department(
 
 
 async def get_top_clients(
-    db: AsyncSession, *, unit: MassUnit = "т", limit: int = 10
+    db: AsyncSession,
+    *,
+    unit: MassUnit = "т",
+    limit: int = 10,
+    department_id: UUID | None = None,
 ) -> TopClientsData:
-    rows, unit = await _active_normative_rows(db, unit)
+    rows, unit = await _active_normative_rows(db, unit, department_id=department_id)
     buckets: dict[UUID, dict[str, object]] = {}
     for (
         quantity,

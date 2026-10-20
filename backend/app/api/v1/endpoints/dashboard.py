@@ -1,4 +1,5 @@
 from datetime import date
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,10 +27,13 @@ router = APIRouter(prefix="/dashboard", tags=["Дашборд"])
 async def get_summary(
     unit: MassUnit = Query(default="т"),
     warehouse_code: int | None = Query(default=None),
+    department_id: UUID | None = Query(default=None),
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[DashboardNorthStar]:
-    data = await service.get_summary(db, unit=unit, warehouse_code=warehouse_code)
+    data = await service.get_summary(
+        db, unit=unit, warehouse_code=warehouse_code, department_id=department_id
+    )
     return SuccessResponse(data=data)
 
 
@@ -44,6 +48,7 @@ async def get_normative_trend(
         default=None, description="Алиас group_by: day / week / month"
     ),
     unit: MassUnit = Query(default="т"),
+    department_id: UUID | None = Query(default=None),
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[NormativeTrendData]:
@@ -55,6 +60,7 @@ async def get_normative_trend(
         date_to=date_to,
         group_by=period or group_by,
         unit=unit,
+        department_id=department_id,
     )
     return SuccessResponse(data=data)
 
@@ -66,6 +72,7 @@ async def list_exceptions(
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=20, ge=1, le=200),
     unit: MassUnit = Query(default="т"),
+    department_id: UUID | None = Query(default=None),
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> DashboardExceptionsResponse:
@@ -76,6 +83,7 @@ async def list_exceptions(
         page=page,
         limit=limit,
         unit=unit,
+        department_id=department_id,
     )
     return DashboardExceptionsResponse(data=items, meta=meta)
 
@@ -87,11 +95,15 @@ async def list_exceptions(
 async def get_warehouse_coverage(
     unit: MassUnit = Query(default="т"),
     warehouse_code: int | None = Query(default=None),
+    department_id: UUID | None = Query(default=None),
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[WarehouseCoverageData]:
     data = await service.get_warehouse_coverage(
-        db, unit=unit, warehouse_code=warehouse_code
+        db,
+        unit=unit,
+        warehouse_code=warehouse_code,
+        department_id=department_id,
     )
     return SuccessResponse(data=data)
 
@@ -102,6 +114,7 @@ async def get_expiry_calendar(
     date_to: date | None = Query(default=None),
     unit: MassUnit = Query(default="т"),
     warehouse_code: int | None = Query(default=None),
+    department_id: UUID | None = Query(default=None),
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[ExpiryCalendarData]:
@@ -111,6 +124,7 @@ async def get_expiry_calendar(
         date_to=date_to,
         unit=unit,
         warehouse_code=warehouse_code,
+        department_id=department_id,
     )
     return SuccessResponse(data=data)
 
@@ -121,10 +135,13 @@ async def get_expiry_calendar(
 )
 async def get_nz_by_department(
     unit: MassUnit = Query(default="т"),
+    department_id: UUID | None = Query(default=None),
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[NzByDepartmentData]:
-    data = await service.get_nz_by_department(db, unit=unit)
+    data = await service.get_nz_by_department(
+        db, unit=unit, department_id=department_id
+    )
     return SuccessResponse(data=data)
 
 
@@ -132,8 +149,11 @@ async def get_nz_by_department(
 async def get_top_clients(
     unit: MassUnit = Query(default="т"),
     limit: int = Query(default=10, ge=1, le=50),
+    department_id: UUID | None = Query(default=None),
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[TopClientsData]:
-    data = await service.get_top_clients(db, unit=unit, limit=limit)
+    data = await service.get_top_clients(
+        db, unit=unit, limit=limit, department_id=department_id
+    )
     return SuccessResponse(data=data)

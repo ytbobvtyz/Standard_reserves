@@ -13,9 +13,13 @@ ExceptionStatus = Literal["critical", "attention"]
 
 class DashboardNorthStar(BaseModel):
     active_count: int
+    active_quantity: DecimalNumber
     deficit_quantity: DecimalNumber
     coverage_pct: DecimalNumber
+    coverage_with_transfers: DecimalNumber
+    coverage_available_only: DecimalNumber
     expiring_30d: int
+    expiring_30d_quantity: DecimalNumber
     avg_remaining_days: DecimalNumber | None = None
     unit: MassUnit = "т"
 

@@ -106,7 +106,7 @@ export const referencesApi = {
 
   getUsers: () => api.get<ApiSuccess<User[]>>('/references/users'),
 
-  getDepartments: (params?: { is_active?: boolean }) =>
+  getDepartments: (params?: { is_active?: boolean; has_normatives?: boolean }) =>
     api.get<ApiSuccess<DepartmentListItem[]>>('/references/departments', { params }),
 
   getParams: () => api.get<ApiSuccess<SystemParams>>('/params'),

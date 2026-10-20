@@ -19,6 +19,7 @@ const getNzByDepartment = vi.fn()
 const getTopClients = vi.fn()
 const getProducts = vi.fn()
 const getObjects = vi.fn()
+const getDepartments = vi.fn()
 
 vi.mock('../api/dashboard', () => ({
   dashboardApi: {
@@ -36,6 +37,7 @@ vi.mock('../api/references', () => ({
   referencesApi: {
     getProducts: (...args: unknown[]) => getProducts(...args),
     getObjects: (...args: unknown[]) => getObjects(...args),
+    getDepartments: (...args: unknown[]) => getDepartments(...args),
   },
 }))
 
@@ -76,9 +78,13 @@ vi.mock('recharts', () => ({
 
 const summary: DashboardSummary = {
   active_count: 1245,
+  active_quantity: 1.5,
   deficit_quantity: 0.1,
-  coverage_pct: 87,
+  coverage_pct: 93.33,
+  coverage_with_transfers: 93.33,
+  coverage_available_only: 80,
   expiring_30d: 12,
+  expiring_30d_quantity: 0.25,
   avg_remaining_days: 45,
   unit: 'т',
 }
@@ -205,12 +211,24 @@ describe('DashboardPage', () => {
     getObjects.mockResolvedValue({
       data: { data: [{ code: 2001, name: 'Ростов' }] },
     })
+    getDepartments.mockResolvedValue({
+      data: {
+        data: [{ id: 'dept-1', name: 'Коммерческий отдел', is_active: true }],
+      },
+    })
   })
 
   it('renders north star, chart, exceptions and heatmap', async () => {
     renderPage()
     expect(await screen.findByText('Дашборд нормативов')).toBeTruthy()
     expect(screen.getByText('Активных НЗ')).toBeTruthy()
+    expect(screen.getByText('1,500')).toBeTruthy()
+    expect(screen.getByText('0,100')).toBeTruthy()
+    expect(screen.getByText('0,250')).toBeTruthy()
+    expect(screen.getByText('Покрытие с учётом перемещений')).toBeTruthy()
+    expect(screen.getByText('Покрытие доступным стоком')).toBeTruthy()
+    expect(screen.queryByText('Средний срок')).toBeNull()
+    expect(getDepartments).toHaveBeenCalledWith({ has_normatives: true })
     expect(screen.getByText('Динамика нормативов')).toBeTruthy()
     expect(screen.getByText('Текущее покрытие по складам')).toBeTruthy()
     expect(screen.getByText('Требуют внимания')).toBeTruthy()
@@ -222,7 +240,7 @@ describe('DashboardPage', () => {
     expect(screen.getByText('Критично')).toBeTruthy()
     expect(screen.queryByText('Заказ')).toBeNull()
     expect(
-      screen.getByText(/Покрытие — доля потребности в нормативе запаса/),
+      screen.getByText(/Покрытие с учётом перемещений = \(общий НЗ/),
     ).toBeTruthy()
     expect(screen.getByText(/излишняя/)).toBeTruthy()
   })
@@ -252,6 +270,43 @@ describe('DashboardPage', () => {
       )
       expect(getNzByDepartment).toHaveBeenCalledWith({ unit: 'т' })
       expect(getTopClients).toHaveBeenCalledWith({ unit: 'т', limit: 10 })
+    })
+  })
+
+  it('reloads all widgets when department changes', async () => {
+    renderPage()
+    await screen.findByText('Дашборд нормативов')
+    const departmentSelect = screen
+      .getByTestId('department-filter')
+      .querySelector('.ant-select-selector')
+    expect(departmentSelect).toBeTruthy()
+    fireEvent.mouseDown(departmentSelect as Element)
+    fireEvent.click(await screen.findByText('Коммерческий отдел'))
+    await waitFor(() => {
+      expect(getSummary).toHaveBeenCalledWith(
+        expect.objectContaining({ department_id: 'dept-1' }),
+      )
+      expect(getNormativeTrend).toHaveBeenCalledWith(
+        expect.objectContaining({ department_id: 'dept-1' }),
+      )
+      expect(getExceptions).toHaveBeenCalledWith(
+        expect.objectContaining({ department_id: 'dept-1' }),
+      )
+      expect(getWarehouseCoverage).toHaveBeenCalledWith(
+        expect.objectContaining({ department_id: 'dept-1' }),
+      )
+      expect(getExpiryCalendar).toHaveBeenCalledWith(
+        expect.objectContaining({ department_id: 'dept-1' }),
+      )
+      expect(getNzByDepartment).toHaveBeenCalledWith({
+        unit: 'т',
+        department_id: 'dept-1',
+      })
+      expect(getTopClients).toHaveBeenCalledWith({
+        unit: 'т',
+        limit: 10,
+        department_id: 'dept-1',
+      })
     })
   })
 

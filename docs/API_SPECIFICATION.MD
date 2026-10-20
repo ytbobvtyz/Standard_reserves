@@ -1201,18 +1201,26 @@ json
 {
     "status": "success",
     "data": {
-        "active_count": 1245,
-        "deficit_quantity": 0.1,
-        "coverage_pct": 87,
-        "expiring_30d": 12,
-        "avg_remaining_days": 45,
+        "active_count": 2,
+        "active_quantity": 1.235,
+        "deficit_quantity": 0.735,
+        "coverage_pct": 40.49,
+        "coverage_with_transfers": 40.49,
+        "coverage_available_only": 8.1,
+        "expiring_30d": 1,
+        "expiring_30d_quantity": 1.235,
+        "avg_remaining_days": 5,
         "unit": "т"
     }
 }
 
-Query: `unit` = `т` (по умолчанию) или `кг`, `warehouse_code` — общий фильтр склада. Количества — масса (штуки × `products.weight_kg`).
+Query: `unit` = `т` (по умолчанию) или `кг`, `warehouse_code` — склад, `department_id` — подразделение клиента (`clients.department_id`). Пустой `department_id` не фильтрует. Нормативы соединяются с клиентом: `normatives.client_id = clients.id`.
 
-`active_count` — число действующих записей `normatives`. `deficit_quantity` — сумма положительного дефицита в выбранной единице массы. `coverage_pct` — `plan / requirement * 100` (не больше 100); потребность = НЗ × коэффициент категории × коэффициент дальних перевозок. `expiring_30d` — НЗ с `expiry_date` в ближайшие 30 дней. `avg_remaining_days` — средний остаток срока, дни.
+Массы в ответе — `ROUND(value, 3)`. Проценты покрытия — 0–100, два знака.
+
+`active_count` — число действующих записей `normatives`. `active_quantity` — сумма их массы. `deficit_quantity` — сумма по позициям НЗ (склад + артикул) `max(0, норматив − plan)`. `coverage_with_transfers` = `(active_quantity − deficit_quantity) / active_quantity × 100`. `coverage_available_only` — та же формула, но дефицит позиции = `max(0, норматив − available)`, без плана. `coverage_pct` совпадает с `coverage_with_transfers`. Если `active_quantity = 0`, оба покрытия равны 0. Если дефицит позиции неположительный, в сумму он не входит; при нулевой сумме дефицита покрытие 100%. `expiring_30d` — число НЗ с `expiry_date` в ближайшие 30 дней, `expiring_30d_quantity` — их масса. `avg_remaining_days` — средний остаток срока, дни; на панели KPI не показывается.
+
+Тот же `department_id` принимается на `GET /dashboard/normative-trend`, `/exceptions`, `/warehouse-coverage`, `/expiry-calendar`, `/nz-by-department`, `/top-clients`.
 
 6.9.2. Динамика нормативов
 text
@@ -1228,6 +1236,7 @@ Query:
 | group_by | string | `day` / `week` / `month` (по умолчанию `week`) |
 | period | string | Алиас `group_by` |
 | unit | string | `т` (по умолчанию) / `кг` |
+| department_id | uuid | Подразделение клиента |
 
 По умолчанию: 30 дней / 12 недель / 12 месяцев **назад** и 180 дней **вперёд**. НЗ попадает в бакет, если интервал действия пересекает период: коммерческий — `created_at::date` … `expiry_date`; партия Excel (`production_requests`) — `valid_from` … `expiry_date` (только `status = active`, не удалена). Без фильтра склада — серии по складам. При фильтре склада без артикула — серии по артикулам, не больше 9 крупнейших плюс серия «Остальные». `date_from` / `date_to` опциональны.
 
@@ -1260,7 +1269,7 @@ json
 6.9.3. Исключения
 text
 GET /dashboard/exceptions
-Query: `warehouse_code`, `product_code`, `page`, `limit` (по умолчанию 20), `unit` (`т` / `кг`).
+Query: `warehouse_code`, `department_id`, `product_code`, `page`, `limit` (по умолчанию 20), `unit` (`т` / `кг`).
 
 В ответе только позиции с `deficit > 0`, сортировка по дефициту по убыванию. `status`: `critical` если дефицит ≥ 40% потребности, иначе `attention`. `request_id` — коммерческий запрос-основание, если есть.
 
@@ -1289,7 +1298,7 @@ json
 6.9.4. Календарь истечений
 text
 GET /dashboard/expiry-calendar
-Query: `date_from`, `date_to` (по умолчанию сегодня … +89 дней), `unit` (`т` / `кг`), `warehouse_code`. Группировка действующих НЗ по `expiry_date`. `quantity` — масса истекающих НЗ.
+Query: `date_from`, `date_to` (по умолчанию сегодня … +89 дней), `unit` (`т` / `кг`), `warehouse_code`, `department_id`. Группировка действующих НЗ по `expiry_date`. `quantity` — масса истекающих НЗ.
 
 json
 {
@@ -1307,7 +1316,7 @@ json
 6.9.5. Покрытие по складам
 text
 GET /dashboard/warehouse-coverage
-Query: `unit` (`т` / `кг`), `warehouse_code`. «Доступно» и `plan` — как шапка склада на дашборде логиста (`filter_mode=all`, включая остатки без НЗ и дочерние артикулы группы). `planned` = `plan - available` (≥ 0). Норматив и дефицит — только по действующим НЗ. `mismatch = true`, если стек выше норматива.
+Query: `unit` (`т` / `кг`), `warehouse_code`, `department_id`. «Доступно» и `plan` — как шапка склада на дашборде логиста (`filter_mode=all`, включая остатки без НЗ и дочерние артикулы группы). `planned` = `plan - available` (≥ 0). Норматив и дефицит — только по действующим НЗ. `mismatch = true`, если стек выше норматива. `department_id` оставляет нормативы клиентов этого подразделения; остатки по-прежнему на уровне склада и артикула.
 
 json
 {
@@ -1695,7 +1704,9 @@ text
 Authorization: Bearer <token>
 Права: все авторизованные.
 
-Query параметры: `is_active` (boolean, по умолчанию true).
+Query параметры: `is_active` (boolean, по умолчанию true), `has_normatives` (boolean, по умолчанию false).
+
+`has_normatives=true` оставляет подразделения, у которых есть или когда-либо были нормативы: `SELECT DISTINCT clients.department_id FROM normatives JOIN clients ON normatives.client_id = clients.id WHERE clients.department_id IS NOT NULL`. Истёкшие и удалённые нормативы учитываются. `is_active` при этом по-прежнему применяется.
 
 Response (200):
 

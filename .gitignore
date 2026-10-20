@@ -23,3 +23,5 @@ dist/
 *.swp
 
 memo.md
+/temp
+temp/

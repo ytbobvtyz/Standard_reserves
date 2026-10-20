@@ -8,6 +8,8 @@ from sqlalchemy import delete, select
 
 from app.core.database import AsyncSessionLocal
 from app.models.available_balance import AvailableBalance
+from app.models.client import Client
+from app.models.department import Department
 from app.models.normative import Normative
 from app.models.product import Product
 from app.models.production_request import ProductionRequest, ProductionRequestItem
@@ -158,6 +160,12 @@ async def test_dashboard_summary_metrics(
     assert data["active_count"] >= 2
     assert Decimal(str(data["deficit_quantity"])) >= Decimal("0.1")
     assert data["coverage_pct"] <= 100
+    transfers = Decimal(str(data["coverage_with_transfers"]))
+    available = Decimal(str(data["coverage_available_only"]))
+    assert Decimal("0") <= transfers <= Decimal("100")
+    assert Decimal("0") <= available <= Decimal("100")
+    assert Decimal(str(data["active_quantity"])) >= 0
+    assert Decimal(str(data["expiring_30d_quantity"])) >= 0
     assert data["expiring_30d"] >= 0
 
     kg_response = await client.get(
@@ -492,3 +500,158 @@ async def test_dashboard_warehouse_coverage_and_exceptions_limit(
     assert body["meta"]["limit"] == 20
     deficits = [Decimal(str(item["deficit"])) for item in body["data"]]
     assert deficits == sorted(deficits, reverse=True)
+
+
+@pytest.mark.asyncio
+async def test_dashboard_summary_department_filter_and_coverage(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    product_code = 29111
+    department_id = uuid4()
+    empty_department_id = uuid4()
+    client_id = uuid4()
+    normative_id = uuid4()
+    token = await login_token(client, logistics_user)
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            delete(AvailableBalance).where(
+                AvailableBalance.product_code == product_code
+            )
+        )
+        await session.execute(
+            delete(Normative).where(Normative.product_code == product_code)
+        )
+        await session.execute(delete(Product).where(Product.code == product_code))
+        await session.commit()
+    async with AsyncSessionLocal() as session:
+        session.add(
+            Department(
+                id=department_id,
+                name=f"Дашборд покрытие {department_id.hex[:8]}",
+                is_active=True,
+            )
+        )
+        session.add(
+            Department(
+                id=empty_department_id,
+                name=f"Дашборд пустое {empty_department_id.hex[:8]}",
+                is_active=True,
+            )
+        )
+        session.add(
+            Client(
+                id=client_id,
+                client_code=8_800_000_000 + (department_id.int % 100_000),
+                inn=f"{department_id.int % 10**10:010d}",
+                name=f"Клиент покрытия {department_id.hex[:8]}",
+                department_id=department_id,
+                is_active=True,
+                is_system=False,
+            )
+        )
+        session.add(
+            Product(
+                code=product_code,
+                name="Дашборд покрытие формула",
+                category="A",
+                plant_id=catalog["plant_code"],
+                weight_kg=Decimal("1"),
+                is_active=True,
+            )
+        )
+        session.add(
+            Normative(
+                id=normative_id,
+                product_code=product_code,
+                warehouse_code=catalog["warehouse_code"],
+                quantity=Decimal("1.23456"),
+                unit="т",
+                client_name="Клиент покрытия",
+                client_id=client_id,
+                expiry_date=date.today() + timedelta(days=5),
+                category="A",
+            )
+        )
+        session.add(
+            AvailableBalance(
+                warehouse_code=catalog["warehouse_code"],
+                product_code=product_code,
+                available=Decimal("0.10"),
+                plan=Decimal("0.50"),
+                unit="т",
+                source="manual",
+            )
+        )
+        await session.commit()
+
+    try:
+        listed = await client.get(
+            "/api/v1/references/departments",
+            headers=auth_header(token),
+            params={"has_normatives": True},
+        )
+        assert listed.status_code == 200, listed.text
+        ids = {item["id"] for item in listed.json()["data"]}
+        assert str(department_id) in ids
+        assert str(empty_department_id) not in ids
+
+        response = await client.get(
+            "/api/v1/dashboard/summary",
+            headers=auth_header(token),
+            params={"department_id": str(department_id), "unit": "т"},
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()["data"]
+        assert Decimal(str(data["active_quantity"])) == Decimal("1.235")
+        assert Decimal(str(data["deficit_quantity"])) == Decimal("0.735")
+        assert Decimal(str(data["expiring_30d_quantity"])) == Decimal("1.235")
+        assert Decimal(str(data["coverage_with_transfers"])) == Decimal("40.49")
+        assert Decimal(str(data["coverage_available_only"])) == Decimal("8.10")
+        assert Decimal(str(data["coverage_pct"])) == Decimal(
+            str(data["coverage_with_transfers"])
+        )
+
+        empty = await client.get(
+            "/api/v1/dashboard/summary",
+            headers=auth_header(token),
+            params={"department_id": str(empty_department_id)},
+        )
+        assert empty.status_code == 200, empty.text
+        empty_data = empty.json()["data"]
+        assert Decimal(str(empty_data["active_quantity"])) == 0
+        assert Decimal(str(empty_data["coverage_with_transfers"])) == 0
+        assert Decimal(str(empty_data["coverage_available_only"])) == 0
+
+        async with AsyncSessionLocal() as session:
+            normative = await session.get(Normative, normative_id)
+            assert normative is not None
+            normative.deleted_at = datetime.now(UTC)
+            await session.commit()
+        after_delete = await client.get(
+            "/api/v1/references/departments",
+            headers=auth_header(token),
+            params={"has_normatives": True},
+        )
+        assert str(department_id) in {
+            item["id"] for item in after_delete.json()["data"]
+        }
+    finally:
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                delete(AvailableBalance).where(
+                    AvailableBalance.product_code == product_code
+                )
+            )
+            await session.execute(
+                delete(Normative).where(Normative.product_code == product_code)
+            )
+            await session.execute(delete(Client).where(Client.id == client_id))
+            await session.execute(
+                delete(Department).where(
+                    Department.id.in_([department_id, empty_department_id])
+                )
+            )
+            await session.execute(delete(Product).where(Product.code == product_code))
+            await session.commit()

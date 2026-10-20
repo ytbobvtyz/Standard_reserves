@@ -10,7 +10,9 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import get_current_user, get_db, require_roles
 from app.core.exceptions import APIError
 from app.core.pagination import paginate
+from app.models.client import Client
 from app.models.department import Department
+from app.models.normative import Normative
 from app.models.object import Object
 from app.models.product import Product
 from app.models.user import User
@@ -377,12 +379,21 @@ async def list_users(
 @router.get("/departments", response_model=SuccessResponse[list[DepartmentListItem]])
 async def list_departments(
     is_active: bool | None = Query(default=True),
+    has_normatives: bool = Query(default=False),
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[list[DepartmentListItem]]:
     conditions = [Department.deleted_at.is_(None)]
     if is_active is not None:
         conditions.append(Department.is_active == is_active)
+    if has_normatives:
+        linked = (
+            select(Client.department_id)
+            .join(Normative, Normative.client_id == Client.id)
+            .where(Client.department_id.is_not(None))
+            .distinct()
+        )
+        conditions.append(Department.id.in_(linked))
     result = await db.execute(
         select(Department).where(*conditions).order_by(Department.name)
     )
