@@ -13,7 +13,9 @@ from app.core.database import AsyncSessionLocal, check_database_connection, engi
 from app.core.security import hash_password
 from app.main import app
 from app.models import (
+    ActualShipment,
     AuditLog,
+    AvailableBalanceHistory,
     Base,
     Department,
     Event,
@@ -640,6 +642,14 @@ async def _delete_user(user_id: uuid.UUID) -> None:
             update(Object)
             .where(Object.last_modified_by == user_id)
             .values(last_modified_by=None)
+        )
+        await session.execute(
+            delete(ActualShipment).where(ActualShipment.uploaded_by == user_id)
+        )
+        await session.execute(
+            delete(AvailableBalanceHistory).where(
+                AvailableBalanceHistory.uploaded_by == user_id
+            )
         )
         await session.execute(
             delete(ProductionRequest).where(ProductionRequest.uploaded_by == user_id)

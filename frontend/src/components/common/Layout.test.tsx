@@ -43,11 +43,13 @@ describe('AppLayout admin menu', () => {
     expect(screen.getByText('Пользователи')).toBeTruthy()
     expect(screen.getByText('Подразделения')).toBeTruthy()
     expect(screen.getByText('Клиенты')).toBeTruthy()
+    expect(screen.getByText('История доступных остатков')).toBeTruthy()
   })
 
   it('hides administration item for commercial', () => {
     renderLayout('commercial')
     expect(screen.queryByText('Администрирование')).toBeNull()
+    expect(screen.getByText('Продажи')).toBeTruthy()
   })
 
   it('shows change password action', () => {

@@ -338,6 +338,41 @@ erDiagram
     available_balances }o--|| products : "product_code"
     available_balances }o--|| objects : "warehouse_code"
 
+    available_balances_history {
+        uuid id PK
+        date snapshot_date "дата снимка, UTC"
+        timestamp snapshot_at "момент загрузки"
+        int warehouse_code FK
+        int product_code FK
+        decimal available
+        decimal plan
+        varchar unit "шт / кг / т / ШТ / КГ"
+        varchar source "excel_upload"
+        uuid uploaded_by FK
+        timestamp created_at
+    }
+
+    actual_shipments {
+        uuid id PK
+        uuid client_id FK
+        int product_code FK
+        decimal quantity
+        varchar unit "шт / кг / т"
+        date shipment_date
+        varchar invoice_number
+        varchar route
+        uuid uploaded_by FK
+        timestamp created_at
+        timestamp updated_at
+        timestamp deleted_at
+    }
+
+    available_balances_history }o--|| products : "product_code"
+    available_balances_history }o--|| objects : "warehouse_code"
+    available_balances_history }o--o| users : "uploaded_by"
+    actual_shipments }o--|| products : "product_code"
+    actual_shipments }o--o| users : "uploaded_by"
+
     %% Sync metadata / params → Users
     users ||--o| sync_metadata : "last_balances_sync_by"
     users ||--o| params : "last_modified_by"
@@ -825,6 +860,53 @@ plan	DECIMAL(12,2)	✅	Запланировано: available + разнаряд�
 unit	VARCHAR(10)	✅	шт / т / ШТ / КГ (по умолчанию шт; Excel ERP: ШТ или КГ)
 last_sync_at	TIMESTAMP	✅	Дата последней синхронизации
 source	VARCHAR(50)	❌	manual / csv / excel / erp_api (по умолчанию manual)
+
+5.2.1. available_balances_history — Снимки остатков
+
+Один снимок на календарный день (дата в UTC). Пишется в той же транзакции, что и `POST /logistics/normative/upload`.
+
+Для складов из валидных строк файла за `snapshot_date` старые строки снимка удаляются и вставляются строки файла. Позиция, которой больше нет в файле, исчезает из снимка этого склада. Склады, которых нет в файле, не меняются. Повторная загрузка в тот же день заменяет снимок этих складов.
+
+`unit` копируется как в `available_balances` (Excel ERP пишет `ШТ` или `КГ`, в базе также допустимы исторические `шт` и `т`). Поэтому CHECK шире черновика `шт` / `кг` / `т`.
+
+sql
+CREATE TABLE available_balances_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    snapshot_date DATE NOT NULL,
+    snapshot_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    warehouse_code INTEGER NOT NULL REFERENCES objects(code),
+    product_code INTEGER NOT NULL REFERENCES products(code),
+    available DECIMAL(12,2) NOT NULL,
+    plan DECIMAL(12,2) NOT NULL,
+    unit VARCHAR(10) NOT NULL CHECK (unit IN ('шт', 'кг', 'т', 'ШТ', 'КГ')),
+    source VARCHAR(50) NOT NULL DEFAULT 'excel_upload',
+    uploaded_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX uq_available_history_daily
+    ON available_balances_history (snapshot_date, warehouse_code, product_code);
+CREATE INDEX idx_available_history_date ON available_balances_history (snapshot_date);
+CREATE INDEX idx_available_history_product ON available_balances_history (product_code, snapshot_date);
+CREATE INDEX idx_available_history_warehouse ON available_balances_history (warehouse_code, snapshot_date);
+
+Поля:
+
+Поле	Тип	Обязательное	Описание
+id	UUID	✅	Идентификатор (PK)
+snapshot_date	DATE	✅	Дата снимка, UTC
+snapshot_at	TIMESTAMP	✅	Момент загрузки
+warehouse_code	INTEGER	✅	Склад → objects.code
+product_code	INTEGER	✅	Артикул → products.code
+available	DECIMAL(12,2)	✅	То же значение, что ушло в available_balances
+plan	DECIMAL(12,2)	✅	То же значение, что ушло в available_balances
+unit	VARCHAR(10)	✅	шт / кг / т / ШТ / КГ — как в строке остатка
+source	VARCHAR(50)	✅	excel_upload
+uploaded_by	UUID	❌	Кто загрузил → users.id, ON DELETE SET NULL
+created_at	TIMESTAMP	✅	Дата записи снимка
+
+Уникальность: одна строка на дату, склад и артикул.
+
 5.3. sync_metadata — Метаданные синхронизации
 Singleton-таблица (ровно одна строка, `id = 1`). Хранит дату и автора последней загрузки остатков Excel (`POST /logistics/normative/upload`).
 
@@ -846,7 +928,7 @@ id	INTEGER	✅	Всегда 1 (PK, CHECK id = 1)
 last_balances_sync_at	TIMESTAMP	❌	Дата и время последней загрузки остатков
 last_balances_sync_by	UUID	❌	Кто загрузил → users.id
 updated_at	TIMESTAMP	✅	Дата обновления записи (по умолчанию NOW())
-При загрузке Excel: для складов из файла старые строки `available_balances` удаляются, затем вставляются только строки из файла. После этого обновляются `last_balances_sync_at` и `last_balances_sync_by`.
+При загрузке Excel: для складов из файла старые строки `available_balances` удаляются, затем вставляются только строки из файла. Параллельно за текущую дату UTC перезаписывается снимок `available_balances_history` по тем же складам. После этого обновляются `last_balances_sync_at` и `last_balances_sync_by`.
 
 5.3.1. params — Глобальные коэффициенты и настройки
 Singleton-таблица (ровно одна строка, `id = 1`). Хранит коэффициенты потребности и флаг паллетной кратности. Потребность на дашборде считается на лету: `количество × коэф. категории × коэф. удалённости` (для неудалённого склада множитель удалённости = 1).
@@ -964,6 +1046,48 @@ updated_at	TIMESTAMP	✅	Дата обновления
 deleted_at	TIMESTAMP	❌	Дата удаления (soft delete)
 
 При частично успешном импорте в таблицы попадают только валидные строки. Если валидных строк нет, партия не создаётся.
+
+5.6. actual_shipments — Фактическая реализация
+
+Строка отгрузки клиенту. Загружается из Excel (`POST /logistics/actual-shipments/upload`) ролями `pp`, `economist`, `logistics`. Без `confirm=true` файл только проверяется. Подтверждение добавляет строки, не заменяя уже сохранённые. `deleted_at` есть в схеме; HTTP-удаления нет, список его не показывает.
+
+sql
+CREATE TABLE actual_shipments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id UUID NOT NULL REFERENCES clients(id),
+    product_code INTEGER NOT NULL REFERENCES products(code),
+    quantity DECIMAL(12,2) NOT NULL CHECK (quantity > 0),
+    unit VARCHAR(10) NOT NULL CHECK (unit IN ('шт', 'кг', 'т')),
+    shipment_date DATE NOT NULL,
+    invoice_number VARCHAR(25),
+    route VARCHAR(50),
+    uploaded_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE INDEX idx_actual_shipments_client ON actual_shipments (client_id);
+CREATE INDEX idx_actual_shipments_product ON actual_shipments (product_code);
+CREATE INDEX idx_actual_shipments_date ON actual_shipments (shipment_date);
+CREATE INDEX idx_actual_shipments_client_date ON actual_shipments (client_id, shipment_date);
+
+Поля:
+
+Поле	Тип	Обязательное	Описание
+id	UUID	✅	Идентификатор (PK)
+client_id	UUID	✅	Клиент → clients.id (КССС из файла)
+product_code	INTEGER	✅	Артикул → products.code
+quantity	DECIMAL(12,2)	✅	Количество, больше 0
+unit	VARCHAR(10)	✅	шт / кг / т
+shipment_date	DATE	✅	Дата отгрузки
+invoice_number	VARCHAR(25)	❌	Номер накладной
+route	VARCHAR(50)	❌	Маршрут
+uploaded_by	UUID	❌	Кто подтвердил загрузку → users.id
+created_at	TIMESTAMP	✅	Дата создания
+updated_at	TIMESTAMP	✅	Дата обновления
+deleted_at	TIMESTAMP	❌	Soft delete (в списке скрыто)
+
 6. ТАБЛИЦА ДЛЯ БУДУЩЕГО АГЕНТА
 6.1. events — События для агента логиста
 sql
@@ -1392,6 +1516,9 @@ EXECUTE FUNCTION trigger_create_normative();
 | 22 | `0022_request_qty_6dp.py` | количества запроса в тоннах: DECIMAL(12,6) |
 | 23 | `0023_prod_qty_scale.py` | `production_request_items` / `normatives.quantity`: DECIMAL(16,6) |
 | 24 | `0024_mv_normative_daily.py` | `mv_normative_daily`, индекс, refresh-функция, триггер на `available_balances` |
+| 25 | `0025_clients.py` | Справочник `clients`, `client_id` у запросов и нормативов |
+| 26 | `0026_available_balances_history.py` | Дневные снимки `available_balances_history` |
+| 27 | `0027_actual_shipments.py` | Фактическая реализация `actual_shipments` |
 
 Начальные пользователи и объекты заполняются скриптом `backend/scripts/seed_data.py`, а не миграцией.
 
@@ -1471,6 +1598,8 @@ GROUP BY warehouse_code, product_code;
 Элемент	Статус в MVP
 Таблица tariffs	❌ Удалена. Будет замена через API (не MVP)
 Таблица available_balances	✅ Заполняется вручную через Excel (ERP: available + plan)
+Таблица available_balances_history	✅ Дневной снимок при каждой загрузке остатков
+Таблица actual_shipments	✅ Фактическая реализация, Excel с предпросмотром
 Таблица events	✅ Создана (задел под агента)
 Таблица request_item_history	✅ История изменений
 Функция expire_normatives()	✅ Нужна с первого дня
@@ -1483,6 +1612,6 @@ mv_normative_daily	✅ Ежедневная агрегация действую�
 
 Полные DDL — в разделах 5.4 и 5.5. Кратко: партия Excel создаёт `production_requests` + `production_request_items` и активные `normatives` с `request_id IS NULL`. Удаление партии каскадно снимает позиции и нормативы. Миграция: `0017_production_requests.py`.
 
-Версия: 2.9
-Дата: 07.10.2026
+Версия: 2.10
+Дата: 27.10.2026
 Статус: Утверждена

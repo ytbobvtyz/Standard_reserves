@@ -2,6 +2,8 @@ import api from './client'
 import type {
   ApiSuccess,
   B2BExportRequest,
+  BalanceHistoryItem,
+  BalanceHistoryParams,
   BalanceSyncInfo,
   BalanceUploadResult,
   ExecuteOneTimeData,
@@ -62,6 +64,12 @@ export const logisticsApi = {
 
   getSyncInfo: () =>
     api.get<ApiSuccess<BalanceSyncInfo>>('/logistics/normative/sync-info'),
+
+  getBalanceHistory: (params?: BalanceHistoryParams) =>
+    api.get<ApiSuccess<BalanceHistoryItem[]>>('/logistics/normative/history', { params }),
+
+  getBalanceSnapshotDates: () =>
+    api.get<ApiSuccess<string[]>>('/logistics/normative/history/dates'),
 
   getOneTimeList: (params?: OneTimeListParams) =>
     api.get<ApiSuccess<OneTimeListItem[]>>('/logistics/one-time/list', { params }),

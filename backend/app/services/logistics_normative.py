@@ -8,12 +8,13 @@ from typing import Any, Literal
 from uuid import UUID
 
 from openpyxl import Workbook, load_workbook
-from sqlalchemy import case, delete, exists, or_, select, tuple_
+from sqlalchemy import case, delete, exists, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import APIError
 from app.models.available_balance import AvailableBalance
+from app.models.available_balance_history import AvailableBalanceHistory
 from app.models.client import Client
 from app.models.normative import Normative
 from app.models.object import Object
@@ -22,6 +23,7 @@ from app.models.production_request import ProductionRequest, ProductionRequestIt
 from app.models.sync_metadata import SyncMetadata
 from app.models.user import User
 from app.schemas.logistics import (
+    BalanceHistoryItem,
     BalanceSyncInfo,
     BalanceSyncUser,
     BalanceUploadError,
@@ -1162,6 +1164,119 @@ def _sync_user_brief(user: User | None) -> BalanceSyncUser | None:
     )
 
 
+def _check_period(date_from: date | None, date_to: date | None) -> None:
+    if date_from is not None and date_to is not None and date_from > date_to:
+        raise APIError(
+            400,
+            "VALIDATION_ERROR",
+            "date_from не может быть позже date_to",
+        )
+
+
+async def _replace_daily_snapshot(
+    db: AsyncSession,
+    *,
+    rows: dict[tuple[int, int], ParsedBalanceRow],
+    snapshot_at: datetime,
+    user_id: UUID,
+) -> None:
+    warehouse_codes = {item.warehouse_code for item in rows.values()}
+    if not warehouse_codes:
+        return
+    snapshot_date = snapshot_at.date()
+    await db.execute(
+        delete(AvailableBalanceHistory).where(
+            AvailableBalanceHistory.snapshot_date == snapshot_date,
+            AvailableBalanceHistory.warehouse_code.in_(warehouse_codes),
+        )
+    )
+    await db.flush()
+    for parsed in rows.values():
+        db.add(
+            AvailableBalanceHistory(
+                snapshot_date=snapshot_date,
+                snapshot_at=snapshot_at,
+                warehouse_code=parsed.warehouse_code,
+                product_code=parsed.product_code,
+                available=parsed.available,
+                plan=parsed.plan,
+                unit=parsed.unit,
+                source="excel_upload",
+                uploaded_by=user_id,
+            )
+        )
+
+
+async def list_balance_history(
+    db: AsyncSession,
+    *,
+    product_code: int | None = None,
+    warehouse_code: int | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    page: int = 1,
+    limit: int = 50,
+) -> tuple[list[BalanceHistoryItem], int]:
+    _check_period(date_from, date_to)
+    conditions = []
+    if product_code is not None:
+        conditions.append(AvailableBalanceHistory.product_code == product_code)
+    if warehouse_code is not None:
+        conditions.append(AvailableBalanceHistory.warehouse_code == warehouse_code)
+    if date_from is not None:
+        conditions.append(AvailableBalanceHistory.snapshot_date >= date_from)
+    if date_to is not None:
+        conditions.append(AvailableBalanceHistory.snapshot_date <= date_to)
+
+    count_stmt = select(func.count()).select_from(AvailableBalanceHistory)
+    stmt = (
+        select(AvailableBalanceHistory, Product.name, Object.name)
+        .join(Product, Product.code == AvailableBalanceHistory.product_code)
+        .join(Object, Object.code == AvailableBalanceHistory.warehouse_code)
+    )
+    if conditions:
+        count_stmt = count_stmt.where(*conditions)
+        stmt = stmt.where(*conditions)
+    total = int(await db.scalar(count_stmt) or 0)
+    result = await db.execute(
+        stmt.order_by(
+            AvailableBalanceHistory.snapshot_date.desc(),
+            AvailableBalanceHistory.warehouse_code,
+            AvailableBalanceHistory.product_code,
+        )
+        .offset((page - 1) * limit)
+        .limit(limit)
+    )
+    items = [
+        BalanceHistoryItem(
+            id=row.id,
+            snapshot_date=row.snapshot_date,
+            snapshot_at=row.snapshot_at,
+            warehouse_code=row.warehouse_code,
+            warehouse_name=warehouse_name,
+            product_code=row.product_code,
+            product_name=product_name,
+            available=row.available,
+            plan=row.plan,
+            unit=row.unit,
+            source=row.source,
+            uploaded_by=row.uploaded_by,
+            created_at=row.created_at,
+        )
+        for row, product_name, warehouse_name in result.all()
+    ]
+    return items, total
+
+
+async def list_balance_snapshot_dates(db: AsyncSession) -> list[date]:
+    result = await db.scalars(
+        select(AvailableBalanceHistory.snapshot_date)
+        .distinct()
+        .order_by(AvailableBalanceHistory.snapshot_date.desc())
+    )
+    return list(result.all())
+
+
 async def get_sync_info(db: AsyncSession) -> BalanceSyncInfo:
     result = await db.execute(select(SyncMetadata).where(SyncMetadata.id == 1))
     row = result.scalar_one_or_none()
@@ -1269,6 +1384,12 @@ async def upload_balances(
         await db.flush()
 
     now = datetime.now(UTC)
+    await _replace_daily_snapshot(
+        db,
+        rows=unique_rows,
+        snapshot_at=now,
+        user_id=user_id,
+    )
     created = 0
     updated = 0
     for key, parsed in unique_rows.items():

@@ -9,6 +9,7 @@ import { RequestDetailPage } from '../pages/RequestDetailPage'
 import { ApprovalsPage } from '../pages/ApprovalsPage'
 import { LogisticsDashboardPage } from '../pages/LogisticsDashboardPage'
 import { OneTimeRequestsPage } from '../pages/OneTimeRequestsPage'
+import { ActualShipmentsPage } from '../pages/ActualShipmentsPage'
 import { NormativesPage } from '../pages/NormativesPage'
 import { ProductsPage } from '../pages/ProductsPage'
 import { ProductDetailPage } from '../pages/ProductDetailPage'
@@ -18,6 +19,7 @@ import { AdminUsersPage } from '../pages/AdminUsersPage'
 import { AdminDepartmentsPage } from '../pages/AdminDepartmentsPage'
 import { AdminClientsPage } from '../pages/AdminClientsPage'
 import { AdminParamsPage } from '../pages/AdminParamsPage'
+import { BalanceHistoryPage } from '../pages/BalanceHistoryPage'
 import { NotFoundPage } from '../pages/NotFoundPage'
 
 export function AppRouter() {
@@ -44,6 +46,7 @@ export function AppRouter() {
             </Route>
             <Route path="/logistics/dashboard" element={<LogisticsDashboardPage />} />
             <Route path="/logistics/one-time" element={<OneTimeRequestsPage />} />
+            <Route path="/actual-shipments" element={<ActualShipmentsPage />} />
             <Route path="/normatives" element={<NormativesPage />} />
             <Route path="/references/products/:code" element={<ProductDetailPage />} />
             <Route path="/references/products" element={<ProductsPage />} />
@@ -54,6 +57,7 @@ export function AppRouter() {
               <Route path="/admin/departments" element={<AdminDepartmentsPage />} />
               <Route path="/admin/clients" element={<AdminClientsPage />} />
               <Route path="/admin/params" element={<AdminParamsPage />} />
+              <Route path="/admin/balance-history" element={<BalanceHistoryPage />} />
             </Route>
           </Route>
         </Route>

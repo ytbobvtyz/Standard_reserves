@@ -7,6 +7,7 @@ import {
   DatabaseOutlined,
   KeyOutlined,
   LogoutOutlined,
+  ShoppingOutlined,
   TeamOutlined,
 } from '@ant-design/icons'
 import { useEffect, useState } from 'react'
@@ -128,6 +129,11 @@ export function AppLayout() {
       label: 'Разовые перемещения',
     },
     {
+      key: '/actual-shipments',
+      icon: <ShoppingOutlined />,
+      label: 'Продажи',
+    },
+    {
       key: '/references/products',
       icon: <DatabaseOutlined />,
       label: 'Продукты',
@@ -148,6 +154,7 @@ export function AppLayout() {
               { key: '/admin/departments', label: 'Подразделения' },
               { key: '/admin/clients', label: 'Клиенты' },
               { key: '/admin/params', label: 'Параметры' },
+              { key: '/admin/balance-history', label: 'История доступных остатков' },
             ],
           },
         ]

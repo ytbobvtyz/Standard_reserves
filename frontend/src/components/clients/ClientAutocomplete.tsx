@@ -8,6 +8,7 @@ interface ClientAutocompleteProps {
   onChange?: (id: string | undefined) => void
   disabled?: boolean
   pinned?: ClientListItem | null
+  ariaLabel?: string
 }
 
 function labelOf(client: ClientListItem): string {
@@ -19,6 +20,7 @@ export function ClientAutocomplete({
   onChange,
   disabled,
   pinned,
+  ariaLabel,
 }: ClientAutocompleteProps) {
   const [options, setOptions] = useState<ClientListItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -83,6 +85,7 @@ export function ClientAutocomplete({
     <Select
       showSearch
       allowClear
+      aria-label={ariaLabel}
       value={value}
       disabled={disabled}
       placeholder="Код КССС, ИНН или название"

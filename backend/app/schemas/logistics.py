@@ -175,3 +175,19 @@ class OneTimeInitiator(BaseModel):
     id: UUID
     username: str
     full_name: str
+
+
+class BalanceHistoryItem(BaseModel):
+    id: UUID
+    snapshot_date: date
+    snapshot_at: datetime
+    warehouse_code: int
+    warehouse_name: str
+    product_code: int
+    product_name: str
+    available: DecimalNumber
+    plan: DecimalNumber
+    unit: str
+    source: str
+    uploaded_by: UUID | None = None
+    created_at: datetime

@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
+    actual_shipments,
     admin_users,
     approvals,
     auth,
@@ -29,6 +30,7 @@ api_router.include_router(approvals.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(logistics_normative.router)
 api_router.include_router(logistics_one_time.router)
+api_router.include_router(actual_shipments.router)
 api_router.include_router(normatives.router)
 
 

@@ -9,6 +9,7 @@ interface ProductAutocompleteProps {
   disabled?: boolean
   activeOnly?: boolean
   includeAnalogs?: boolean
+  ariaLabel?: string
 }
 
 export function ProductAutocomplete({
@@ -17,6 +18,7 @@ export function ProductAutocomplete({
   disabled,
   activeOnly = true,
   includeAnalogs = false,
+  ariaLabel,
 }: ProductAutocompleteProps) {
   const [options, setOptions] = useState<ProductListItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -59,6 +61,7 @@ export function ProductAutocomplete({
     <Select
       showSearch
       allowClear
+      aria-label={ariaLabel}
       value={value}
       disabled={disabled}
       placeholder="Артикул или название"

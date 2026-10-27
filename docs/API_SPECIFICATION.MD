@@ -914,11 +914,12 @@ file	file	Excel-файл (.xlsx / .xls)
 Логика загрузки (перезапись по складам из файла):
 1. Разобрать строки Excel: поиск завода, склада и продукта.
 2. Определить все `warehouse_code`, которые есть в валидных строках файла.
-3. Удалить все записи `available_balances` для этих складов.
-4. Вставить только новые записи из файла (`source` = `excel`, `last_sync_at` = NOW()). Позиция, которой больше нет в файле, исчезает из БД.
-5. Обновить `sync_metadata`: `last_balances_sync_at` = NOW(), `last_balances_sync_by` = текущий пользователь.
+3. Снимок: `snapshot_date` — текущая дата UTC, `snapshot_at` = NOW(). Удалить из `available_balances_history` строки за эту дату по складам из файла и вставить те же остатки (`source` = `excel_upload`, `uploaded_by` = текущий пользователь). Позиция, которой больше нет в файле, исчезает из снимка этих складов.
+4. Удалить все записи `available_balances` для этих складов.
+5. Вставить только новые записи из файла (`source` = `excel`, `last_sync_at` = NOW()). Позиция, которой больше нет в файле, исчезает из БД.
+6. Обновить `sync_metadata`: `last_balances_sync_at` = NOW(), `last_balances_sync_by` = текущий пользователь.
 
-Склады, которых нет в файле, не затрагиваются. Неизвестные коды и невалидные числа — ошибка по строке, остальные строки сохраняются.
+Склады, которых нет в файле, не затрагиваются ни в остатках, ни в снимке. Неизвестные коды и невалидные числа — ошибка по строке, остальные строки сохраняются. Повторная загрузка в тот же день заменяет снимок складов из нового файла.
 
 Response (200):
 
@@ -968,6 +969,67 @@ json
 }
 
 Если загрузки ещё не было, `last_balances_sync_at` и `last_balances_sync_by` равны `null`.
+
+6.2.2. Снимки остатков
+text
+GET /logistics/normative/history
+Headers:
+
+text
+Authorization: Bearer <token>
+Права: любой авторизованный пользователь.
+
+Query:
+
+Параметр	Описание
+product_code	Артикул, необязательно
+warehouse_code	Склад, необязательно
+date_from	Начало периода, `YYYY-MM-DD`, включительно
+date_to	Конец периода, `YYYY-MM-DD`, включительно
+page	Страница, по умолчанию 1
+limit	Размер страницы, по умолчанию 50, максимум 200
+
+`date_from` позже `date_to` — `400 VALIDATION_ERROR`.
+
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": [
+        {
+            "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "snapshot_date": "2026-10-27",
+            "snapshot_at": "2026-10-27T12:00:00Z",
+            "warehouse_code": 2001,
+            "warehouse_name": "Склад Ростов",
+            "product_code": 10001,
+            "product_name": "Подшипник 6204ZZ",
+            "available": 10.5,
+            "plan": 12.0,
+            "unit": "ШТ",
+            "source": "excel_upload",
+            "uploaded_by": "44444444-4444-4444-4444-444444444444",
+            "created_at": "2026-10-27T12:00:00Z"
+        }
+    ],
+    "meta": {"page": 1, "limit": 50, "total": 1}
+}
+
+Сортировка: дата снимка по убыванию, затем склад и артикул.
+
+6.2.3. Даты снимков
+text
+GET /logistics/normative/history/dates
+Права: любой авторизованный пользователь.
+
+Возвращает даты, за которые есть хотя бы один снимок, по убыванию.
+
+json
+{
+    "status": "success",
+    "data": ["2026-10-27", "2026-10-25"]
+}
 
 6.3. Сформировать заказы на пополнение
 text
@@ -1402,6 +1464,99 @@ json
 text
 GET /dashboard/top-clients
 Query: `unit` (`т` / `кг`), `limit` (по умолчанию 10), `department_id`, `warehouse_code`. Группировка по `clients.id`, сортировка по объёму по убыванию. Нулевые объёмы не входят. Если после лимита остался объём, в конец добавляется элемент `client_name = "Остальные"`, `is_other = true` — сумма всех, кто не вошёл в топ. «Остальные» не участвуют в сортировке и стоят последними.
+
+6.10. Фактическая реализация
+
+Таблица `actual_shipments`. Список доступен любому авторизованному. Шаблон и загрузка — роли `logistics`, `economist`, `pp`.
+
+6.10.1. Список
+text
+GET /logistics/actual-shipments
+Права: любой авторизованный.
+
+Query: `client_id` (UUID), `product_code`, `date_from`, `date_to` (включительно), `page`, `limit` (по умолчанию 50, максимум 200).
+
+`date_from` позже `date_to` — `400 VALIDATION_ERROR`. Строки с `deleted_at` не возвращаются. Сортировка: дата отгрузки по убыванию.
+
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": [
+        {
+            "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            "client_id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+            "client_code": 100,
+            "client_name": "ООО Ромашка",
+            "product_code": 10001,
+            "product_name": "Подшипник 6204ZZ",
+            "quantity": 12.5,
+            "unit": "кг",
+            "shipment_date": "2026-10-01",
+            "invoice_number": "НК-1",
+            "route": "Север"
+        }
+    ],
+    "meta": {"page": 1, "limit": 50, "total": 1}
+}
+
+6.10.2. Шаблон Excel
+text
+GET /logistics/actual-shipments/template
+Права: `logistics`, `economist`, `pp`. Остальные — 403.
+
+Файл `actual-shipments-template.xlsx`. Колонки: `client_code`, `product_code`, `quantity`, `unit`, `shipment_date`, `invoice_number`, `route`. Допустимы русские заголовки: КССС, Артикул, Количество, Единица, Дата отгрузки, Накладная, Маршрут.
+
+6.10.3. Загрузка с предпросмотром
+text
+POST /logistics/actual-shipments/upload
+Headers:
+
+text
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+Права: `logistics`, `economist`, `pp`.
+
+Form-data: `file` — `.xlsx` / `.xls`, не больше 10 МБ.
+
+Query: `confirm` (`true` / `false`, по умолчанию `false`).
+
+Без подтверждения сервер разбирает файл и ничего не пишет. С `confirm=true` сохраняются все валидные строки (не только 50 строк предпросмотра). Каждое подтверждение добавляет строки. Ошибочные строки пропускаются.
+
+Колонки:
+
+Колонка	Обязательность	Описание
+client_code	да	КССС клиента, неудалённая карточка
+product_code	да	Артикул, неудалённый продукт
+quantity	да	Число больше 0
+unit	да	шт, кг или т
+shipment_date	да	ДД.ММ.ГГГГ или дата Excel
+invoice_number	нет	До 25 символов
+route	нет	До 50 символов
+
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": {
+        "saved": false,
+        "total_rows": 2,
+        "valid_rows": 1,
+        "inserted": 0,
+        "errors": 1,
+        "message": "К загрузке 1 строк, ошибок 1. Данные не сохранены.",
+        "preview": [],
+        "error_details": [{"row": 3, "message": "Клиент 999 не найден"}]
+    }
+}
+
+`preview` — первые 50 валидных строк: клиент, артикул, количество, единица, дата, накладная, маршрут и номер строки Excel. После подтверждения `saved` = true и `inserted` равно числу записанных строк.
+
+400 INVALID_FILE — не Excel, пустой файл, нет обязательной колонки или файл больше 10 МБ.
+
+403 FORBIDDEN — роль не из списка редакторов.
 
 7. НОРМАТИВЫ
 7.1. Получить текущие нормативы
@@ -2397,7 +2552,8 @@ json
 Запросы	/requests, /requests/{id}, submit, history, expiry-date	7
 Согласование (ПП)	/approvals/pp/pending, /approvals/pp/{id}/action	2
 Согласование (экономист)	/approvals/economy/pending, /approvals/economy/{id}/action	2
-Логистика нормативы	dashboard, upload, sync-info, export, export-b2b, generate-orders, /{wh}/generate-orders	7
+Логистика нормативы	dashboard, upload, sync-info, history, history/dates, export, export-b2b, generate-orders, /{wh}/generate-orders	9
+Фактическая реализация	list, template, upload	3
 Логистика разовые	list, initiators, clients, export, execute	5
 Нормативы	/normatives, on-date, calculate	3
 Продукты (related)	/products/{code}/related	1
@@ -2408,15 +2564,15 @@ json
 Администрирование	/admin/users, /admin/users/{id}, reset-password, /admin/departments	10
 Партии нормативов	/production-requests, template, upload, dates, delete	5
 Дашборд нормативов	/dashboard/summary, normative-trend, exceptions, warehouse-coverage, expiry-calendar	5
-ИТОГО реализовано		~68
+ИТОГО реализовано		73
 Не реализовано (задел)	/inventory/*, /tariffs/*, /agent/*, /auth/register	—
 14.2. Ролевой доступ
 Роль	Доступные эндпоинты
-guest	Просмотр справочников, нормативов, дашборда нормативов и дашборда логистики (только чтение)
-commercial	Создание запросов (нормативные + разовые), просмотр своих запросов, дашборд нормативов, просмотр логистики (только чтение)
-pp	Согласование (ПП), просмотр всех запросов, CRUD продуктов, Excel-загрузка, просмотр логистики, управление партиями нормативов, дашборд нормативов
-economist	Согласование (экономист), просмотр всех запросов, CRUD продуктов, Excel-загрузка, просмотр логистики, управление партиями нормативов, дашборд нормативов
-logistics	Дашборд нормативов, дашборд логиста, формирование заказов, исполнение разовых, выгрузка Excel, выгрузка разнарядок B2B (ZIP), загрузка остатков, CRUD продуктов и объектов, управление партиями нормативов, администрирование пользователей и подразделений (`/admin/*`)
+guest	Просмотр справочников, нормативов, дашборда нормативов, дашборда логистики, снимков остатков и фактической реализации (только чтение)
+commercial	Создание запросов (нормативные + разовые), просмотр своих запросов, дашборд нормативов, просмотр логистики, снимков остатков и фактической реализации (только чтение)
+pp	Согласование (ПП), просмотр всех запросов, CRUD продуктов, Excel-загрузка, просмотр логистики, управление партиями нормативов, дашборд нормативов, загрузка фактической реализации
+economist	Согласование (экономист), просмотр всех запросов, CRUD продуктов, Excel-загрузка, просмотр логистики, управление партиями нормативов, дашборд нормативов, загрузка фактической реализации
+logistics	Дашборд нормативов, дашборд логиста, формирование заказов, исполнение разовых, выгрузка Excel, выгрузка разнарядок B2B (ZIP), загрузка остатков, CRUD продуктов и объектов, управление партиями нормативов, администрирование пользователей и подразделений (`/admin/*`), загрузка фактической реализации
 15. ПРИМЕР ПОЛНОГО FLOW
 15.1. Нормативный запас — полный цикл
 text

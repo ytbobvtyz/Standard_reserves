@@ -19,6 +19,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, SoftDeleteMixin, TimestampMixin
+from app.models.client import SYSTEM_CLIENT_ID
 
 if TYPE_CHECKING:
     from app.models.client import Client
@@ -80,6 +81,7 @@ class Normative(TimestampMixin, SoftDeleteMixin, Base):
         UUID(as_uuid=True),
         ForeignKey("clients.id", ondelete="RESTRICT"),
         nullable=False,
+        default=SYSTEM_CLIENT_ID,
         server_default=text("'00000000-0000-4000-8000-000000000001'"),
     )
     expiry_date: Mapped[date] = mapped_column(Date, nullable=False)

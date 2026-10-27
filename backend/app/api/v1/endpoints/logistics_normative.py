@@ -1,5 +1,5 @@
 import zipfile
-from datetime import datetime
+from datetime import date, datetime
 from io import BytesIO
 from typing import Literal
 
@@ -9,9 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db, require_roles
 from app.models.user import User
-from app.schemas.common import SuccessResponse
+from app.schemas.common import PaginatedResponse, PaginationMeta, SuccessResponse
 from app.schemas.logistics import (
     B2BExportRequest,
+    BalanceHistoryItem,
     BalanceSyncInfo,
     BalanceUploadResult,
     DashboardResponse,
@@ -71,6 +72,41 @@ async def upload_balances(
         user_id=current_user.id,
     )
     return SuccessResponse(data=data)
+
+
+@router.get("/history", response_model=PaginatedResponse[list[BalanceHistoryItem]])
+async def list_balance_history(
+    product_code: int | None = Query(default=None),
+    warehouse_code: int | None = Query(default=None),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=50, ge=1, le=200),
+    _current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> PaginatedResponse[list[BalanceHistoryItem]]:
+    items, total = await service.list_balance_history(
+        db,
+        product_code=product_code,
+        warehouse_code=warehouse_code,
+        date_from=date_from,
+        date_to=date_to,
+        page=page,
+        limit=limit,
+    )
+    return PaginatedResponse(
+        data=items,
+        meta=PaginationMeta(page=page, limit=limit, total=total),
+    )
+
+
+@router.get("/history/dates", response_model=SuccessResponse[list[date]])
+async def list_balance_snapshot_dates(
+    _current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[list[date]]:
+    dates = await service.list_balance_snapshot_dates(db)
+    return SuccessResponse(data=dates)
 
 
 @router.get("/sync-info", response_model=SuccessResponse[BalanceSyncInfo])

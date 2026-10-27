@@ -1,5 +1,7 @@
 from app.models import (
+    ActualShipment,
     AvailableBalance,
+    AvailableBalanceHistory,
     Base,
     Event,
     Normative,
@@ -16,7 +18,9 @@ from app.models import (
 )
 
 EXPECTED_TABLES = {
+    "actual_shipments",
     "available_balances",
+    "available_balances_history",
     "events",
     "normatives",
     "objects",
@@ -43,6 +47,8 @@ def test_models_import() -> None:
     assert RequestItemHistory.__tablename__ == "request_item_history"
     assert Normative.__tablename__ == "normatives"
     assert AvailableBalance.__tablename__ == "available_balances"
+    assert AvailableBalanceHistory.__tablename__ == "available_balances_history"
+    assert ActualShipment.__tablename__ == "actual_shipments"
     assert Event.__tablename__ == "events"
     assert SyncMetadata.__tablename__ == "sync_metadata"
     assert Params.__tablename__ == "params"

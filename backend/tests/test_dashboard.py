@@ -242,12 +242,21 @@ async def test_dashboard_exceptions_only_deficit(
     assert response.status_code == 200, response.text
     body = response.json()
     codes = {item["product_code"] for item in body["data"]}
-    assert TEST_PRODUCT_DEFICIT in codes
     assert TEST_PRODUCT_OK not in codes
     assert all(item["deficit"] > 0 for item in body["data"])
-    item = next(
-        row for row in body["data"] if row["product_code"] == TEST_PRODUCT_DEFICIT
+    focused = await client.get(
+        "/api/v1/dashboard/exceptions",
+        headers=auth_header(token),
+        params={
+            "warehouse_code": dashboard_catalog["warehouse_code"],
+            "product_code": TEST_PRODUCT_DEFICIT,
+            "limit": 200,
+        },
     )
+    assert focused.status_code == 200, focused.text
+    focused_body = focused.json()
+    assert focused_body["meta"]["total"] == 1
+    item = focused_body["data"][0]
     assert item["status"] == "critical"
     assert item["unit"] == "т"
     assert item["request_id"] == str(dashboard_catalog["request_id"])

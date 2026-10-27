@@ -956,3 +956,78 @@ export interface WarehouseCoverageData {
   unit: DashboardMassUnit
   warehouses: WarehouseCoverageItem[]
 }
+
+export interface BalanceHistoryItem {
+  id: string
+  snapshot_date: string
+  snapshot_at: string
+  warehouse_code: number
+  warehouse_name: string
+  product_code: number
+  product_name: string
+  available: number
+  plan: number
+  unit: string
+  source: string
+  uploaded_by?: string | null
+  created_at: string
+}
+
+export interface BalanceHistoryParams {
+  product_code?: number
+  warehouse_code?: number
+  date_from?: string
+  date_to?: string
+  page?: number
+  limit?: number
+}
+
+export type ShipmentUnit = 'шт' | 'кг' | 'т'
+
+export interface ActualShipmentListItem {
+  id: string
+  client_id: string
+  client_code: number
+  client_name: string
+  product_code: number
+  product_name: string
+  quantity: number
+  unit: ShipmentUnit
+  shipment_date: string
+  invoice_number?: string | null
+  route?: string | null
+}
+
+export interface ActualShipmentPreviewRow {
+  row: number
+  client_id: string
+  client_code: number
+  client_name: string
+  product_code: number
+  product_name: string
+  quantity: number
+  unit: ShipmentUnit
+  shipment_date: string
+  invoice_number?: string | null
+  route?: string | null
+}
+
+export interface ActualShipmentUploadResult {
+  saved: boolean
+  total_rows: number
+  valid_rows: number
+  inserted: number
+  errors: number
+  message: string
+  preview: ActualShipmentPreviewRow[]
+  error_details: ProductUploadError[]
+}
+
+export interface ActualShipmentListParams {
+  client_id?: string
+  product_code?: number
+  date_from?: string
+  date_to?: string
+  page?: number
+  limit?: number
+}

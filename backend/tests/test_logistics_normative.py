@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
 from uuid import uuid4
@@ -10,6 +10,7 @@ from sqlalchemy import delete, select
 
 from app.core.database import AsyncSessionLocal
 from app.models.available_balance import AvailableBalance
+from app.models.available_balance_history import AvailableBalanceHistory
 from app.models.normative import Normative
 from app.models.object import Object
 from app.models.product import Product
@@ -37,6 +38,11 @@ async def logistics_catalog(catalog: dict[str, int], test_user: AuthUser):
     warehouse_code = catalog["warehouse_code"]
     product_codes = [TEST_PRODUCT_DEFICIT, TEST_PRODUCT_OK, TEST_PRODUCT_STOCK_ONLY]
     async with AsyncSessionLocal() as session:
+        await session.execute(
+            delete(AvailableBalanceHistory).where(
+                AvailableBalanceHistory.product_code.in_(product_codes)
+            )
+        )
         await session.execute(
             delete(AvailableBalance).where(
                 AvailableBalance.product_code.in_(product_codes)
@@ -167,6 +173,13 @@ async def logistics_catalog(catalog: dict[str, int], test_user: AuthUser):
     }
 
     async with AsyncSessionLocal() as session:
+        await session.execute(
+            delete(AvailableBalanceHistory).where(
+                AvailableBalanceHistory.product_code.in_(
+                    [TEST_PRODUCT_DEFICIT, TEST_PRODUCT_OK, TEST_PRODUCT_STOCK_ONLY]
+                )
+            )
+        )
         await session.execute(
             delete(AvailableBalance).where(
                 AvailableBalance.product_code.in_(
@@ -1162,3 +1175,245 @@ async def test_upload_balances_accepts_negative_available_and_plan(
     assert item["normative_quantity"] == 1000
     assert item["deficit"] == 1030
     assert item["status"] == "warning"
+
+
+async def _clear_balance_history(*warehouse_codes: int) -> None:
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            delete(AvailableBalanceHistory).where(
+                AvailableBalanceHistory.warehouse_code.in_(warehouse_codes)
+            )
+        )
+        await session.commit()
+
+
+def _history_file(*rows: list) -> dict:
+    return {
+        "file": (
+            "balances.xlsx",
+            _build_balances_xlsx(list(rows)),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    }
+
+
+async def test_upload_replaces_daily_balance_snapshot(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    logistics_catalog: dict,
+) -> None:
+    warehouse = logistics_catalog["warehouse_code"]
+    other = 2002
+    await _clear_balance_history(warehouse, other)
+    today = datetime.now(UTC).date()
+    async with AsyncSessionLocal() as session:
+        session.add(
+            AvailableBalanceHistory(
+                snapshot_date=today,
+                snapshot_at=datetime.now(UTC),
+                warehouse_code=other,
+                product_code=TEST_PRODUCT_DEFICIT,
+                available=Decimal("5.00"),
+                plan=Decimal("5.00"),
+                unit="шт",
+                source="excel_upload",
+                uploaded_by=logistics_user.id,
+            )
+        )
+        await session.commit()
+
+    token = await login_token(client, logistics_user)
+    first = await client.post(
+        "/api/v1/logistics/normative/upload",
+        headers=auth_header(token),
+        files=_history_file(
+            _balance_excel_row(
+                product_code=TEST_PRODUCT_DEFICIT,
+                plant=2401,
+                warehouse="F005",
+                available=10,
+                plan=12,
+                unit="ШТ",
+            ),
+            _balance_excel_row(
+                product_code=TEST_PRODUCT_OK,
+                plant=2401,
+                warehouse="F005",
+                available=3,
+                plan=4,
+                unit="КГ",
+            ),
+        ),
+    )
+    assert first.status_code == 200, first.text
+
+    async with AsyncSessionLocal() as session:
+        stored = (
+            await session.scalars(
+                select(AvailableBalanceHistory).where(
+                    AvailableBalanceHistory.warehouse_code == warehouse,
+                    AvailableBalanceHistory.snapshot_date == today,
+                )
+            )
+        ).all()
+        by_product = {row.product_code: row for row in stored}
+        assert set(by_product) == {TEST_PRODUCT_DEFICIT, TEST_PRODUCT_OK}
+        assert by_product[TEST_PRODUCT_DEFICIT].available == Decimal("10.00")
+        assert by_product[TEST_PRODUCT_DEFICIT].plan == Decimal("12.00")
+        assert by_product[TEST_PRODUCT_DEFICIT].unit == "ШТ"
+        assert by_product[TEST_PRODUCT_DEFICIT].source == "excel_upload"
+        assert by_product[TEST_PRODUCT_DEFICIT].uploaded_by == logistics_user.id
+        assert by_product[TEST_PRODUCT_OK].unit == "КГ"
+        kept = await session.scalar(
+            select(AvailableBalanceHistory).where(
+                AvailableBalanceHistory.warehouse_code == other,
+                AvailableBalanceHistory.snapshot_date == today,
+            )
+        )
+        assert kept is not None
+        assert kept.available == Decimal("5.00")
+
+    second = await client.post(
+        "/api/v1/logistics/normative/upload",
+        headers=auth_header(token),
+        files=_history_file(
+            _balance_excel_row(
+                product_code=TEST_PRODUCT_DEFICIT,
+                plant=2401,
+                warehouse="F005",
+                available=21,
+                plan=22,
+                unit="ШТ",
+            )
+        ),
+    )
+    assert second.status_code == 200, second.text
+
+    async with AsyncSessionLocal() as session:
+        stored = (
+            await session.scalars(
+                select(AvailableBalanceHistory).where(
+                    AvailableBalanceHistory.warehouse_code == warehouse,
+                    AvailableBalanceHistory.snapshot_date == today,
+                )
+            )
+        ).all()
+        assert [row.product_code for row in stored] == [TEST_PRODUCT_DEFICIT]
+        assert stored[0].available == Decimal("21.00")
+        assert stored[0].plan == Decimal("22.00")
+        balance_gone = await session.get(AvailableBalance, (warehouse, TEST_PRODUCT_OK))
+        balance_kept = await session.get(
+            AvailableBalance, (warehouse, TEST_PRODUCT_DEFICIT)
+        )
+        other_snapshot = await session.scalar(
+            select(AvailableBalanceHistory).where(
+                AvailableBalanceHistory.warehouse_code == other
+            )
+        )
+        assert balance_gone is None
+        assert balance_kept is not None
+        assert balance_kept.available == Decimal("21.00")
+        assert balance_kept.source == "excel"
+        assert other_snapshot is not None
+        await session.execute(
+            delete(AvailableBalanceHistory).where(
+                AvailableBalanceHistory.warehouse_code == other
+            )
+        )
+        await session.commit()
+
+
+async def test_balance_history_filters_for_any_role(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    test_user: AuthUser,
+    guest_user: AuthUser,
+    logistics_catalog: dict,
+) -> None:
+    warehouse = logistics_catalog["warehouse_code"]
+    await _clear_balance_history(warehouse)
+    token = await login_token(client, logistics_user)
+    uploaded = await client.post(
+        "/api/v1/logistics/normative/upload",
+        headers=auth_header(token),
+        files=_history_file(
+            _balance_excel_row(
+                product_code=TEST_PRODUCT_DEFICIT,
+                plant=2401,
+                warehouse="F005",
+                available=8,
+                plan=9,
+            ),
+            _balance_excel_row(
+                product_code=TEST_PRODUCT_STOCK_ONLY,
+                plant=2401,
+                warehouse="F005",
+                available=1,
+                plan=1,
+            ),
+        ),
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    today = datetime.now(UTC).date()
+    async with AsyncSessionLocal() as session:
+        session.add(
+            AvailableBalanceHistory(
+                snapshot_date=today - timedelta(days=2),
+                snapshot_at=datetime.now(UTC) - timedelta(days=2),
+                warehouse_code=warehouse,
+                product_code=TEST_PRODUCT_DEFICIT,
+                available=Decimal("1.00"),
+                plan=Decimal("1.00"),
+                unit="ШТ",
+                source="excel_upload",
+                uploaded_by=logistics_user.id,
+            )
+        )
+        await session.commit()
+
+    commercial = await login_token(client, test_user)
+    response = await client.get(
+        "/api/v1/logistics/normative/history",
+        params={
+            "warehouse_code": warehouse,
+            "product_code": TEST_PRODUCT_DEFICIT,
+            "date_from": today.isoformat(),
+            "date_to": today.isoformat(),
+        },
+        headers=auth_header(commercial),
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["meta"]["total"] == 1
+    assert body["data"][0]["available"] == 8
+    assert body["data"][0]["plan"] == 9
+    assert body["data"][0]["product_code"] == TEST_PRODUCT_DEFICIT
+    assert body["data"][0]["product_name"] == "Тестовый подшипник логистики"
+    assert body["data"][0]["warehouse_name"] == "Склад Ростов"
+
+    dates_response = await client.get(
+        "/api/v1/logistics/normative/history/dates",
+        headers=auth_header(commercial),
+    )
+    assert dates_response.status_code == 200, dates_response.text
+    snapshot_dates = dates_response.json()["data"]
+    assert today.isoformat() in snapshot_dates
+    assert (today - timedelta(days=2)).isoformat() in snapshot_dates
+    assert snapshot_dates == sorted(snapshot_dates, reverse=True)
+
+    guest = await login_token(client, guest_user)
+    guest_response = await client.get(
+        "/api/v1/logistics/normative/history",
+        params={"warehouse_code": warehouse, "date_from": today.isoformat()},
+        headers=auth_header(guest),
+    )
+    assert guest_response.status_code == 200, guest_response.text
+    assert guest_response.json()["meta"]["total"] == 2
+
+    invalid = await client.get(
+        "/api/v1/logistics/normative/history",
+        params={"date_from": "2026-10-10", "date_to": "2026-10-01"},
+        headers=auth_header(commercial),
+    )
+    assert invalid.status_code == 400
+    assert invalid.json()["error"]["code"] == "VALIDATION_ERROR"

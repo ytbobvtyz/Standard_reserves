@@ -1,5 +1,7 @@
+from app.models.actual_shipment import ActualShipment
 from app.models.audit_log import AuditLog
 from app.models.available_balance import AvailableBalance
+from app.models.available_balance_history import AvailableBalanceHistory
 from app.models.base import Base
 from app.models.client import Client
 from app.models.department import Department
@@ -18,8 +20,10 @@ from app.models.sync_metadata import SyncMetadata
 from app.models.user import User
 
 __all__ = [
+    "ActualShipment",
     "AuditLog",
     "AvailableBalance",
+    "AvailableBalanceHistory",
     "Base",
     "Client",
     "Department",
