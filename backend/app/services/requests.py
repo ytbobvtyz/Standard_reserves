@@ -1,7 +1,11 @@
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from io import BytesIO
 from uuid import UUID
 
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -44,6 +48,36 @@ from app.services.pallet import ceil_to_pallet
 from app.services.params import is_pallet_multiple_enabled, load_coefficient_set
 
 VIEW_ALL_ROLES = {"pp", "economist", "logistics"}
+EXPORT_ROLES = {"commercial", "logistics"}
+REQUEST_EXPORT_HEADERS = [
+    "ID запроса",
+    "Статус",
+    "Клиент",
+    "Тип",
+    "Дата создания",
+    "Срок действия",
+    "Артикул",
+    "Название",
+    "Склад",
+    "Количество запрошено",
+    "Количество утверждено",
+    "Единица",
+    "Комментарий",
+]
+REQUEST_STATUS_LABELS = {
+    "draft": "Черновик",
+    "pp_approved": "Ожидает ПП",
+    "economy_check": "Ожидает экономиста",
+    "active": "Активен",
+    "approved": "Согласован",
+    "rejected": "Отклонён",
+    "expired": "Просрочен",
+    "executed": "Исполнен",
+}
+REQUEST_TYPE_LABELS = {
+    "normative": "Норматив",
+    "one_time": "Разовое",
+}
 
 
 def can_view_request(user: User, request: Request) -> bool:
@@ -600,6 +634,114 @@ def to_expiry_data(request: Request) -> RequestExpiryData:
         expiry_date=request.expiry_date,
         updated_at=request.updated_at,
     )
+
+
+def _export_comment(request: Request, item: RequestItem | None) -> str:
+    if item is not None and item.comment:
+        return item.comment
+    return request.initiator_comment or ""
+
+
+def build_requests_export_xlsx(requests: list[Request]) -> bytes:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Запросы"
+    sheet.append(REQUEST_EXPORT_HEADERS)
+
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="305496")
+    header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    thin = Border(
+        left=Side(style="thin", color="D9D9D9"),
+        right=Side(style="thin", color="D9D9D9"),
+        top=Side(style="thin", color="D9D9D9"),
+        bottom=Side(style="thin", color="D9D9D9"),
+    )
+    for cell in sheet[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = thin
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = f"A1:{get_column_letter(len(REQUEST_EXPORT_HEADERS))}1"
+    widths = [38, 22, 28, 14, 16, 16, 12, 32, 24, 22, 22, 12, 36]
+    for index, width in enumerate(widths, start=1):
+        sheet.column_dimensions[get_column_letter(index)].width = width
+    sheet.row_dimensions[1].height = 22
+
+    for request in requests:
+        ordered_items = sorted(
+            request.items,
+            key=lambda item: (item.product_code, item.warehouse_code),
+        )
+        item_rows: list[RequestItem | None] = ordered_items or [None]
+        created = request.created_at.date() if request.created_at else None
+        for item in item_rows:
+            product = item.product if item is not None else None
+            warehouse = item.warehouse if item is not None else None
+            approved = item.quantity_approved if item is not None else None
+            sheet.append(
+                [
+                    str(request.id),
+                    REQUEST_STATUS_LABELS.get(request.status, request.status),
+                    request.client_name,
+                    REQUEST_TYPE_LABELS.get(request.request_type, request.request_type),
+                    created,
+                    request.expiry_date,
+                    product.code if product is not None else None,
+                    product.name if product is not None else "",
+                    warehouse.name if warehouse is not None else "",
+                    float(item.quantity_requested) if item is not None else None,
+                    float(approved) if approved is not None else None,
+                    item.unit if item is not None else "",
+                    _export_comment(request, item),
+                ]
+            )
+            row_idx = sheet.max_row
+            for col in range(1, len(REQUEST_EXPORT_HEADERS) + 1):
+                cell = sheet.cell(row=row_idx, column=col)
+                cell.border = thin
+                cell.alignment = Alignment(
+                    vertical="center",
+                    wrap_text=col in {3, 8, 9, 13},
+                )
+            for col in (5, 6):
+                sheet.cell(row=row_idx, column=col).number_format = "DD.MM.YYYY"
+            for col in (10, 11):
+                sheet.cell(row=row_idx, column=col).number_format = "#,##0.######"
+
+    if sheet.max_row > 1:
+        last_col = get_column_letter(len(REQUEST_EXPORT_HEADERS))
+        sheet.auto_filter.ref = f"A1:{last_col}{sheet.max_row}"
+
+    buffer = BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+async def export_requests_xlsx(
+    db: AsyncSession,
+    user: User,
+    request_ids: list[UUID],
+) -> bytes:
+    if user.role not in EXPORT_ROLES:
+        raise APIError(403, "FORBIDDEN", "Недостаточно прав")
+    unique_ids = list(dict.fromkeys(request_ids))
+    if not unique_ids:
+        raise APIError(400, "BAD_REQUEST", "Не выбраны запросы")
+    result = await db.execute(
+        select(Request)
+        .options(*DETAIL_OPTIONS)
+        .where(Request.id.in_(unique_ids), Request.deleted_at.is_(None))
+    )
+    found = {item.id: item for item in result.scalars().unique().all()}
+    if any(item_id not in found for item_id in unique_ids):
+        raise APIError(404, "NOT_FOUND", "Запрос не найден")
+    if user.role == "commercial" and any(
+        found[item_id].initiator_id != user.id for item_id in unique_ids
+    ):
+        raise APIError(403, "FORBIDDEN", "Можно выгружать только свои запросы")
+    return build_requests_export_xlsx([found[item_id] for item_id in unique_ids])
 
 
 async def submit_draft(db: AsyncSession, request: Request) -> Request:

@@ -291,7 +291,7 @@ describe('DashboardPage', () => {
     expect(
       screen.getByText(/Покрытие с учётом перемещений = \(общий НЗ/),
     ).toBeTruthy()
-    expect(screen.getByText(/излишняя/)).toBeTruthy()
+    expect(screen.getByText(/только артикулы из нормативов этого отбора/)).toBeTruthy()
   })
 
   it('reloads all widgets when warehouse changes', async () => {
@@ -384,6 +384,9 @@ describe('DashboardPage', () => {
     fireEvent.click(await screen.findByText('7701000001 — ООО Ромашка'))
     await waitFor(() => {
       expect(getNormativeTrend).toHaveBeenCalledWith(
+        expect.objectContaining({ client_id: 'c-romashka' }),
+      )
+      expect(getWarehouseCoverage).toHaveBeenCalledWith(
         expect.objectContaining({ client_id: 'c-romashka' }),
       )
     })

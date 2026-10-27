@@ -30,6 +30,7 @@ export const dashboardApi = {
     unit?: DashboardMassUnit
     warehouse_code?: number
     department_id?: string
+    client_id?: string
   }) =>
     api.get<ApiSuccess<WarehouseCoverageData>>('/dashboard/warehouse-coverage', {
       params,

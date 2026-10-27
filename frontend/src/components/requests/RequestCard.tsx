@@ -1,4 +1,4 @@
-import { Button, Card, Popconfirm, Space, Typography } from 'antd'
+import { Button, Card, Checkbox, Popconfirm, Space, Typography } from 'antd'
 import { useNavigate } from 'react-router-dom'
 import type { RequestListItem } from '../../api/types'
 import { DELETE_CONFIRM } from '../../utils/requestActions'
@@ -13,9 +13,17 @@ interface RequestCardProps {
   request: RequestListItem
   canDelete?: boolean
   onDelete?: () => void
+  selected?: boolean
+  onSelectedChange?: (selected: boolean) => void
 }
 
-export function RequestCard({ request, canDelete = false, onDelete }: RequestCardProps) {
+export function RequestCard({
+  request,
+  canDelete = false,
+  onDelete,
+  selected = false,
+  onSelectedChange,
+}: RequestCardProps) {
   const navigate = useNavigate()
 
   return (
@@ -27,7 +35,17 @@ export function RequestCard({ request, canDelete = false, onDelete }: RequestCar
     >
       <Space direction="vertical" size={4} style={{ width: '100%' }}>
         <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-          <Typography.Text strong>{request.client_name}</Typography.Text>
+          <Space>
+            {onSelectedChange ? (
+              <Checkbox
+                checked={selected}
+                aria-label={`Выбрать запрос ${request.client_name}`}
+                onClick={(event) => event.stopPropagation()}
+                onChange={(event) => onSelectedChange(event.target.checked)}
+              />
+            ) : null}
+            <Typography.Text strong>{request.client_name}</Typography.Text>
+          </Space>
           <StatusBadge status={request.status} />
         </Space>
           <Typography.Text type="secondary">

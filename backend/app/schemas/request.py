@@ -67,6 +67,10 @@ class RequestItemCreate(BaseModel):
     comment: str | None = None
 
 
+class RequestExportBody(BaseModel):
+    request_ids: list[UUID] = Field(min_length=1)
+
+
 class RequestCreate(BaseModel):
     request_type: Literal["normative", "one_time"]
     client_id: UUID

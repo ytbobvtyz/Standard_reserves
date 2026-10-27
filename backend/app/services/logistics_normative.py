@@ -383,6 +383,8 @@ async def collect_deficit_rows(
     unit: Unit = "шт",
     product_codes: list[int] | None = None,
     department_id: UUID | None = None,
+    client_id: UUID | None = None,
+    scope_to_normative_keys: bool = False,
 ) -> list[DeficitRow]:
     coeffs = await load_coefficient_set(db)
     if product_codes:
@@ -419,6 +421,8 @@ async def collect_deficit_rows(
         conditions.append(Normative.product_code.in_(product_codes))
     if department_id is not None:
         conditions.append(Client.department_id == department_id)
+    if client_id is not None:
+        conditions.append(Normative.client_id == client_id)
 
     normative_stmt = (
         select(Normative)
@@ -460,7 +464,10 @@ async def collect_deficit_rows(
         ):
             bucket["expiry_date"] = normative.expiry_date
 
-    if filter_mode == "all":
+    include_stock_outside_normatives = (
+        filter_mode == "all" and not scope_to_normative_keys
+    )
+    if include_stock_outside_normatives:
         balances = await _load_balances(
             db,
             warehouse_code=warehouse_code,
@@ -471,7 +478,7 @@ async def collect_deficit_rows(
         balances = await _load_balances(db, keys=set(aggregated))
 
     covered_keys = set(aggregated)
-    if filter_mode == "all":
+    if include_stock_outside_normatives:
         extra_keys = [key for key in balances if key not in covered_keys]
         extra_product_codes = {product_code for _, product_code in extra_keys}
         extra_warehouse_codes = {wh for wh, _ in extra_keys}
@@ -523,7 +530,7 @@ async def collect_deficit_rows(
     products_by_code = {
         bucket["product"].code: bucket["product"] for bucket in aggregated.values()
     }
-    if any(
+    if not scope_to_normative_keys and any(
         product.parent_code or product.children_code
         for product in products_by_code.values()
     ):

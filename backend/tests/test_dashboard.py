@@ -11,6 +11,7 @@ from app.models.available_balance import AvailableBalance
 from app.models.client import Client
 from app.models.department import Department
 from app.models.normative import Normative
+from app.models.object import Object
 from app.models.product import Product
 from app.models.production_request import ProductionRequest, ProductionRequestItem
 from app.models.request import Request
@@ -810,4 +811,253 @@ async def test_dashboard_charts_filters_stack_and_others(
                 delete(Department).where(Department.id.in_([sales_id, planning_id]))
             )
             await session.execute(delete(Product).where(Product.code == product_code))
+            await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_warehouse_coverage_scopes_stock_to_filtered_normatives(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    """LOG-050: client/department filter keeps stock and deficit on NZ SKUs only."""
+    warehouse_code = 20950
+    partial_sku = 29201
+    other_dept_sku = 29202
+    stock_only_sku = 29203
+    covered_sku = 29204
+    product_codes = [partial_sku, other_dept_sku, stock_only_sku, covered_sku]
+    sales_id = uuid4()
+    planning_id = uuid4()
+    empty_id = uuid4()
+    client_partial = uuid4()
+    client_other = uuid4()
+    client_covered = uuid4()
+    token = await login_token(client, logistics_user)
+
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            delete(AvailableBalance).where(
+                AvailableBalance.product_code.in_(product_codes)
+            )
+        )
+        await session.execute(
+            delete(Normative).where(Normative.product_code.in_(product_codes))
+        )
+        await session.execute(delete(Product).where(Product.code.in_(product_codes)))
+        await session.execute(
+            delete(Client).where(
+                Client.client_code.in_([8_700_000_001, 8_700_000_002, 8_700_000_003])
+            )
+        )
+        await session.execute(
+            delete(Object).where(
+                (Object.code == warehouse_code) | (Object.erp_warehouse_code == "T950")
+            )
+        )
+        await session.commit()
+
+    async with AsyncSessionLocal() as session:
+        session.add(
+            Object(
+                code=warehouse_code,
+                name="Склад покрытия LOG-050",
+                city="Тула",
+                type="warehouse",
+                erp_warehouse_code="T950",
+                long_distance=False,
+                is_active=True,
+            )
+        )
+        session.add(
+            Department(id=sales_id, name=f"Покрытие продажи {sales_id.hex[:8]}")
+        )
+        session.add(
+            Department(id=planning_id, name=f"Покрытие план {planning_id.hex[:8]}")
+        )
+        session.add(Department(id=empty_id, name=f"Покрытие пусто {empty_id.hex[:8]}"))
+        session.add(
+            Client(
+                id=client_partial,
+                client_code=8_700_000_001,
+                inn="8700000001",
+                name="Клиент частичного покрытия",
+                department_id=sales_id,
+                is_active=True,
+            )
+        )
+        session.add(
+            Client(
+                id=client_other,
+                client_code=8_700_000_002,
+                inn="8700000002",
+                name="Клиент другого подразделения",
+                department_id=planning_id,
+                is_active=True,
+            )
+        )
+        session.add(
+            Client(
+                id=client_covered,
+                client_code=8_700_000_003,
+                inn="8700000003",
+                name="Клиент полного покрытия",
+                department_id=sales_id,
+                is_active=True,
+            )
+        )
+        for code, name in (
+            (partial_sku, "Частичное покрытие"),
+            (other_dept_sku, "Чужое подразделение"),
+            (stock_only_sku, "Остаток без НЗ"),
+            (covered_sku, "Полное покрытие"),
+        ):
+            session.add(
+                Product(
+                    code=code,
+                    name=name,
+                    category="A",
+                    plant_id=catalog["plant_code"],
+                    weight_kg=Decimal("1"),
+                    is_active=True,
+                )
+            )
+        session.add_all(
+            [
+                Normative(
+                    product_code=partial_sku,
+                    warehouse_code=warehouse_code,
+                    quantity=Decimal("1"),
+                    unit="т",
+                    client_name="Клиент частичного покрытия",
+                    client_id=client_partial,
+                    expiry_date=date.today() + timedelta(days=40),
+                    category="A",
+                ),
+                Normative(
+                    product_code=other_dept_sku,
+                    warehouse_code=warehouse_code,
+                    quantity=Decimal("2"),
+                    unit="т",
+                    client_name="Клиент другого подразделения",
+                    client_id=client_other,
+                    expiry_date=date.today() + timedelta(days=40),
+                    category="A",
+                ),
+                Normative(
+                    product_code=covered_sku,
+                    warehouse_code=warehouse_code,
+                    quantity=Decimal("1"),
+                    unit="т",
+                    client_name="Клиент полного покрытия",
+                    client_id=client_covered,
+                    expiry_date=date.today() + timedelta(days=40),
+                    category="A",
+                ),
+                AvailableBalance(
+                    warehouse_code=warehouse_code,
+                    product_code=partial_sku,
+                    available=Decimal("0.4"),
+                    plan=Decimal("0.4"),
+                    unit="т",
+                    source="manual",
+                ),
+                AvailableBalance(
+                    warehouse_code=warehouse_code,
+                    product_code=other_dept_sku,
+                    available=Decimal("0.5"),
+                    plan=Decimal("0.5"),
+                    unit="т",
+                    source="manual",
+                ),
+                AvailableBalance(
+                    warehouse_code=warehouse_code,
+                    product_code=stock_only_sku,
+                    available=Decimal("5"),
+                    plan=Decimal("8"),
+                    unit="т",
+                    source="manual",
+                ),
+                AvailableBalance(
+                    warehouse_code=warehouse_code,
+                    product_code=covered_sku,
+                    available=Decimal("1.5"),
+                    plan=Decimal("2"),
+                    unit="т",
+                    source="manual",
+                ),
+            ]
+        )
+        await session.commit()
+
+    async def coverage(params: dict) -> dict:
+        response = await client.get(
+            "/api/v1/dashboard/warehouse-coverage",
+            headers=auth_header(token),
+            params={"unit": "т", "warehouse_code": warehouse_code, **params},
+        )
+        assert response.status_code == 200, response.text
+        warehouses = response.json()["data"]["warehouses"]
+        return next(
+            item for item in warehouses if item["warehouse_code"] == warehouse_code
+        )
+
+    try:
+        unfiltered = await coverage({})
+        assert Decimal(str(unfiltered["normative_quantity"])) == Decimal("4")
+        assert Decimal(str(unfiltered["available"])) == Decimal("7.4")
+        assert Decimal(str(unfiltered["planned"])) == Decimal("3.5")
+        assert Decimal(str(unfiltered["deficit"])) == Decimal("2.1")
+
+        by_department = await coverage({"department_id": str(sales_id)})
+        assert Decimal(str(by_department["normative_quantity"])) == Decimal("2")
+        assert Decimal(str(by_department["available"])) == Decimal("1.9")
+        assert Decimal(str(by_department["planned"])) == Decimal("0.5")
+        assert Decimal(str(by_department["deficit"])) == Decimal("0.6")
+        assert Decimal(str(by_department["coverage_pct"])) == Decimal("70")
+
+        by_client = await coverage({"client_id": str(client_partial)})
+        assert Decimal(str(by_client["normative_quantity"])) == Decimal("1")
+        assert Decimal(str(by_client["available"])) == Decimal("0.4")
+        assert Decimal(str(by_client["planned"])) == Decimal("0")
+        assert Decimal(str(by_client["deficit"])) == Decimal("0.6")
+        assert Decimal(str(by_client["coverage_pct"])) == Decimal("40")
+
+        covered = await coverage({"client_id": str(client_covered)})
+        assert Decimal(str(covered["normative_quantity"])) == Decimal("1")
+        assert Decimal(str(covered["available"])) == Decimal("1.5")
+        assert Decimal(str(covered["deficit"])) == Decimal("0")
+        assert Decimal(str(covered["coverage_pct"])) == Decimal("100")
+
+        empty = await client.get(
+            "/api/v1/dashboard/warehouse-coverage",
+            headers=auth_header(token),
+            params={"department_id": str(empty_id), "warehouse_code": warehouse_code},
+        )
+        assert empty.status_code == 200, empty.text
+        assert empty.json()["data"]["warehouses"] == []
+    finally:
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                delete(AvailableBalance).where(
+                    AvailableBalance.product_code.in_(product_codes)
+                )
+            )
+            await session.execute(
+                delete(Normative).where(Normative.product_code.in_(product_codes))
+            )
+            await session.execute(
+                delete(Product).where(Product.code.in_(product_codes))
+            )
+            await session.execute(
+                delete(Client).where(
+                    Client.id.in_([client_partial, client_other, client_covered])
+                )
+            )
+            await session.execute(
+                delete(Department).where(
+                    Department.id.in_([sales_id, planning_id, empty_id])
+                )
+            )
+            await session.execute(delete(Object).where(Object.code == warehouse_code))
             await session.commit()

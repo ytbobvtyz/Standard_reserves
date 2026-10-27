@@ -30,6 +30,13 @@ export const requestsApi = {
   getHistory: (id: string) =>
     api.get<ApiSuccess<RequestItemHistoryEntry[]>>(`/requests/${id}/history`),
 
+  exportExcel: (requestIds: string[]) =>
+    api.post<Blob>(
+      '/requests/export',
+      { request_ids: requestIds },
+      { responseType: 'blob' },
+    ),
+
   updateExpiry: (id: string, expiry_date: string) =>
     api.patch<
       ApiSuccess<{

@@ -561,6 +561,35 @@ json
         "updated_at": "2026-08-18T10:00:00Z"
     }
 }
+3.8. Выгрузить запросы в Excel
+text
+POST /requests/export
+Headers:
+
+text
+Authorization: Bearer <token>
+Права: `commercial` (только свои запросы), `logistics` (любые). Остальные роли — 403. Статус запроса не ограничен: черновик, согласование, активный, отклонённый, просроченный и исполненный выгружаются одинаково.
+
+Request:
+
+json
+{
+    "request_ids": [
+        "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    ]
+}
+
+Response (200): файл `.xlsx` (`application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`), имя `requests_export_YYYY-MM-DD.xlsx`. Один лист «Запросы». Строка — позиция запроса. Колонки: ID запроса, Статус, Клиент, Тип, Дата создания, Срок действия, Артикул, Название, Склад, Количество запрошено, Количество утверждено, Единица, Комментарий. Комментарий позиции; если его нет — комментарий инициатора.
+
+Errors:
+
+400 — пустой список `request_ids`
+
+403 — роль не commercial/logistics, либо коммерсант передал чужой запрос
+
+404 — запрос не найден или удалён
+
 4. СОГЛАСОВАНИЕ (ПП)
 4.1. Получить список запросов на согласование (ПП)
 text
@@ -1220,7 +1249,7 @@ Query: `unit` = `т` (по умолчанию) или `кг`, `warehouse_code` �
 
 `active_count` — число действующих записей `normatives`. `active_quantity` — сумма их массы. `deficit_quantity` — сумма по позициям НЗ (склад + артикул) `max(0, норматив − plan)`. `coverage_with_transfers` = `(active_quantity − deficit_quantity) / active_quantity × 100`. `coverage_available_only` — та же формула, но дефицит позиции = `max(0, норматив − available)`, без плана. `coverage_pct` совпадает с `coverage_with_transfers`. Если `active_quantity = 0`, оба покрытия равны 0. Если дефицит позиции неположительный, в сумму он не входит; при нулевой сумме дефицита покрытие 100%. `expiring_30d` — число НЗ с `expiry_date` в ближайшие 30 дней, `expiring_30d_quantity` — их масса. `avg_remaining_days` — средний остаток срока, дни; на панели KPI не показывается.
 
-Тот же `department_id` принимается на `GET /dashboard/normative-trend`, `/exceptions`, `/warehouse-coverage`, `/expiry-calendar`, `/nz-by-department`, `/top-clients`.
+Тот же `department_id` принимается на `GET /dashboard/normative-trend`, `/exceptions`, `/warehouse-coverage`, `/expiry-calendar`, `/nz-by-department`, `/top-clients`. `GET /dashboard/warehouse-coverage` дополнительно принимает `client_id`: вместе с `department_id` он ограничивает норматив, доступный остаток, plan и дефицит артикулами из НЗ выбранного клиента.
 
 6.9.2. Динамика нормативов
 text
@@ -1317,7 +1346,9 @@ json
 6.9.5. Покрытие по складам
 text
 GET /dashboard/warehouse-coverage
-Query: `unit` (`т` / `кг`), `warehouse_code`, `department_id`. «Доступно» и `plan` — как шапка склада на дашборде логиста (`filter_mode=all`, включая остатки без НЗ и дочерние артикулы группы). `planned` = `plan - available` (≥ 0). Норматив и дефицит — только по действующим НЗ. `mismatch = true`, если стек выше норматива. `department_id` оставляет нормативы клиентов этого подразделения; остатки по-прежнему на уровне склада и артикула.
+Query: `unit` (`т` / `кг`), `warehouse_code`, `department_id`, `client_id`. Без этих фильтров «доступно» и `plan` — как шапка склада на дашборде логиста (`filter_mode=all`, включая остатки без НЗ и дочерние артикулы группы). `planned` = `plan - available` (≥ 0). Норматив и дефицит — по действующим НЗ. `mismatch = true`, если стек выше норматива.
+
+Если задан `department_id` и/или `client_id`, в расчёт входят только пары склад + артикул из действующих нормативов этого отбора. Остатки, `plan` и дефицит чужих артикулов не суммируются. `coverage_pct` = `(normative_quantity − deficit) / normative_quantity × 100`. При нулевом нормативе покрытие 0. Если дефицит по всем позициям отбора неположительный, покрытие 100%. Без фильтра формула покрытия прежняя: `plan / requirement`, а при нулевой потребности — 100%.
 
 json
 {

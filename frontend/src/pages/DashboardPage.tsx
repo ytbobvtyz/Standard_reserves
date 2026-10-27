@@ -108,7 +108,11 @@ export function DashboardPage() {
           unit,
           ...scope,
         }),
-        dashboardApi.getWarehouseCoverage({ unit, ...scope }),
+        dashboardApi.getWarehouseCoverage({
+          unit,
+          ...scope,
+          ...(clientId ? { client_id: clientId } : {}),
+        }),
         dashboardApi.getExpiryCalendar({ unit, ...scope }),
         dashboardApi.getNzByDepartment({ unit, ...scope }),
         dashboardApi.getTopClients({ unit, limit: 10, ...scope }),

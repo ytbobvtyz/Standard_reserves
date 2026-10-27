@@ -1,7 +1,9 @@
 from datetime import UTC, date, datetime
+from io import BytesIO
 from uuid import UUID
 
 from httpx import AsyncClient
+from openpyxl import load_workbook
 from sqlalchemy import select
 
 from app.core.database import AsyncSessionLocal
@@ -562,3 +564,125 @@ async def test_create_request_copies_department_and_requirement(
             if warehouse is not None:
                 warehouse.long_distance = False
                 await session.commit()
+
+
+async def test_export_requests_xlsx_permissions_and_columns(
+    client: AsyncClient,
+    test_user: AuthUser,
+    logistics_user: AuthUser,
+    pp_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    commercial_token = await login_token(client, test_user)
+    logistics_token = await login_token(client, logistics_user)
+    pp_token = await login_token(client, pp_user)
+    own_status, own_body = await _create(
+        client,
+        commercial_token,
+        items=[
+            {
+                "product_code": catalog["product_code"],
+                "warehouse_code": catalog["warehouse_code"],
+                "quantity_requested": 12.5,
+                "unit": "шт",
+                "comment": "Срочно",
+            }
+        ],
+    )
+    assert own_status == 201, own_body
+    own_id = own_body["data"]["id"]
+    foreign_status, foreign_body = await _create(
+        client,
+        logistics_token,
+        request_type="one_time",
+        expiry_date=None,
+        items=[
+            {
+                "product_code": catalog["product_code_2"],
+                "warehouse_code": catalog["warehouse_code_2"],
+                "quantity_requested": 3,
+                "unit": "шт",
+            }
+        ],
+    )
+    assert foreign_status == 201, foreign_body
+    foreign_id = foreign_body["data"]["id"]
+    try:
+        async with AsyncSessionLocal() as session:
+            stored = await session.get(Request, UUID(own_id))
+            assert stored is not None
+            stored.status = "rejected"
+            await session.commit()
+
+        denied = await client.post(
+            "/api/v1/requests/export",
+            headers=auth_header(commercial_token),
+            json={"request_ids": [own_id, foreign_id]},
+        )
+        assert denied.status_code == 403, denied.text
+
+        forbidden_role = await client.post(
+            "/api/v1/requests/export",
+            headers=auth_header(pp_token),
+            json={"request_ids": [own_id]},
+        )
+        assert forbidden_role.status_code == 403, forbidden_role.text
+
+        exported = await client.post(
+            "/api/v1/requests/export",
+            headers=auth_header(commercial_token),
+            json={"request_ids": [own_id]},
+        )
+        assert exported.status_code == 200, exported.text
+        assert (
+            exported.headers["content-type"]
+            == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        disposition = exported.headers["content-disposition"]
+        assert f'requests_export_{date.today().isoformat()}.xlsx' in disposition
+
+        workbook = load_workbook(BytesIO(exported.content))
+        sheet = workbook.active
+        assert sheet.title == "Запросы"
+        headers = [cell.value for cell in sheet[1]]
+        assert headers == [
+            "ID запроса",
+            "Статус",
+            "Клиент",
+            "Тип",
+            "Дата создания",
+            "Срок действия",
+            "Артикул",
+            "Название",
+            "Склад",
+            "Количество запрошено",
+            "Количество утверждено",
+            "Единица",
+            "Комментарий",
+        ]
+        values = [cell.value for cell in sheet[2]]
+        assert values[0] == own_id
+        assert values[1] == "Отклонён"
+        assert values[2] == "ООО Ромашка"
+        assert values[3] == "Норматив"
+        assert values[6] == catalog["product_code"]
+        assert values[9] == 12.5
+        assert values[10] is None
+        assert values[11] == "шт"
+        assert values[12] == "Срочно"
+
+        logistics_export = await client.post(
+            "/api/v1/requests/export",
+            headers=auth_header(logistics_token),
+            json={"request_ids": [own_id, foreign_id]},
+        )
+        assert logistics_export.status_code == 200, logistics_export.text
+        logistics_sheet = load_workbook(BytesIO(logistics_export.content)).active
+        exported_ids = {
+            logistics_sheet.cell(row=2, column=1).value,
+            logistics_sheet.cell(row=3, column=1).value,
+        }
+        assert exported_ids == {own_id, foreign_id}
+    finally:
+        await delete_request(UUID(own_id))
+        await delete_request(UUID(foreign_id))

@@ -98,6 +98,7 @@ async def get_warehouse_coverage(
     unit: MassUnit = Query(default="т"),
     warehouse_code: int | None = Query(default=None),
     department_id: UUID | None = Query(default=None),
+    client_id: UUID | None = Query(default=None),
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[WarehouseCoverageData]:
@@ -106,6 +107,7 @@ async def get_warehouse_coverage(
         unit=unit,
         warehouse_code=warehouse_code,
         department_id=department_id,
+        client_id=client_id,
     )
     return SuccessResponse(data=data)
 

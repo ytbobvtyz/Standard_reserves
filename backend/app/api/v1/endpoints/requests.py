@@ -3,10 +3,11 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import Response
 from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_current_user, get_db, require_roles
 from app.core.pagination import paginate
 from app.models.request import Request
 from app.models.request_item import RequestItem
@@ -23,6 +24,7 @@ from app.schemas.request import (
     RequestDetail,
     RequestExpiryData,
     RequestExpiryUpdate,
+    RequestExportBody,
     RequestItemHistoryEntry,
     RequestListItem,
     RequestStatusData,
@@ -34,6 +36,7 @@ from app.services.requests import (
     apply_own_requests_scope,
     create_request,
     ensure_draft_owner,
+    export_requests_xlsx,
     get_request_item_history,
     get_visible_request,
     load_request,
@@ -45,6 +48,8 @@ from app.services.requests import (
     update_active_expiry,
     update_draft,
 )
+
+EXPORT_REQUESTS = require_roles("commercial", "logistics")
 
 router = APIRouter(tags=["Запросы"])
 
@@ -61,6 +66,23 @@ async def create_request_endpoint(
 ) -> SuccessResponse[RequestCreated]:
     data = await create_request(db, current_user, body)
     return SuccessResponse(data=data)
+
+
+@router.post("/requests/export")
+async def export_requests(
+    body: RequestExportBody,
+    current_user: User = Depends(EXPORT_REQUESTS),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    content = await export_requests_xlsx(db, current_user, body.request_ids)
+    filename = f"requests_export_{date.today().isoformat()}.xlsx"
+    return Response(
+        content=content,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/requests", response_model=PaginatedResponse[list[RequestListItem]])

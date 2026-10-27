@@ -9,6 +9,8 @@ const getRequest = vi.fn()
 const getHistory = vi.fn()
 const removeRequest = vi.fn()
 const updateExpiry = vi.fn()
+const exportExcel = vi.fn()
+const downloadBlob = vi.fn()
 
 vi.mock('../api/requests', () => ({
   requestsApi: {
@@ -17,7 +19,13 @@ vi.mock('../api/requests', () => ({
     submit: vi.fn(),
     remove: (...args: unknown[]) => removeRequest(...args),
     updateExpiry: (...args: unknown[]) => updateExpiry(...args),
+    exportExcel: (...args: unknown[]) => exportExcel(...args),
   },
+}))
+
+vi.mock('../utils/download', () => ({
+  downloadBlob: (...args: unknown[]) => downloadBlob(...args),
+  filenameFromContentDisposition: () => 'requests_export_2026-10-27.xlsx',
 }))
 
 const request: RequestDetail = {
@@ -65,6 +73,8 @@ describe('RequestDetailPage', () => {
     getHistory.mockReset()
     removeRequest.mockReset()
     updateExpiry.mockReset()
+    exportExcel.mockReset()
+    downloadBlob.mockReset()
     getRequest.mockResolvedValue({ data: { status: 'success', data: request } })
     getHistory.mockResolvedValue({
       data: {
@@ -261,5 +271,37 @@ describe('RequestDetailPage', () => {
     expect(screen.getByText('Название')).toBeTruthy()
     expect(screen.getByText('Склад')).toBeTruthy()
     expect(screen.getByText('Количество')).toBeTruthy()
+  })
+
+  it('exports a rejected request from the card', async () => {
+    getRequest.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: { ...request, status: 'rejected' },
+      },
+    })
+    exportExcel.mockResolvedValue({
+      data: new Blob(['xlsx']),
+      headers: {
+        'content-disposition': 'attachment; filename="requests_export_2026-10-27.xlsx"',
+      },
+    })
+
+    render(
+      <MemoryRouter initialEntries={[`/requests/${request.id}`]}>
+        <Routes>
+          <Route path="/requests/:id" element={<RequestDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: /Выгрузить в Excel/ }))
+    await waitFor(() => {
+      expect(exportExcel).toHaveBeenCalledWith([request.id])
+    })
+    expect(downloadBlob).toHaveBeenCalledWith(
+      expect.any(Blob),
+      'requests_export_2026-10-27.xlsx',
+    )
   })
 })

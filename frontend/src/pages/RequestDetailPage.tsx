@@ -13,6 +13,7 @@ import {
   Typography,
   message,
 } from 'antd'
+import { DownloadOutlined } from '@ant-design/icons'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useState } from 'react'
@@ -42,6 +43,7 @@ import {
   formatRequirementQty,
   requirementTooltip,
 } from '../utils/requirement'
+import { downloadBlob, filenameFromContentDisposition } from '../utils/download'
 import { canDeleteByStatus, DELETE_CONFIRM } from '../utils/requestActions'
 
 const TYPE_LABEL: Record<string, string> = {
@@ -80,6 +82,7 @@ export function RequestDetailPage() {
   const [expiryModalOpen, setExpiryModalOpen] = useState(false)
   const [expiryDraft, setExpiryDraft] = useState<Dayjs | null>(null)
   const [savingExpiry, setSavingExpiry] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   const load = useCallback(async () => {
     if (!id) {
@@ -105,6 +108,26 @@ export function RequestDetailPage() {
   useEffect(() => {
     void load()
   }, [load])
+
+  const canExport = user?.role === 'commercial' || user?.role === 'logistics'
+
+  const exportExcel = async () => {
+    if (!id) {
+      return
+    }
+    setExporting(true)
+    try {
+      const { data, headers } = await requestsApi.exportExcel([id])
+      const filename =
+        filenameFromContentDisposition(headers['content-disposition']) ??
+        `requests_export_${new Date().toISOString().slice(0, 10)}.xlsx`
+      downloadBlob(data, filename)
+    } catch (error) {
+      message.error(getApiErrorMessage(error, 'Не удалось выгрузить запрос'))
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const isOwner = Boolean(request && user && request.initiator.id === user.id)
   const isDraft = request?.status === 'draft'
@@ -189,6 +212,15 @@ export function RequestDetailPage() {
           <StatusBadge status={request.status} />
         </Space>
         <Space>
+          {canExport ? (
+            <Button
+              icon={<DownloadOutlined />}
+              loading={exporting}
+              onClick={() => void exportExcel()}
+            >
+              Выгрузить в Excel
+            </Button>
+          ) : null}
           {isOwner && isDraft ? (
             <Button type="primary" onClick={() => void submit()}>
               Отправить на согласование

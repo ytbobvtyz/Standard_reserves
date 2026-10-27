@@ -598,12 +598,16 @@ async def get_warehouse_coverage(
     unit: MassUnit = "т",
     warehouse_code: int | None = None,
     department_id: UUID | None = None,
+    client_id: UUID | None = None,
 ) -> WarehouseCoverageData:
+    scoped = department_id is not None or client_id is not None
     rows = await collect_deficit_rows(
         db,
         filter_mode="all",
         warehouse_code=warehouse_code,
         department_id=department_id,
+        client_id=client_id,
+        scope_to_normative_keys=scoped,
     )
     buckets: dict[int, dict[str, Decimal | str]] = {}
     for row in rows:
@@ -643,7 +647,9 @@ async def get_warehouse_coverage(
         normative = Decimal(str(bucket["normative"]))
         deficit = Decimal(str(bucket["deficit"]))
         stack = available + planned + deficit
-        if requirement <= 0:
+        if scoped:
+            coverage = _coverage_ratio(normative, deficit)
+        elif requirement <= 0:
             coverage = HUNDRED
         else:
             coverage = min(HUNDRED, _quantize_pct(plan / requirement * HUNDRED))
