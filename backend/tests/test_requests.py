@@ -639,7 +639,7 @@ async def test_export_requests_xlsx_permissions_and_columns(
             == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
         disposition = exported.headers["content-disposition"]
-        assert f'requests_export_{date.today().isoformat()}.xlsx' in disposition
+        assert f"requests_export_{date.today().isoformat()}.xlsx" in disposition
 
         workbook = load_workbook(BytesIO(exported.content))
         sheet = workbook.active
