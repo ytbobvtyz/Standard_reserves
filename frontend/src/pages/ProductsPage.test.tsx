@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { message } from 'antd'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ProductsPage } from './ProductsPage'
@@ -77,6 +78,9 @@ function setRole(role: 'pp' | 'commercial') {
 
 describe('ProductsPage', () => {
   beforeEach(() => {
+    act(() => {
+      message.destroy()
+    })
     getProducts.mockReset()
     getProductForEdit.mockReset()
     updateProduct.mockReset()
@@ -317,7 +321,9 @@ describe('ProductsPage', () => {
       expect(uploadPalletNorms).toHaveBeenCalled()
     })
     await waitFor(() => {
-      expect(screen.getByText(/Обновлено 2 поддонных норм/)).toBeTruthy()
+      expect(
+        screen.getByText(/Обновлено 2 поддонных норм/, { selector: 'strong' }),
+      ).toBeTruthy()
     })
   }, 15000)
 
