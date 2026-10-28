@@ -359,6 +359,7 @@ erDiagram
         decimal quantity
         varchar unit "шт / кг / т"
         date shipment_date
+        varchar loading_point "код пункта отгрузки ERP"
         varchar invoice_number
         varchar route
         uuid uploaded_by FK
@@ -1059,6 +1060,7 @@ CREATE TABLE actual_shipments (
     quantity DECIMAL(12,2) NOT NULL CHECK (quantity > 0),
     unit VARCHAR(10) NOT NULL CHECK (unit IN ('шт', 'кг', 'т')),
     shipment_date DATE NOT NULL,
+    loading_point VARCHAR(10) NOT NULL,
     invoice_number VARCHAR(25),
     route VARCHAR(50),
     uploaded_by UUID REFERENCES users(id) ON DELETE SET NULL,
@@ -1071,6 +1073,7 @@ CREATE INDEX idx_actual_shipments_client ON actual_shipments (client_id);
 CREATE INDEX idx_actual_shipments_product ON actual_shipments (product_code);
 CREATE INDEX idx_actual_shipments_date ON actual_shipments (shipment_date);
 CREATE INDEX idx_actual_shipments_client_date ON actual_shipments (client_id, shipment_date);
+CREATE INDEX idx_actual_shipments_loading_point ON actual_shipments (loading_point);
 
 Поля:
 
@@ -1078,11 +1081,12 @@ CREATE INDEX idx_actual_shipments_client_date ON actual_shipments (client_id, sh
 id	UUID	✅	Идентификатор (PK)
 client_id	UUID	✅	Клиент → clients.id (КССС из файла)
 product_code	INTEGER	✅	Артикул → products.code
-quantity	DECIMAL(12,2)	✅	Количество, больше 0
-unit	VARCHAR(10)	✅	шт / кг / т
-shipment_date	DATE	✅	Дата отгрузки
-invoice_number	VARCHAR(25)	❌	Номер накладной
-route	VARCHAR(50)	❌	Маршрут
+quantity	DECIMAL(12,2)	✅	Вес нетто в килограммах, больше 0
+unit	VARCHAR(10)	✅	Для новых строк всегда кг. Старые строки могут хранить шт / т
+shipment_date	DATE	✅	Дата фактического ОМ
+loading_point	VARCHAR(10)	✅	Код пункта отгрузки из ERP. По нему позже определяется склад
+invoice_number	VARCHAR(25)	❌	Транспортный заказ
+route	VARCHAR(50)	❌	Описание маршрута
 uploaded_by	UUID	❌	Кто подтвердил загрузку → users.id
 created_at	TIMESTAMP	✅	Дата создания
 updated_at	TIMESTAMP	✅	Дата обновления
@@ -1519,6 +1523,7 @@ EXECUTE FUNCTION trigger_create_normative();
 | 25 | `0025_clients.py` | Справочник `clients`, `client_id` у запросов и нормативов |
 | 26 | `0026_available_balances_history.py` | Дневные снимки `available_balances_history` |
 | 27 | `0027_actual_shipments.py` | Фактическая реализация `actual_shipments` |
+| 28 | `0028_actual_shipments_loading_point.py` | `actual_shipments.loading_point` |
 
 Начальные пользователи и объекты заполняются скриптом `backend/scripts/seed_data.py`, а не миграцией.
 
@@ -1612,6 +1617,6 @@ mv_normative_daily	✅ Ежедневная агрегация действую�
 
 Полные DDL — в разделах 5.4 и 5.5. Кратко: партия Excel создаёт `production_requests` + `production_request_items` и активные `normatives` с `request_id IS NULL`. Удаление партии каскадно снимает позиции и нормативы. Миграция: `0017_production_requests.py`.
 
-Версия: 2.10
-Дата: 27.10.2026
+Версия: 2.11
+Дата: 28.10.2026
 Статус: Утверждена

@@ -31,18 +31,18 @@ const columns: ColumnsType<ActualShipmentPreviewRow> = [
     title: 'Артикул',
     render: (_value, row) => `${row.product_code} — ${row.product_name}`,
   },
-  { title: 'Количество', dataIndex: 'quantity', width: 120 },
-  { title: 'Ед.', dataIndex: 'unit', width: 70 },
+  { title: 'Вес нетто, кг', dataIndex: 'quantity', width: 130 },
+  { title: 'Пункт отгрузки', dataIndex: 'loading_point', width: 140 },
   {
-    title: 'Дата отгрузки',
+    title: 'Дата фактического ОМ',
     dataIndex: 'shipment_date',
-    width: 140,
+    width: 170,
     render: (value: string) => formatShipmentDate(value),
   },
   {
-    title: '№ накладной',
+    title: 'Транспортный заказ',
     dataIndex: 'invoice_number',
-    width: 140,
+    width: 160,
     render: (value?: string | null) => value || '—',
   },
   {
@@ -103,6 +103,40 @@ export function ActualShipmentUploadModal({
               dataSource={preview.preview}
               columns={columns}
               scroll={{ x: 860, y: 280 }}
+            />
+          ) : null}
+          {preview.missing_clients.length > 0 ? (
+            <Alert
+              type="info"
+              showIcon
+              message="Клиенты отсутствуют в справочнике, их строки не загружаются"
+              description={
+                <div style={{ maxHeight: 160, overflow: 'auto' }}>
+                  {preview.missing_clients.map((item) => (
+                    <div key={item.client_code}>
+                      {item.client_code}
+                      {item.client_name ? ` — ${item.client_name}` : ''}: {item.rows}
+                    </div>
+                  ))}
+                </div>
+              }
+            />
+          ) : null}
+          {preview.missing_products.length > 0 ? (
+            <Alert
+              type="info"
+              showIcon
+              message="Продукты отсутствуют в справочнике, их строки не загружаются"
+              description={
+                <div style={{ maxHeight: 160, overflow: 'auto' }}>
+                  {preview.missing_products.map((item) => (
+                    <div key={item.product_code}>
+                      {item.product_code}
+                      {item.product_name ? ` — ${item.product_name}` : ''}: {item.rows}
+                    </div>
+                  ))}
+                </div>
+              }
             />
           ) : null}
           {preview.errors > 0 ? (

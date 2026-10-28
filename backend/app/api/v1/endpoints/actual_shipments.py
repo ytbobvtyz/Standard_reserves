@@ -26,6 +26,7 @@ MAX_UPLOAD_SIZE = 10 * 1024 * 1024
 async def list_shipments(
     client_id: UUID | None = Query(default=None),
     product_code: int | None = Query(default=None),
+    warehouse_code: int | None = Query(default=None),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     page: int = Query(default=1, ge=1),
@@ -37,6 +38,7 @@ async def list_shipments(
         db,
         client_id=client_id,
         product_code=product_code,
+        warehouse_code=warehouse_code,
         date_from=date_from,
         date_to=date_to,
         page=page,

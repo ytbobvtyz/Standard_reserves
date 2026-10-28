@@ -9,17 +9,44 @@ from sqlalchemy import delete, func, select
 from app.core.database import AsyncSessionLocal
 from app.models.actual_shipment import ActualShipment
 from app.models.client import Client
+from app.models.object import Object
 from tests.conftest import AuthUser, auth_header, ensure_client, login_token
 
 HEADERS = [
-    "client_code",
-    "product_code",
-    "quantity",
-    "unit",
-    "shipment_date",
-    "invoice_number",
-    "route",
+    "Пункт отгрузки",
+    "Клиент",
+    "Имя клиента",
+    "№ продукта",
+    "Назв. позиции",
+    "Вес нетто",
+    "Дата фактического ОМ",
+    "Транспортный заказ",
+    "Описание Маршрута",
 ]
+
+
+def _line(
+    client_code,
+    product_code,
+    weight,
+    shipment_date,
+    order=None,
+    route=None,
+    point="2R05",
+    client_name="",
+    product_name="",
+) -> list:
+    return [
+        point,
+        client_code,
+        client_name,
+        product_code,
+        product_name,
+        weight,
+        shipment_date,
+        order,
+        route,
+    ]
 
 
 def _xlsx(rows: list[list], headers: list[str] | None = None) -> bytes:
@@ -63,15 +90,14 @@ async def test_preview_does_not_save_until_confirm(
     client_id, client_code = await _client_code("Тест фактической реализации")
     content = _xlsx(
         [
-            [
+            _line(
                 client_code,
                 catalog["product_code"],
                 12.5,
-                "кг",
                 "01.10.2026",
                 "НК-1",
                 "Север",
-            ]
+            )
         ]
     )
     token = await login_token(client, logistics_user)
@@ -117,6 +143,7 @@ async def test_preview_does_not_save_until_confirm(
         assert row is not None
         assert row.quantity == Decimal("12.50")
         assert row.unit == "кг"
+        assert row.loading_point == "2R05"
         assert row.invoice_number == "НК-1"
         assert row.route == "Север"
         assert row.shipment_date == date(2026, 10, 1)
@@ -131,19 +158,24 @@ async def test_confirm_saves_valid_rows_and_reports_errors(
     client_id, client_code = await _client_code("Тест реализации ошибки")
     content = _xlsx(
         [
-            [client_code, catalog["product_code"], 2, "ШТ", "15.10.2026", None, None],
-            [999999999, catalog["product_code"], 1, "шт", "15.10.2026", None, None],
-            [client_code, 99999999, 1, "т", "15.10.2026", "OK", None],
-            [client_code, catalog["product_code"], 0, "кг", "15.10.2026", None, None],
-            [
-                client_code,
+            _line(client_code, catalog["product_code"], 2, "15.10.2026"),
+            _line(
+                999999999,
                 catalog["product_code"],
                 1,
-                "шт",
                 "15.10.2026",
-                "Y" * 26,
-                None,
-            ],
+                client_name="Чужой клиент",
+            ),
+            _line(
+                client_code,
+                99999999,
+                1,
+                "15.10.2026",
+                product_name="Нет такого",
+            ),
+            _line(client_code, catalog["product_code"], 0, "15.10.2026"),
+            _line(client_code, catalog["product_code"], 1, "15.10.2026", "Y" * 26),
+            _line(client_code, catalog["product_code"], 3, None),
         ]
     )
     token = await login_token(client, economist_user)
@@ -157,10 +189,15 @@ async def test_confirm_saves_valid_rows_and_reports_errors(
     data = response.json()["data"]
     assert data["inserted"] == 1
     assert data["valid_rows"] == 1
-    assert data["errors"] == 4
+    assert data["skipped_rows"] == 1
+    assert data["errors"] == 2
+    assert data["missing_clients"] == [
+        {"client_code": 999999999, "client_name": "Чужой клиент", "rows": 1}
+    ]
+    assert data["missing_products"] == [
+        {"product_code": 99999999, "product_name": "Нет такого", "rows": 1}
+    ]
     messages = [item["message"] for item in data["error_details"]]
-    assert any("999999999" in item for item in messages)
-    assert any("99999999" in item for item in messages)
     assert any("25" in item for item in messages)
     assert any("больше 0" in item for item in messages)
 
@@ -171,7 +208,8 @@ async def test_confirm_saves_valid_rows_and_reports_errors(
             )
         ).all()
         assert len(rows) == 1
-        assert rows[0].unit == "шт"
+        assert rows[0].unit == "кг"
+        assert rows[0].loading_point == "2R05"
         assert rows[0].product_code == catalog["product_code"]
 
 
@@ -184,16 +222,24 @@ async def test_list_filters_shipments(
     client_id, client_code = await _client_code("Тест реализации фильтр")
     content = _xlsx(
         [
-            [client_code, catalog["product_code"], 4, "шт", "01.09.2026", "A-1", "Юг"],
-            [
+            _line(
+                client_code,
+                catalog["product_code"],
+                4,
+                "01.09.2026",
+                "A-1",
+                "Юг",
+                point="T9X1",
+            ),
+            _line(
                 client_code,
                 catalog["product_code_2"],
                 8,
-                "т",
                 "20.09.2026",
                 "A-2",
                 "Север",
-            ],
+                point="T9X2",
+            ),
         ]
     )
     token = await login_token(client, pp_user)
@@ -231,6 +277,47 @@ async def test_list_filters_shipments(
     assert by_date.json()["meta"]["total"] == 1
     assert by_date.json()["data"][0]["route"] == "Север"
 
+    async with AsyncSessionLocal() as session:
+        warehouse = await session.get(Object, 9901)
+        if warehouse is None:
+            session.add(
+                Object(
+                    code=9901,
+                    name="Склад теста отгрузки",
+                    city="Тест",
+                    type="warehouse",
+                    loading_point="T9X1",
+                    is_active=True,
+                )
+            )
+        else:
+            warehouse.deleted_at = None
+            warehouse.loading_point = "T9X1"
+            warehouse.is_active = True
+            warehouse.type = "warehouse"
+        await session.commit()
+
+    by_warehouse = await client.get(
+        "/api/v1/logistics/actual-shipments",
+        params={"client_id": str(client_id), "warehouse_code": 9901},
+        headers=auth_header(guest),
+    )
+    assert by_warehouse.status_code == 200, by_warehouse.text
+    assert by_warehouse.json()["meta"]["total"] == 1
+    assert by_warehouse.json()["data"][0]["loading_point"] == "T9X1"
+
+    unknown_warehouse = await client.get(
+        "/api/v1/logistics/actual-shipments",
+        params={"client_id": str(client_id), "warehouse_code": 990199},
+        headers=auth_header(guest),
+    )
+    assert unknown_warehouse.status_code == 200, unknown_warehouse.text
+    assert unknown_warehouse.json()["meta"]["total"] == 0
+
+    async with AsyncSessionLocal() as session:
+        await session.execute(delete(Object).where(Object.code == 9901))
+        await session.commit()
+
     invalid = await client.get(
         "/api/v1/logistics/actual-shipments",
         params={"date_from": "2026-10-02", "date_to": "2026-10-01"},
@@ -246,7 +333,7 @@ async def test_preview_limits_rows_but_confirm_saves_all(
 ) -> None:
     client_id, client_code = await _client_code("Тест реализации 51")
     rows = [
-        [client_code, catalog["product_code"], 1, "шт", "02.10.2026", f"N-{index}", ""]
+        _line(client_code, catalog["product_code"], 1, "02.10.2026", f"N-{index}", "")
         for index in range(51)
     ]
     content = _xlsx(rows)
@@ -292,7 +379,7 @@ async def test_template_and_upload_roles(
     assert template.status_code == 200, template.text
     workbook = load_workbook(BytesIO(template.content))
     headers = [cell.value for cell in next(workbook.active.iter_rows(max_row=1))]
-    assert headers[:7] == HEADERS
+    assert headers[: len(HEADERS)] == HEADERS
 
     commercial = await login_token(client, test_user)
     forbidden_template = await client.get(
@@ -334,4 +421,4 @@ async def test_upload_rejects_non_excel_and_missing_columns(
         files=_upload(_xlsx([], headers=["client_code", "quantity"])),
     )
     assert missing.status_code == 400
-    assert "product_code" in missing.json()["error"]["message"]
+    assert "№ продукта" in missing.json()["error"]["message"]

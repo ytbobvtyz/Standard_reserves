@@ -994,8 +994,21 @@ export interface ActualShipmentListItem {
   quantity: number
   unit: ShipmentUnit
   shipment_date: string
+  loading_point: string
   invoice_number?: string | null
   route?: string | null
+}
+
+export interface ActualShipmentMissingClient {
+  client_code: number
+  client_name?: string | null
+  rows: number
+}
+
+export interface ActualShipmentMissingProduct {
+  product_code: number
+  product_name?: string | null
+  rows: number
 }
 
 export interface ActualShipmentPreviewRow {
@@ -1008,6 +1021,7 @@ export interface ActualShipmentPreviewRow {
   quantity: number
   unit: ShipmentUnit
   shipment_date: string
+  loading_point: string
   invoice_number?: string | null
   route?: string | null
 }
@@ -1017,15 +1031,19 @@ export interface ActualShipmentUploadResult {
   total_rows: number
   valid_rows: number
   inserted: number
+  skipped_rows: number
   errors: number
   message: string
   preview: ActualShipmentPreviewRow[]
   error_details: ProductUploadError[]
+  missing_clients: ActualShipmentMissingClient[]
+  missing_products: ActualShipmentMissingProduct[]
 }
 
 export interface ActualShipmentListParams {
   client_id?: string
   product_code?: number
+  warehouse_code?: number
   date_from?: string
   date_to?: string
   page?: number

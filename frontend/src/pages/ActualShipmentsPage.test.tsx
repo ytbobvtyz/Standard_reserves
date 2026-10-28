@@ -15,6 +15,7 @@ const shipment: ActualShipmentListItem = {
   quantity: 12.5,
   unit: 'кг',
   shipment_date: '2026-10-01',
+  loading_point: '2R05',
   invoice_number: 'НК-1',
   route: 'Север',
 }
@@ -24,6 +25,7 @@ const preview: ActualShipmentUploadResult = {
   total_rows: 2,
   valid_rows: 1,
   inserted: 0,
+  skipped_rows: 0,
   errors: 1,
   message: 'К загрузке 1 строк, ошибок 1. Данные не сохранены.',
   preview: [
@@ -37,11 +39,14 @@ const preview: ActualShipmentUploadResult = {
       quantity: 12.5,
       unit: 'кг',
       shipment_date: '2026-10-01',
+      loading_point: '2R05',
       invoice_number: 'НК-1',
       route: 'Север',
     },
   ],
-  error_details: [{ row: 3, message: 'Клиент 999 не найден' }],
+  error_details: [{ row: 3, message: 'Вес нетто должен быть больше 0' }],
+  missing_clients: [{ client_code: 999, client_name: 'Чужой клиент', rows: 1 }],
+  missing_products: [],
 }
 
 const listShipments = vi.fn()
@@ -51,6 +56,7 @@ const listClients = vi.fn()
 const getClient = vi.fn()
 const getProducts = vi.fn()
 const getProduct = vi.fn()
+const getObjects = vi.fn()
 
 vi.mock('../api/actualShipments', () => ({
   actualShipmentsApi: {
@@ -71,6 +77,7 @@ vi.mock('../api/references', () => ({
   referencesApi: {
     getProducts: (...args: unknown[]) => getProducts(...args),
     getProduct: (...args: unknown[]) => getProduct(...args),
+    getObjects: (...args: unknown[]) => getObjects(...args),
   },
 }))
 
@@ -97,6 +104,7 @@ describe('ActualShipmentsPage', () => {
     getClient.mockReset()
     getProducts.mockReset()
     getProduct.mockReset()
+    getObjects.mockReset()
     URL.createObjectURL = vi.fn(() => 'blob:url')
     URL.revokeObjectURL = vi.fn()
     listShipments.mockResolvedValue({
@@ -143,6 +151,29 @@ describe('ActualShipmentsPage', () => {
     getProduct.mockResolvedValue({
       data: { status: 'success', data: productItem },
     })
+    getObjects.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: [
+          {
+            code: 2001,
+            name: 'Склад Ростов',
+            city: 'Ростов-на-Дону',
+            type: 'warehouse',
+            loading_point: '2R05',
+            is_active: true,
+          },
+          {
+            code: 2002,
+            name: 'Склад без пункта',
+            city: 'Владивосток',
+            type: 'warehouse',
+            loading_point: null,
+            is_active: true,
+          },
+        ],
+      },
+    })
     uploadShipments.mockImplementation(async (_file: File, confirm: boolean) => ({
       data: {
         status: 'success',
@@ -168,6 +199,7 @@ describe('ActualShipmentsPage', () => {
     })
     expect(screen.getByText('10001 — Подшипник')).toBeTruthy()
     expect(screen.getByText('01.10.2026')).toBeTruthy()
+    expect(screen.getByText('2R05')).toBeTruthy()
     expect(screen.getByText('НК-1')).toBeTruthy()
     expect(screen.getByText('Север')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Загрузить из Excel/ })).toBeNull()
@@ -192,6 +224,9 @@ describe('ActualShipmentsPage', () => {
       .querySelector('.ant-select-selector')
     fireEvent.mouseDown(productSelect as Element)
     fireEvent.click(await screen.findByText('10001 — Подшипник', { selector: 'span' }))
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Склад' }))
+    expect(screen.queryByText('2002 — Склад без пункта')).toBeNull()
+    fireEvent.click(await screen.findByText('2001 — Склад Ростов', { selector: 'div' }))
     fireEvent.click(screen.getByRole('button', { name: 'Применить фильтр' }))
 
     await waitFor(() => {
@@ -199,6 +234,7 @@ describe('ActualShipmentsPage', () => {
         expect.objectContaining({
           client_id: 'client-1',
           product_code: 10001,
+          warehouse_code: 2001,
           page: 1,
           limit: 20,
         }),
@@ -227,7 +263,8 @@ describe('ActualShipmentsPage', () => {
       expect(uploadShipments).toHaveBeenCalledWith(file, false)
     })
     expect(await screen.findByText(/К загрузке 1 строк/)).toBeTruthy()
-    expect(screen.getByText(/Строка 3: Клиент 999 не найден/)).toBeTruthy()
+    expect(screen.getByText(/999 — Чужой клиент: 1/)).toBeTruthy()
+    expect(screen.getByText(/Строка 3: Вес нетто должен быть больше 0/)).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'Отмена' }))
     expect(uploadShipments).toHaveBeenCalledTimes(1)

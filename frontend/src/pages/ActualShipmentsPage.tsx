@@ -1,10 +1,16 @@
-import { Button, DatePicker, Space, Table, Typography, message } from 'antd'
+import { Button, DatePicker, Select, Space, Table, Typography, message } from 'antd'
 import { DownloadOutlined, UploadOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import { useCallback, useEffect, useState } from 'react'
 import { actualShipmentsApi } from '../api/actualShipments'
 import { getApiErrorMessage } from '../api/client'
-import type { ActualShipmentListItem, ActualShipmentUploadResult, UserRole } from '../api/types'
+import { referencesApi } from '../api/references'
+import type {
+  ActualShipmentListItem,
+  ActualShipmentUploadResult,
+  ObjectListItem,
+  UserRole,
+} from '../api/types'
 import { ClientAutocomplete } from '../components/clients/ClientAutocomplete'
 import { ProductAutocomplete } from '../components/requests/ProductAutocomplete'
 import { ActualShipmentUploadModal } from '../components/shipments/ActualShipmentUploadModal'
@@ -16,6 +22,7 @@ const UPLOAD_ROLES: UserRole[] = ['logistics', 'economist', 'pp']
 interface FilterState {
   client_id?: string
   product_code?: number
+  warehouse_code?: number
   date_from?: string
   date_to?: string
 }
@@ -44,7 +51,27 @@ export function ActualShipmentsPage() {
   const [confirming, setConfirming] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [pickerKey, setPickerKey] = useState(0)
+  const [warehouses, setWarehouses] = useState<ObjectListItem[]>([])
   const limit = 20
+
+  useEffect(() => {
+    let cancelled = false
+    void referencesApi
+      .getObjects({ type: 'warehouse', is_active: true, limit: 200 })
+      .then(({ data }) => {
+        if (!cancelled) {
+          setWarehouses(data.data.filter((item) => item.loading_point))
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          message.error('Не удалось загрузить склады')
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -153,18 +180,23 @@ export function ActualShipmentsPage() {
       title: 'Артикул',
       render: (_value, row) => `${row.product_code} — ${row.product_name}`,
     },
-    { title: 'Количество', dataIndex: 'quantity', width: 130 },
-    { title: 'Единица', dataIndex: 'unit', width: 100 },
     {
-      title: 'Дата отгрузки',
+      title: 'Вес нетто, кг',
+      dataIndex: 'quantity',
+      width: 140,
+      render: (value: number, row) => (row.unit === 'кг' ? value : `${value} ${row.unit}`),
+    },
+    { title: 'Пункт отгрузки', dataIndex: 'loading_point', width: 150 },
+    {
+      title: 'Дата фактического ОМ',
       dataIndex: 'shipment_date',
-      width: 150,
+      width: 180,
       render: (value: string) => formatShipmentDate(value),
     },
     {
-      title: '№ накладной',
+      title: 'Транспортный заказ',
       dataIndex: 'invoice_number',
-      width: 150,
+      width: 170,
       render: (value?: string | null) => value || '—',
     },
     {
@@ -196,6 +228,27 @@ export function ActualShipmentsPage() {
             value={draft.product_code}
             onChange={(productCode) =>
               setDraft((current) => ({ ...current, product_code: productCode }))
+            }
+          />
+        </div>
+        <div data-testid="warehouse-filter" style={{ width: 280 }}>
+          <Select
+            aria-label="Склад"
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            placeholder="Склад"
+            style={{ width: '100%' }}
+            value={draft.warehouse_code}
+            options={warehouses.map((warehouse) => ({
+              value: warehouse.code,
+              label: `${warehouse.code} — ${warehouse.name}`,
+            }))}
+            onChange={(warehouseCode) =>
+              setDraft((current) => ({
+                ...current,
+                warehouse_code: warehouseCode,
+              }))
             }
           />
         </div>

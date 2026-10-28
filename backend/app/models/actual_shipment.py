@@ -41,6 +41,7 @@ class ActualShipment(TimestampMixin, SoftDeleteMixin, Base):
         Index("idx_actual_shipments_product", "product_code"),
         Index("idx_actual_shipments_date", "shipment_date"),
         Index("idx_actual_shipments_client_date", "client_id", "shipment_date"),
+        Index("idx_actual_shipments_loading_point", "loading_point"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -62,6 +63,7 @@ class ActualShipment(TimestampMixin, SoftDeleteMixin, Base):
     quantity: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     unit: Mapped[str] = mapped_column(String(10), nullable=False)
     shipment_date: Mapped[date] = mapped_column(Date, nullable=False)
+    loading_point: Mapped[str] = mapped_column(String(10), nullable=False)
     invoice_number: Mapped[str | None] = mapped_column(String(25))
     route: Mapped[str | None] = mapped_column(String(50))
     uploaded_by: Mapped[uuid.UUID | None] = mapped_column(
