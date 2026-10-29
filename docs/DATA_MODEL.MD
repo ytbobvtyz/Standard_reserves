@@ -1092,6 +1092,16 @@ created_at	TIMESTAMP	✅	Дата создания
 updated_at	TIMESTAMP	✅	Дата обновления
 deleted_at	TIMESTAMP	❌	Soft delete (в списке скрыто)
 
+5.7. Аналитика запасов — чтение без новой таблицы
+
+Страница `/analytics` и `GET /analytics/stock-dynamics` не добавляют таблиц. Три ряда графика считаются из уже существующих:
+
+- нормативный запас — `normatives.quantity` на дату. Коммерческая строка действует с даты `created_at` (UTC) по `expiry_date`. Строка Excel-партии действует с `production_requests.valid_from` по `expiry_date` при `status = active`. Подразделение — `clients.department_id` через `normatives.client_id`;
+- доступный остаток — `available_balances_history.available` на `snapshot_date`. Снимок не привязан к клиенту;
+- фактическая реализация — сумма `actual_shipments.quantity` за месяц, неделю или день, без накопления. Склад отгрузки определяется по `objects.loading_point`. Доступный остаток на графике: на месяце — минимум, медиана и максимум дневных остатков, на неделе — только минимум и максимум, на дне — запас этого дня. Отрицательный остаток снимка перед этим считается как ноль. Под графиком — сводка шести последних месяцев: медианный остаток, сумма реализации и средний дневной норматив. На неделе норматив делится на 4, на дне — на 28.
+
+Единица графика — тонны (`products.weight_kg`). Подробности агрегации по дню, неделе и месяцу — в API, раздел 6.11.
+
 6. ТАБЛИЦА ДЛЯ БУДУЩЕГО АГЕНТА
 6.1. events — События для агента логиста
 sql
@@ -1605,6 +1615,7 @@ GROUP BY warehouse_code, product_code;
 Таблица available_balances	✅ Заполняется вручную через Excel (ERP: available + plan)
 Таблица available_balances_history	✅ Дневной снимок при каждой загрузке остатков
 Таблица actual_shipments	✅ Фактическая реализация, Excel с предпросмотром
+Аналитика запасов	✅ Чтение normatives, available_balances_history и actual_shipments, без новой таблицы (LOG-054)
 Таблица events	✅ Создана (задел под агента)
 Таблица request_item_history	✅ История изменений
 Функция expire_normatives()	✅ Нужна с первого дня
@@ -1617,6 +1628,6 @@ mv_normative_daily	✅ Ежедневная агрегация действую�
 
 Полные DDL — в разделах 5.4 и 5.5. Кратко: партия Excel создаёт `production_requests` + `production_request_items` и активные `normatives` с `request_id IS NULL`. Удаление партии каскадно снимает позиции и нормативы. Миграция: `0017_production_requests.py`.
 
-Версия: 2.11
+Версия: 2.12
 Дата: 28.10.2026
 Статус: Утверждена

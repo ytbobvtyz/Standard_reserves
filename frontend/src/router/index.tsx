@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppLayout } from '../components/common/Layout'
 import { ProtectedRoute } from '../components/common/ProtectedRoute'
 import { LoginPage } from '../pages/LoginPage'
+import { AnalyticsPage } from '../pages/AnalyticsPage'
 import { DashboardPage } from '../pages/DashboardPage'
 import { MyRequestsPage } from '../pages/MyRequestsPage'
 import { CreateRequestPage } from '../pages/CreateRequestPage'
@@ -33,6 +34,7 @@ export function AppRouter() {
           <Route element={<AppLayout />}>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/requests/my" element={<MyRequestsPage />} />
             <Route element={<ProtectedRoute roles={['commercial', 'logistics']} />}>
               <Route path="/requests/create" element={<CreateRequestPage />} />

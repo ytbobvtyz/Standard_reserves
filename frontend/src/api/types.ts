@@ -870,6 +870,44 @@ export interface DashboardTrendParams {
   client_id?: string
 }
 
+export type StockGranularity = 'day' | 'week' | 'month'
+
+export interface StockDynamicsData {
+  dates: string[]
+  normative: Array<number | null>
+  available_min: Array<number | null>
+  available_median: Array<number | null>
+  available_max: Array<number | null>
+  actual: Array<number | null>
+  unit: 'т'
+}
+
+export interface StockDynamicsBounds {
+  earliest_date: string | null
+}
+
+export interface StockMonthSummary {
+  month: string
+  available_median: number | null
+  actual: number | null
+  normative_avg: number | null
+}
+
+export interface StockSummaryData {
+  months: StockMonthSummary[]
+  unit: 'т'
+}
+
+export interface StockDynamicsParams {
+  product_code: number
+  warehouse_code?: number
+  department_id?: string
+  client_id?: string
+  date_from: string
+  date_to: string
+  granularity?: StockGranularity
+}
+
 export interface NzByDepartmentWarehouse {
   warehouse_code: number
   warehouse_name: string

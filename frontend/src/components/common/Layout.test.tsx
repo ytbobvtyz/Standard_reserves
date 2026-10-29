@@ -50,6 +50,7 @@ describe('AppLayout admin menu', () => {
     renderLayout('commercial')
     expect(screen.queryByText('Администрирование')).toBeNull()
     expect(screen.getByText('Продажи')).toBeTruthy()
+    expect(screen.getByText('Аналитика')).toBeTruthy()
   })
 
   it('shows change password action', () => {

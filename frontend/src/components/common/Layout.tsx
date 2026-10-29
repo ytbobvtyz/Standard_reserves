@@ -2,6 +2,7 @@ import { Layout as AntLayout, Menu, Typography, Button, Space, Badge } from 'ant
 import {
   DashboardOutlined,
   FileTextOutlined,
+  LineChartOutlined,
   CheckSquareOutlined,
   CarOutlined,
   DatabaseOutlined,
@@ -89,6 +90,7 @@ export function AppLayout() {
 
   const menuItems = [
     { key: '/dashboard', icon: <DashboardOutlined />, label: 'Дашборд' },
+    { key: '/analytics', icon: <LineChartOutlined />, label: 'Аналитика' },
     { key: '/requests/my', icon: <FileTextOutlined />, label: 'Запросы' },
     ...(canCreate
       ? [
