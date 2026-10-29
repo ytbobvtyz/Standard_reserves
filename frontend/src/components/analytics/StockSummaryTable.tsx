@@ -1,5 +1,5 @@
 import { Table } from 'antd'
-import type { StockSummaryData } from '../../api/types'
+import type { StockMonthSummary, StockSummaryData } from '../../api/types'
 import { formatStockPeriod, formatTons } from './stockDynamics'
 
 interface StockSummaryTableProps {
@@ -13,10 +13,26 @@ function formatCell(value: number | null): string {
   return formatTons(value)
 }
 
+export function averageColumn(
+  months: StockMonthSummary[],
+  key: 'available_median' | 'actual' | 'normative_avg',
+): number | null {
+  const present = months
+    .map((month) => month[key])
+    .filter((value): value is number => value != null)
+  if (present.length === 0) {
+    return null
+  }
+  return present.reduce((sum, value) => sum + value, 0) / present.length
+}
+
 export function StockSummaryTable({ data }: StockSummaryTableProps) {
   if (!data) {
     return null
   }
+  const averageMedian = averageColumn(data.months, 'available_median')
+  const averageActual = averageColumn(data.months, 'actual')
+  const averageNormative = averageColumn(data.months, 'normative_avg')
   return (
     <div data-testid="stock-summary">
       <Table
@@ -49,6 +65,20 @@ export function StockSummaryTable({ data }: StockSummaryTableProps) {
             render: (value: number | null) => formatCell(value),
           },
         ]}
+        summary={() => (
+          <Table.Summary.Row>
+            <Table.Summary.Cell index={0}>Среднее</Table.Summary.Cell>
+            <Table.Summary.Cell index={1} align="right">
+              {formatCell(averageMedian)}
+            </Table.Summary.Cell>
+            <Table.Summary.Cell index={2} align="right">
+              {formatCell(averageActual)}
+            </Table.Summary.Cell>
+            <Table.Summary.Cell index={3} align="right">
+              {formatCell(averageNormative)}
+            </Table.Summary.Cell>
+          </Table.Summary.Row>
+        )}
       />
     </div>
   )

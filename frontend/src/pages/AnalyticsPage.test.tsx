@@ -162,6 +162,8 @@ describe('AnalyticsPage', () => {
     expect(table.textContent).toContain('Средний норматив, т')
     expect(table.textContent).toContain('16')
     expect(table.textContent).toContain('—')
+    expect(table.textContent).toContain('Среднее')
+    expect(table.textContent).toContain('13,5')
   })
 
   it('switches the period to a year for weeks and to 90 days for days', async () => {
