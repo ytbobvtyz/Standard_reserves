@@ -5,8 +5,6 @@ import {
   Collapse,
   Empty,
   Input,
-  Modal,
-  Progress,
   Select,
   Space,
   Spin,
@@ -15,7 +13,6 @@ import {
   Tag,
   Tooltip,
   Typography,
-  Upload,
   message,
 } from 'antd'
 import { DownloadOutlined, SendOutlined, UploadOutlined } from '@ant-design/icons'
@@ -27,7 +24,6 @@ import { logisticsApi } from '../api/logistics'
 import { referencesApi } from '../api/references'
 import type {
   BalanceSyncInfo,
-  BalanceUploadResult,
   DeficitItem,
   FilterMode,
   GeneratedOrder,
@@ -35,6 +31,7 @@ import type {
   Unit,
   WarehouseDeficit,
 } from '../api/types'
+import { BalanceUploadModal } from '../components/logistics/BalanceUploadModal'
 import { DeficitIndicator } from '../components/logistics/DeficitIndicator'
 import { FilterToggle } from '../components/logistics/FilterToggle'
 import { OrderPreviewModal } from '../components/logistics/OrderPreviewModal'
@@ -216,9 +213,6 @@ export function LogisticsDashboardPage() {
   const [exportingB2B, setExportingB2B] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
-  const [uploading, setUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
-  const [uploadResult, setUploadResult] = useState<BalanceUploadResult | null>(null)
   const [orders, setOrders] = useState<GeneratedOrder[]>([])
   const [confirmedOrders, setConfirmedOrders] = useState<GeneratedOrder[]>([])
   const [selectedWarehouseCodes, setSelectedWarehouseCodes] = useState<number[]>([])
@@ -409,23 +403,6 @@ export function LogisticsDashboardPage() {
     }
   }
 
-  const handleUpload = async (file: File) => {
-    setUploading(true)
-    setUploadProgress(0)
-    setUploadResult(null)
-    try {
-      const { data } = await logisticsApi.uploadBalances(file, setUploadProgress)
-      setUploadResult(data.data)
-      setUploadProgress(100)
-      await load()
-    } catch (error) {
-      message.error(getApiErrorMessage(error, 'Не удалось загрузить остатки'))
-    } finally {
-      setUploading(false)
-    }
-    return false
-  }
-
   const handleExport = async (codes?: number[]) => {
     setExporting(true)
     try {
@@ -518,11 +495,7 @@ export function LogisticsDashboardPage() {
           {canManage ? (
             <Button
               icon={<UploadOutlined aria-hidden />}
-              onClick={() => {
-                setUploadResult(null)
-                setUploadProgress(null)
-                setUploadOpen(true)
-              }}
+              onClick={() => setUploadOpen(true)}
             >
               Загрузить актуальные остатки
             </Button>
@@ -750,40 +723,11 @@ export function LogisticsDashboardPage() {
           void handleExportB2B(selected)
         }}
       />
-      <Modal
-        title="Загрузить актуальные остатки"
+      <BalanceUploadModal
         open={uploadOpen}
-        onCancel={() => setUploadOpen(false)}
-        footer={null}
-        destroyOnHidden
-      >
-        <Upload.Dragger
-          accept=".xlsx,.xls"
-          maxCount={1}
-          showUploadList={false}
-          disabled={uploading}
-          beforeUpload={(file) => {
-            void handleUpload(file)
-            return false
-          }}
-        >
-          <p>Перетащите Excel-файл сюда или нажмите, чтобы выбрать</p>
-          <p>.xlsx или .xls</p>
-        </Upload.Dragger>
-        {uploadProgress !== null ? (
-          <Progress percent={uploadProgress} status={uploading ? 'active' : 'success'} />
-        ) : null}
-        {uploadResult ? (
-          <Space direction="vertical" style={{ marginTop: 16, width: '100%' }}>
-            <Typography.Text strong>{uploadResult.message}</Typography.Text>
-            {uploadResult.error_details.map((item) => (
-              <Typography.Text key={item.row} type="danger">
-                Строка {item.row}: {item.message}
-              </Typography.Text>
-            ))}
-          </Space>
-        ) : null}
-      </Modal>
+        onClose={() => setUploadOpen(false)}
+        onUploaded={load}
+      />
     </Space>
   )
 }

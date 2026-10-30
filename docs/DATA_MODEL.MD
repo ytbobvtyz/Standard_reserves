@@ -240,11 +240,16 @@ erDiagram
     available_balances {
         int warehouse_code PK "склад"
         int product_code PK "артикул"
-        decimal available "доступно (факт - заказы клиентов)"
-        decimal plan "запланировано (available + разнарядки)"
-        varchar unit "шт / т"
+        decimal available "доступно из запаса"
+        decimal plan "available + no_ready + ready + collected + on_way"
+        decimal full_stock "физический запас"
+        decimal on_way "в пути"
+        decimal no_ready "не готово"
+        decimal ready "готово, без транспортного заказа"
+        decimal collected "собрано, есть транспортный заказ"
+        varchar unit "кг после Excel, исторически шт / т / ШТ / КГ"
         timestamp last_sync_at "дата последней синхронизации"
-        varchar source "manual / csv / excel / erp_api"
+        varchar source "excel_upload / manual"
     }
 
     sync_metadata {
@@ -346,7 +351,8 @@ erDiagram
         int product_code FK
         decimal available
         decimal plan
-        varchar unit "шт / кг / т / ШТ / КГ"
+        decimal full_stock "физический запас"
+        varchar unit "кг после Excel, также шт / т / ШТ / КГ"
         varchar source "excel_upload"
         uuid uploaded_by FK
         timestamp created_at
@@ -832,7 +838,9 @@ created_at	TIMESTAMP	✅	Дата создания
 updated_at	TIMESTAMP	✅	Дата обновления
 deleted_at	TIMESTAMP	❌	Дата удаления (soft delete)
 5.2. available_balances — Остатки ERP
-Загружается из ERP вручную (Excel) на MVP. `available` — доступно к отгрузке (факт минус заказы клиентов). `plan` — запланировано (`available` плюс разнарядки). Дефицит на дашборде: потребность − plan. В будущем — автоматическая синхронизация.
+Загружается из двух Excel ERP: «Доступные остатки» и «Перемещения». Все количества пишутся в килограммах, `unit` = `кг`.
+
+`available` — «Доступно из запаса». `full_stock` — «Запас». `on_way` — «Всего поступлений». `no_ready`, `ready`, `collected` суммируются из «Перемещений». `plan` = `available + no_ready + ready + collected + on_way`. Дефицит на дашборде по-прежнему потребность − plan. Новые поля на самом дашборде — следующая итерация.
 
 sql
 CREATE TABLE available_balances (
@@ -840,7 +848,12 @@ CREATE TABLE available_balances (
     product_code INTEGER NOT NULL REFERENCES products(code),
     available DECIMAL(12,2) NOT NULL DEFAULT 0,
     plan DECIMAL(12,2) NOT NULL DEFAULT 0,
-    unit VARCHAR(10) NOT NULL DEFAULT 'шт' CHECK (unit IN ('шт', 'т', 'ШТ', 'КГ')),
+    full_stock DECIMAL(12,2) NOT NULL DEFAULT 0,
+    on_way DECIMAL(12,2) NOT NULL DEFAULT 0,
+    no_ready DECIMAL(12,2) NOT NULL DEFAULT 0,
+    ready DECIMAL(12,2) NOT NULL DEFAULT 0,
+    collected DECIMAL(12,2) NOT NULL DEFAULT 0,
+    unit VARCHAR(10) NOT NULL DEFAULT 'шт' CHECK (unit IN ('шт', 'т', 'ШТ', 'КГ', 'кг')),
     last_sync_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     source VARCHAR(50) DEFAULT 'manual',
 
@@ -856,19 +869,24 @@ CREATE INDEX idx_available_balances_available ON available_balances(available) W
 Поле	Тип	Обязательное	Описание
 warehouse_code	INTEGER	✅	Склад → objects.code (PK)
 product_code	INTEGER	✅	Артикул → products.code (PK)
-available	DECIMAL(12,2)	✅	Доступно: факт − заказы клиентов (по умолчанию 0)
-plan	DECIMAL(12,2)	✅	Запланировано: available + разнарядки (по умолчанию 0)
-unit	VARCHAR(10)	✅	шт / т / ШТ / КГ (по умолчанию шт; Excel ERP: ШТ или КГ)
+available	DECIMAL(12,2)	✅	«Доступно из запаса», кг. Может быть отрицательным (по умолчанию 0)
+plan	DECIMAL(12,2)	✅	available + no_ready + ready + collected + on_way
+full_stock	DECIMAL(12,2)	✅	«Запас», физический остаток, кг. Попадает в слепок
+on_way	DECIMAL(12,2)	✅	«Всего поступлений», в пути, кг. В слепок не пишется
+no_ready	DECIMAL(12,2)	✅	«Открыто (не включено в ИП)» при пустом «Стат. движ.мат.», в кг. В слепок не пишется
+ready	DECIMAL(12,2)	✅	«Вес нетто», если статус A и «Транспортный заказ» пуст. В слепок не пишется
+collected	DECIMAL(12,2)	✅	«Вес нетто», если статус A и «Транспортный заказ» заполнен. В слепок не пишется
+unit	VARCHAR(10)	✅	шт / т / ШТ / КГ / кг. Новая загрузка Excel пишет `кг`
 last_sync_at	TIMESTAMP	✅	Дата последней синхронизации
-source	VARCHAR(50)	❌	manual / csv / excel / erp_api (по умолчанию manual)
+source	VARCHAR(50)	❌	manual или excel_upload (по умолчанию manual)
 
 5.2.1. available_balances_history — Снимки остатков
 
 Один снимок на календарный день (дата в UTC). Пишется в той же транзакции, что и `POST /logistics/normative/upload`.
 
-Для складов из валидных строк файла за `snapshot_date` старые строки снимка удаляются и вставляются строки файла. Позиция, которой больше нет в файле, исчезает из снимка этого склада. Склады, которых нет в файле, не меняются. Повторная загрузка в тот же день заменяет снимок этих складов.
+Для складов из файла «Доступные остатки» за `snapshot_date` старые строки снимка удаляются и вставляются строки этой загрузки (`full_stock`, `available`, `plan`). Позиция, которой больше нет в файле, исчезает из снимка этого склада. Склады, которых нет в файле, не меняются. Повторная загрузка в тот же день заменяет снимок этих складов.
 
-`unit` копируется как в `available_balances` (Excel ERP пишет `ШТ` или `КГ`, в базе также допустимы исторические `шт` и `т`). Поэтому CHECK шире черновика `шт` / `кг` / `т`.
+`unit` копируется как в `available_balances`. Новая загрузка пишет `кг`. В слепке также допустимы исторические `шт`, `т`, `ШТ`, `КГ`. Поля `on_way`, `no_ready`, `ready`, `collected` в слепок не входят.
 
 sql
 CREATE TABLE available_balances_history (
@@ -879,6 +897,7 @@ CREATE TABLE available_balances_history (
     product_code INTEGER NOT NULL REFERENCES products(code),
     available DECIMAL(12,2) NOT NULL,
     plan DECIMAL(12,2) NOT NULL,
+    full_stock DECIMAL(12,2) NOT NULL DEFAULT 0,
     unit VARCHAR(10) NOT NULL CHECK (unit IN ('шт', 'кг', 'т', 'ШТ', 'КГ')),
     source VARCHAR(50) NOT NULL DEFAULT 'excel_upload',
     uploaded_by UUID REFERENCES users(id) ON DELETE SET NULL,
@@ -901,7 +920,8 @@ warehouse_code	INTEGER	✅	Склад → objects.code
 product_code	INTEGER	✅	Артикул → products.code
 available	DECIMAL(12,2)	✅	То же значение, что ушло в available_balances
 plan	DECIMAL(12,2)	✅	То же значение, что ушло в available_balances
-unit	VARCHAR(10)	✅	шт / кг / т / ШТ / КГ — как в строке остатка
+full_stock	DECIMAL(12,2)	✅	Физический запас, то же значение, что ушло в available_balances
+unit	VARCHAR(10)	✅	кг у новой загрузки; исторически также шт / т / ШТ / КГ
 source	VARCHAR(50)	✅	excel_upload
 uploaded_by	UUID	❌	Кто загрузил → users.id, ON DELETE SET NULL
 created_at	TIMESTAMP	✅	Дата записи снимка
@@ -929,7 +949,7 @@ id	INTEGER	✅	Всегда 1 (PK, CHECK id = 1)
 last_balances_sync_at	TIMESTAMP	❌	Дата и время последней загрузки остатков
 last_balances_sync_by	UUID	❌	Кто загрузил → users.id
 updated_at	TIMESTAMP	✅	Дата обновления записи (по умолчанию NOW())
-При загрузке Excel: для складов из файла старые строки `available_balances` удаляются, затем вставляются только строки из файла. Параллельно за текущую дату UTC перезаписывается снимок `available_balances_history` по тем же складам. После этого обновляются `last_balances_sync_at` и `last_balances_sync_by`.
+При загрузке двух Excel: для складов из файла «Доступные остатки» старые строки `available_balances` удаляются, затем вставляются строки файла, к ним суммируются «Перемещения», `plan` пересчитывается. Пара из «Перемещений», которой нет в файле остатков, создаётся с нулевыми `full_stock`, `available` и `on_way`. Параллельно за текущую дату UTC перезаписывается снимок `available_balances_history` по складам из файла остатков (`full_stock`, `available`, `plan`). Склад, которого нет в файле остатков, целиком не заменяется: обновляются только позиции из файла перемещений. После этого обновляются `last_balances_sync_at` и `last_balances_sync_by`. Если проверка файлов не пройдена, запись не начинается.
 
 5.3.1. params — Глобальные коэффициенты и настройки
 Singleton-таблица (ровно одна строка, `id = 1`). Хранит коэффициенты потребности и флаг паллетной кратности. Потребность на дашборде считается на лету: `количество × коэф. категории × коэф. удалённости` (для неудалённого склада множитель удалённости = 1).
@@ -1534,6 +1554,7 @@ EXECUTE FUNCTION trigger_create_normative();
 | 26 | `0026_available_balances_history.py` | Дневные снимки `available_balances_history` |
 | 27 | `0027_actual_shipments.py` | Фактическая реализация `actual_shipments` |
 | 28 | `0028_actual_shipments_loading_point.py` | `actual_shipments.loading_point` |
+| 29 | `0029_balance_extended_fields.py` | `available_balances`: full_stock, on_way, no_ready, ready, collected, unit `кг`; `available_balances_history.full_stock` |
 
 Начальные пользователи и объекты заполняются скриптом `backend/scripts/seed_data.py`, а не миграцией.
 
@@ -1612,7 +1633,7 @@ GROUP BY warehouse_code, product_code;
 13. ПРИМЕЧАНИЯ ПО MVP
 Элемент	Статус в MVP
 Таблица tariffs	❌ Удалена. Будет замена через API (не MVP)
-Таблица available_balances	✅ Заполняется вручную через Excel (ERP: available + plan)
+Таблица available_balances	✅ Два Excel: доступные остатки и перемещения (`full_stock`, `on_way`, `no_ready`, `ready`, `collected`, `plan`)
 Таблица available_balances_history	✅ Дневной снимок при каждой загрузке остатков
 Таблица actual_shipments	✅ Фактическая реализация, Excel с предпросмотром
 Аналитика запасов	✅ Чтение normatives, available_balances_history и actual_shipments, без новой таблицы (LOG-054)

@@ -13,6 +13,7 @@ from app.schemas.common import PaginatedResponse, PaginationMeta, SuccessRespons
 from app.schemas.logistics import (
     B2BExportRequest,
     BalanceHistoryItem,
+    BalancePreviewResult,
     BalanceSyncInfo,
     BalanceUploadResult,
     DashboardResponse,
@@ -20,7 +21,7 @@ from app.schemas.logistics import (
     GenerateOrdersData,
     GenerateOrdersRequest,
 )
-from app.services import b2b_export
+from app.services import b2b_export, balance_excel
 from app.services import logistics_normative as service
 
 router = APIRouter(prefix="/logistics/normative", tags=["Логистика — нормативы"])
@@ -58,17 +59,40 @@ async def get_dashboard(
     )
 
 
+@router.post("/preview", response_model=SuccessResponse[BalancePreviewResult])
+async def preview_balances(
+    available_file: UploadFile = File(...),
+    moving_file: UploadFile = File(...),
+    _current_user: User = Depends(LOGISTICS_ONLY),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[BalancePreviewResult]:
+    available_content = await available_file.read()
+    moving_content = await moving_file.read()
+    data = await balance_excel.preview_balances(
+        db,
+        available_content,
+        available_file.filename or "available.xlsx",
+        moving_content,
+        moving_file.filename or "moving.xlsx",
+    )
+    return SuccessResponse(data=data)
+
+
 @router.post("/upload", response_model=SuccessResponse[BalanceUploadResult])
 async def upload_balances(
-    file: UploadFile = File(...),
+    available_file: UploadFile = File(...),
+    moving_file: UploadFile = File(...),
     current_user: User = Depends(LOGISTICS_ONLY),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[BalanceUploadResult]:
-    content = await file.read()
-    data = await service.upload_balances(
+    available_content = await available_file.read()
+    moving_content = await moving_file.read()
+    data = await balance_excel.upload_balances(
         db,
-        content,
-        file.filename or "balances.xlsx",
+        available_content,
+        available_file.filename or "available.xlsx",
+        moving_content,
+        moving_file.filename or "moving.xlsx",
         user_id=current_user.id,
     )
     return SuccessResponse(data=data)

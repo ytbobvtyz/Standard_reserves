@@ -490,12 +490,27 @@ async def db_ready() -> AsyncGenerator[None, None]:
                         DROP CONSTRAINT IF EXISTS ck_available_balances_unit;
                     ALTER TABLE available_balances
                         ADD CONSTRAINT ck_available_balances_unit
-                        CHECK (unit IN ('шт', 'т', 'ШТ', 'КГ'));
+                        CHECK (unit IN ('шт', 'т', 'ШТ', 'КГ', 'кг'));
                 EXCEPTION
                     WHEN duplicate_object THEN NULL;
                     WHEN undefined_table THEN NULL;
                 END $$;
                 """))
+        for column in ("full_stock", "on_way", "no_ready", "ready", "collected"):
+            await connection.execute(
+                text(
+                    "ALTER TABLE available_balances "
+                    f"ADD COLUMN IF NOT EXISTS {column} "
+                    "DECIMAL(12,2) NOT NULL DEFAULT 0"
+                )
+            )
+        await connection.execute(
+            text(
+                "ALTER TABLE available_balances_history "
+                "ADD COLUMN IF NOT EXISTS full_stock "
+                "DECIMAL(12,2) NOT NULL DEFAULT 0"
+            )
+        )
         await connection.execute(text("""
                 DO $$
                 BEGIN

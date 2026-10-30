@@ -26,6 +26,7 @@ const columns: ColumnsType<BalanceHistoryItem> = [
     key: 'product',
     render: (_value, row) => `${row.product_code} — ${row.product_name}`,
   },
+  { title: 'Запас', dataIndex: 'full_stock', width: 120 },
   { title: 'Доступно', dataIndex: 'available', width: 120 },
   { title: 'План', dataIndex: 'plan', width: 120 },
   { title: 'Единица', dataIndex: 'unit', width: 100 },

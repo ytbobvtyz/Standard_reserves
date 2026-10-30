@@ -631,121 +631,229 @@ async def test_export_excel_returns_file(
     assert matched[9] == CLIENT_NAME
 
 
-def _balance_excel_row(
-    *,
-    product_code: int | str | None,
-    plant: int | str | None,
-    warehouse: str | None,
-    available: float | str | None,
-    plan: float | str | None,
-    unit: str | None = None,
-) -> list:
-    row: list = [None] * 20
-    row[0] = product_code
-    row[2] = plant
-    row[4] = warehouse
-    row[16] = unit
-    row[18] = available
-    row[19] = plan
-    return row
+AVAILABLE_HEADERS = [
+    "КССС материала",
+    "Завод",
+    "Склад",
+    "Запас",
+    "Всего поступлений",
+    "Доступно из запаса",
+]
+MOVING_HEADERS = [
+    "Стат. движ.мат.",
+    "Транспортный заказ",
+    "№ продукта",
+    "Вес нетто",
+    "Открыто (не включено в ИП)",
+    "Склад-получатель",
+    "ПродажнЕдиница",
+]
 
 
-def _build_balances_xlsx(data_rows: list[list]) -> bytes:
+def _sheet(headers: list[str], rows: list[dict]) -> bytes:
     workbook = Workbook()
     sheet = workbook.active
-    sheet.append(
-        _balance_excel_row(
-            product_code="product_code",
-            plant="erp_plant_code",
-            warehouse="erp_warehouse_code",
-            available="available",
-            plan="plan",
-        )
-    )
-    for row in data_rows:
-        sheet.append(row)
+    sheet.append(headers)
+    for row in rows:
+        sheet.append([row.get(header) for header in headers])
     buffer = BytesIO()
     workbook.save(buffer)
     return buffer.getvalue()
 
 
-async def test_upload_balances_upserts_and_reports_errors(
+def _available_row(
+    *,
+    product_code: int | str,
+    warehouse: str,
+    available: float | str | None,
+    plant: int | float | str = 2401,
+    full_stock: float | str | None = None,
+    on_way: float | str | None = 0,
+) -> dict:
+    return {
+        "КССС материала": product_code,
+        "Завод": plant,
+        "Склад": warehouse,
+        "Запас": available if full_stock is None else full_stock,
+        "Всего поступлений": on_way,
+        "Доступно из запаса": available,
+    }
+
+
+def _moving_row(
+    *,
+    product_code: int | str,
+    warehouse: str,
+    opened: float | str | None = 0,
+    net: float | str | None = 0,
+    status: str | None = None,
+    transport: str | None = None,
+    unit: str | None = "КГ",
+) -> dict:
+    return {
+        "Стат. движ.мат.": status,
+        "Транспортный заказ": transport,
+        "№ продукта": product_code,
+        "Вес нетто": net,
+        "Открыто (не включено в ИП)": opened,
+        "Склад-получатель": warehouse,
+        "ПродажнЕдиница": unit,
+    }
+
+
+def _upload_files(
+    available_rows: list[dict],
+    moving_rows: list[dict] | None = None,
+    *,
+    available_name: str = "available.xlsx",
+    moving_name: str = "moving.xlsx",
+    available_content: bytes | None = None,
+    moving_content: bytes | None = None,
+) -> dict:
+    content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    return {
+        "available_file": (
+            available_name,
+            available_content
+            if available_content is not None
+            else _sheet(AVAILABLE_HEADERS, available_rows),
+            content_type,
+        ),
+        "moving_file": (
+            moving_name,
+            moving_content
+            if moving_content is not None
+            else _sheet(MOVING_HEADERS, moving_rows or []),
+            content_type,
+        ),
+    }
+
+
+async def test_upload_balances_stores_kg_and_recalculates_plan(
     client: AsyncClient,
     logistics_user: AuthUser,
     logistics_catalog: dict,
 ) -> None:
     token = await login_token(client, logistics_user)
-    content = _build_balances_xlsx(
-        [
-            _balance_excel_row(
-                product_code=TEST_PRODUCT_DEFICIT,
-                plant=2401,
-                warehouse="F005",
-                available=500,
-                plan=700,
-            ),
-            _balance_excel_row(
-                product_code=TEST_PRODUCT_STOCK_ONLY,
-                plant=2401,
-                warehouse="F005",
-                available=10,
-                plan=15,
-            ),
-            _balance_excel_row(
-                product_code=TEST_PRODUCT_OK,
-                plant=2401,
-                warehouse="X999",
-                available=1,
-                plan=1,
-            ),
-        ]
-    )
+    warehouse = logistics_catalog["warehouse_code"]
     response = await client.post(
         "/api/v1/logistics/normative/upload",
         headers=auth_header(token),
-        files={
-            "file": (
-                "balances.xlsx",
-                content,
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-        },
+        files=_upload_files(
+            [
+                _available_row(
+                    product_code=TEST_PRODUCT_DEFICIT,
+                    warehouse="F005",
+                    full_stock=100,
+                    available=40,
+                    on_way=10,
+                ),
+                _available_row(
+                    product_code=TEST_PRODUCT_STOCK_ONLY,
+                    warehouse="F005",
+                    full_stock=10,
+                    available=10,
+                    on_way=0,
+                ),
+            ],
+            [
+                _moving_row(
+                    product_code=TEST_PRODUCT_DEFICIT,
+                    warehouse="F005",
+                    opened=4,
+                    unit="ШТ",
+                ),
+                _moving_row(
+                    product_code=TEST_PRODUCT_DEFICIT,
+                    warehouse="F005",
+                    opened=2,
+                    unit="КГ",
+                ),
+                _moving_row(
+                    product_code=TEST_PRODUCT_DEFICIT,
+                    warehouse="F005",
+                    status="A",
+                    net=3,
+                ),
+                _moving_row(
+                    product_code=TEST_PRODUCT_DEFICIT,
+                    warehouse="F005",
+                    status="A",
+                    transport="6100",
+                    net=7,
+                ),
+                _moving_row(
+                    product_code=TEST_PRODUCT_DEFICIT,
+                    warehouse="F005",
+                    status="C",
+                    opened=100,
+                    net=100,
+                ),
+                _moving_row(
+                    product_code=TEST_PRODUCT_DEFICIT,
+                    warehouse="F005",
+                    status="А",
+                    net=1.5,
+                    unit="ШТ",
+                ),
+            ],
+        ),
     )
     assert response.status_code == 200, response.text
     data = response.json()["data"]
     assert data["uploaded"] == 2
-    assert data["updated"] >= 1
-    assert data["errors"] == 1
-    assert data["message"] == "Загружено 2, ошибок 1"
-    assert any("X999" in item["message"] for item in data["error_details"])
+    assert data["updated"] == 2
+    assert data["created"] == 0
+    assert data["errors"] == 0
+    assert data["message"] == "Загружено 2"
+
+    async with AsyncSessionLocal() as session:
+        stored = await session.get(AvailableBalance, (warehouse, TEST_PRODUCT_DEFICIT))
+        plain = await session.get(
+            AvailableBalance, (warehouse, TEST_PRODUCT_STOCK_ONLY)
+        )
+        removed = await session.get(AvailableBalance, (warehouse, TEST_PRODUCT_OK))
+        assert stored is not None
+        assert stored.full_stock == Decimal("100.00")
+        assert stored.available == Decimal("40.00")
+        assert stored.on_way == Decimal("10.00")
+        assert stored.no_ready == Decimal("3.00")
+        assert stored.ready == Decimal("4.50")
+        assert stored.collected == Decimal("7.00")
+        assert stored.plan == Decimal("64.50")
+        assert stored.unit == "кг"
+        assert stored.source == "excel_upload"
+        assert plain is not None
+        assert plain.plan == Decimal("10.00")
+        assert plain.no_ready == Decimal("0.00")
+        assert removed is None
+        snapshot = await session.scalar(
+            select(AvailableBalanceHistory)
+            .where(
+                AvailableBalanceHistory.warehouse_code == warehouse,
+                AvailableBalanceHistory.product_code == TEST_PRODUCT_DEFICIT,
+            )
+            .order_by(AvailableBalanceHistory.snapshot_at.desc())
+        )
+        assert snapshot is not None
+        assert snapshot.full_stock == Decimal("100.00")
+        assert snapshot.available == Decimal("40.00")
+        assert snapshot.plan == Decimal("64.50")
+        assert snapshot.unit == "кг"
 
     dashboard = await client.get(
         "/api/v1/logistics/normative/dashboard",
-        params={"warehouse_code": logistics_catalog["warehouse_code"]},
+        params={"warehouse_code": warehouse, "unit": "шт"},
         headers=auth_header(token),
     )
     assert dashboard.status_code == 200, dashboard.text
-    warehouse = _warehouse(
-        dashboard.json()["data"], logistics_catalog["warehouse_code"]
+    item = _item(
+        _warehouse(dashboard.json()["data"], warehouse),
+        TEST_PRODUCT_DEFICIT,
     )
-    item = _item(warehouse, TEST_PRODUCT_DEFICIT)
-    assert item["available"] == 500
-    assert item["plan"] == 700
-    assert item["deficit"] == 300
-    assert item["stock_unit"] == "ШТ"
-
-    async with AsyncSessionLocal() as session:
-        stored = await session.get(
-            AvailableBalance,
-            (logistics_catalog["warehouse_code"], TEST_PRODUCT_DEFICIT),
-        )
-        assert stored is not None
-        assert stored.unit == "ШТ"
-        missing = await session.get(
-            AvailableBalance,
-            (logistics_catalog["warehouse_code"], TEST_PRODUCT_OK),
-        )
-        assert missing is None
+    assert item["stock_unit"] == "КГ"
+    assert item["available"] == 160
+    assert item["plan"] == 258
 
 
 async def test_upload_balances_replaces_warehouse_and_keeps_others(
@@ -768,27 +876,20 @@ async def test_upload_balances_replaces_warehouse_and_keeps_others(
         )
         await session.commit()
 
-    content = _build_balances_xlsx(
-        [
-            _balance_excel_row(
-                product_code=TEST_PRODUCT_DEFICIT,
-                plant=2401,
-                warehouse="F005",
-                available=111,
-                plan=222,
-            )
-        ]
-    )
     response = await client.post(
         "/api/v1/logistics/normative/upload",
         headers=auth_header(token),
-        files={
-            "file": (
-                "balances.xlsx",
-                content,
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-        },
+        files=_upload_files(
+            [
+                _available_row(
+                    product_code=TEST_PRODUCT_DEFICIT,
+                    warehouse="F005",
+                    full_stock=111,
+                    available=111,
+                    on_way=0,
+                )
+            ]
+        ),
     )
     assert response.status_code == 200, response.text
     data = response.json()["data"]
@@ -814,8 +915,8 @@ async def test_upload_balances_replaces_warehouse_and_keeps_others(
         )
         assert rewritten is not None
         assert rewritten.available == Decimal("111")
-        assert rewritten.plan == Decimal("222")
-        assert rewritten.source == "excel"
+        assert rewritten.plan == Decimal("111")
+        assert rewritten.source == "excel_upload"
         assert gone_ok is None
         assert gone_stock is None
         assert kept_other is not None
@@ -851,27 +952,18 @@ async def test_sync_info_after_upload(
     logistics_catalog: dict,
 ) -> None:
     token = await login_token(client, logistics_user)
-    content = _build_balances_xlsx(
-        [
-            _balance_excel_row(
-                product_code=TEST_PRODUCT_DEFICIT,
-                plant=2401,
-                warehouse="F005",
-                available=1,
-                plan=1,
-            )
-        ]
-    )
     uploaded = await client.post(
         "/api/v1/logistics/normative/upload",
         headers=auth_header(token),
-        files={
-            "file": (
-                "balances.xlsx",
-                content,
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-        },
+        files=_upload_files(
+            [
+                _available_row(
+                    product_code=TEST_PRODUCT_DEFICIT,
+                    warehouse="F005",
+                    available=1,
+                )
+            ]
+        ),
     )
     assert uploaded.status_code == 200, uploaded.text
 
@@ -907,27 +999,26 @@ async def test_upload_balances_forbidden_for_commercial(
     logistics_catalog: dict,
 ) -> None:
     token = await login_token(client, test_user)
-    content = _build_balances_xlsx(
+    files = _upload_files(
         [
-            _balance_excel_row(
+            _available_row(
                 product_code=TEST_PRODUCT_DEFICIT,
-                plant=2401,
                 warehouse="F005",
                 available=1,
-                plan=1,
             )
         ]
     )
+    preview = await client.post(
+        "/api/v1/logistics/normative/preview",
+        headers=auth_header(token),
+        files=files,
+    )
+    assert preview.status_code == 403
+    assert preview.json()["error"]["code"] == "FORBIDDEN"
     response = await client.post(
         "/api/v1/logistics/normative/upload",
         headers=auth_header(token),
-        files={
-            "file": (
-                "balances.xlsx",
-                content,
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-        },
+        files=files,
     )
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "FORBIDDEN"
@@ -942,98 +1033,97 @@ async def test_upload_balances_rejects_non_excel(
     response = await client.post(
         "/api/v1/logistics/normative/upload",
         headers=auth_header(token),
-        files={"file": ("balances.csv", b"not-excel", "text/csv")},
+        files=_upload_files(
+            [],
+            [],
+            available_name="balances.csv",
+            available_content=b"not-excel",
+        ),
     )
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "INVALID_FILE"
 
 
-async def test_upload_balances_reads_unit_sht_kg_and_rejects_invalid(
+async def test_upload_converts_sales_unit_and_rejects_unknown(
     client: AsyncClient,
     logistics_user: AuthUser,
     logistics_catalog: dict,
 ) -> None:
     token = await login_token(client, logistics_user)
-    content = _build_balances_xlsx(
+    warehouse = logistics_catalog["warehouse_code"]
+    available_rows = [
+        _available_row(
+            product_code=TEST_PRODUCT_DEFICIT,
+            warehouse="F005",
+            full_stock=0,
+            available=0,
+            on_way=0,
+        )
+    ]
+    rejected_files = _upload_files(
+        available_rows,
         [
-            _balance_excel_row(
+            _moving_row(
                 product_code=TEST_PRODUCT_DEFICIT,
-                plant=2401,
                 warehouse="F005",
-                available=150,
-                plan=150,
-                unit="КГ",
-            ),
-            _balance_excel_row(
-                product_code=TEST_PRODUCT_STOCK_ONLY,
-                plant=2401,
-                warehouse="F005",
-                available=10,
-                plan=10,
-                unit=None,
-            ),
-            _balance_excel_row(
-                product_code=TEST_PRODUCT_OK,
-                plant=2401,
-                warehouse="F005",
-                available=1,
-                plan=1,
-                unit="ТОНН",
-            ),
-        ]
+                opened=2,
+                unit="ЛИТР",
+            )
+        ],
     )
-    response = await client.post(
+    preview = await client.post(
+        "/api/v1/logistics/normative/preview",
+        headers=auth_header(token),
+        files=rejected_files,
+    )
+    assert preview.status_code == 200, preview.text
+    preview_data = preview.json()["data"]
+    assert preview_data["can_upload"] is False
+    assert any(
+        "ПродажнЕдиница" in item["message"] for item in preview_data["error_details"]
+    )
+    rejected = await client.post(
         "/api/v1/logistics/normative/upload",
         headers=auth_header(token),
-        files={
-            "file": (
-                "balances.xlsx",
-                content,
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-        },
+        files=rejected_files,
     )
-    assert response.status_code == 200, response.text
-    data = response.json()["data"]
-    assert data["uploaded"] == 2
-    assert data["errors"] == 1
-    assert any(
-        item["row"] == 4 and "ШТ или КГ" in item["message"]
-        for item in data["error_details"]
-    )
-
+    assert rejected.status_code == 400
     async with AsyncSessionLocal() as session:
-        kg_row = await session.get(
-            AvailableBalance,
-            (logistics_catalog["warehouse_code"], TEST_PRODUCT_DEFICIT),
+        untouched = await session.get(
+            AvailableBalance, (warehouse, TEST_PRODUCT_DEFICIT)
         )
-        empty_row = await session.get(
-            AvailableBalance,
-            (logistics_catalog["warehouse_code"], TEST_PRODUCT_STOCK_ONLY),
-        )
-        assert kg_row is not None
-        assert kg_row.unit == "КГ"
-        assert kg_row.available == Decimal("150")
-        assert empty_row is not None
-        assert empty_row.unit == "ШТ"
+        assert untouched is not None
+        assert untouched.available == Decimal("600")
+        assert untouched.source == "manual"
 
-    dashboard = await client.get(
-        "/api/v1/logistics/normative/dashboard",
-        params={
-            "warehouse_code": logistics_catalog["warehouse_code"],
-            "unit": "шт",
-        },
+    uploaded = await client.post(
+        "/api/v1/logistics/normative/upload",
         headers=auth_header(token),
+        files=_upload_files(
+            available_rows,
+            [
+                _moving_row(
+                    product_code=TEST_PRODUCT_DEFICIT,
+                    warehouse="F005",
+                    opened=2,
+                    unit="т",
+                ),
+                _moving_row(
+                    product_code=TEST_PRODUCT_DEFICIT,
+                    warehouse="F005",
+                    opened=4,
+                    unit="ШТ",
+                ),
+            ],
+        ),
     )
-    assert dashboard.status_code == 200, dashboard.text
-    warehouse = _warehouse(
-        dashboard.json()["data"], logistics_catalog["warehouse_code"]
-    )
-    item = _item(warehouse, TEST_PRODUCT_DEFICIT)
-    assert item["stock_unit"] == "КГ"
-    assert item["available"] == 600
-    assert item["plan"] == 600
-    assert item["deficit"] == 400
+    assert uploaded.status_code == 200, uploaded.text
+    async with AsyncSessionLocal() as session:
+        stored = await session.get(AvailableBalance, (warehouse, TEST_PRODUCT_DEFICIT))
+        assert stored is not None
+        assert stored.no_ready == Decimal("2001.00")
+        assert stored.plan == Decimal("2001.00")
+        assert stored.unit == "кг"
 
 
 def test_parse_excel_codes_normalizes_float_and_string() -> None:
@@ -1067,27 +1157,21 @@ async def test_upload_balances_finds_erp_plant_code_on_warehouse(
         await session.commit()
 
     try:
-        content = _build_balances_xlsx(
-            [
-                _balance_excel_row(
-                    product_code=TEST_PRODUCT_DEFICIT,
-                    plant=2410.0,
-                    warehouse="F006",
-                    available=33,
-                    plan=44,
-                )
-            ]
-        )
         response = await client.post(
             "/api/v1/logistics/normative/upload",
             headers=auth_header(token),
-            files={
-                "file": (
-                    "balances.xlsx",
-                    content,
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                )
-            },
+            files=_upload_files(
+                [
+                    _available_row(
+                        product_code=TEST_PRODUCT_DEFICIT,
+                        plant=2410.0,
+                        warehouse="F006",
+                        full_stock=33,
+                        available=33,
+                        on_way=11,
+                    )
+                ]
+            ),
         )
         assert response.status_code == 200, response.text
         data = response.json()["data"]
@@ -1102,6 +1186,7 @@ async def test_upload_balances_finds_erp_plant_code_on_warehouse(
             )
             assert stored is not None
             assert stored.available == Decimal("33")
+            assert stored.on_way == Decimal("11")
             assert stored.plan == Decimal("44")
             await session.execute(
                 delete(AvailableBalance).where(
@@ -1118,63 +1203,349 @@ async def test_upload_balances_finds_erp_plant_code_on_warehouse(
                 await session.commit()
 
 
-async def test_upload_balances_accepts_negative_available_and_plan(
+async def test_upload_balances_allows_negative_available(
     client: AsyncClient,
     logistics_user: AuthUser,
     logistics_catalog: dict,
 ) -> None:
     token = await login_token(client, logistics_user)
-    content = _build_balances_xlsx(
+    warehouse = logistics_catalog["warehouse_code"]
+    files = _upload_files(
         [
-            _balance_excel_row(
+            _available_row(
                 product_code=TEST_PRODUCT_DEFICIT,
-                plant=2401,
                 warehouse="F005",
+                full_stock=1,
                 available=-80,
-                plan=-30,
+                on_way=0,
             )
         ]
     )
+    preview = await client.post(
+        "/api/v1/logistics/normative/preview",
+        headers=auth_header(token),
+        files=files,
+    )
+    assert preview.status_code == 200, preview.text
+    data = preview.json()["data"]
+    assert data["can_upload"] is True
+    assert data["errors"] == 0
+    assert data["error_details"] == []
+    assert data["available_preview"][0]["available"] == "-80"
     response = await client.post(
         "/api/v1/logistics/normative/upload",
         headers=auth_header(token),
-        files={
-            "file": (
-                "balances.xlsx",
-                content,
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-        },
+        files=files,
     )
     assert response.status_code == 200, response.text
-    data = response.json()["data"]
-    assert data["uploaded"] == 1
-    assert data["errors"] == 0
-
     async with AsyncSessionLocal() as session:
-        stored = await session.get(
-            AvailableBalance,
-            (logistics_catalog["warehouse_code"], TEST_PRODUCT_DEFICIT),
-        )
+        stored = await session.get(AvailableBalance, (warehouse, TEST_PRODUCT_DEFICIT))
         assert stored is not None
         assert stored.available == Decimal("-80")
-        assert stored.plan == Decimal("-30")
+        assert stored.plan == Decimal("-80")
+        assert stored.source == "excel_upload"
 
-    dashboard = await client.get(
-        "/api/v1/logistics/normative/dashboard",
-        params={"warehouse_code": logistics_catalog["warehouse_code"]},
+
+async def test_upload_skips_unknown_articles_without_blocking_valid_rows(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    logistics_catalog: dict,
+) -> None:
+    token = await login_token(client, logistics_user)
+    warehouse = logistics_catalog["warehouse_code"]
+    unknown = 99999999
+    files = _upload_files(
+        [
+            _available_row(
+                product_code=TEST_PRODUCT_DEFICIT,
+                warehouse="F005",
+                full_stock=10,
+                available=4,
+                on_way=1,
+            ),
+            _available_row(
+                product_code=unknown,
+                warehouse="F005",
+                full_stock=7,
+                available=-2,
+                on_way=0,
+            ),
+        ],
+        [
+            _moving_row(product_code=unknown, warehouse="F005", opened=3),
+            _moving_row(
+                product_code=TEST_PRODUCT_DEFICIT,
+                warehouse="F005",
+                opened=2,
+            ),
+        ],
+    )
+    preview = await client.post(
+        "/api/v1/logistics/normative/preview",
         headers=auth_header(token),
+        files=files,
     )
-    assert dashboard.status_code == 200, dashboard.text
-    warehouse = _warehouse(
-        dashboard.json()["data"], logistics_catalog["warehouse_code"]
+    assert preview.status_code == 200, preview.text
+    data = preview.json()["data"]
+    assert data["can_upload"] is True
+    assert data["errors"] == 0
+    assert data["warnings"] == 2
+    assert all("не найден" in item["message"] for item in data["warning_details"])
+    response = await client.post(
+        "/api/v1/logistics/normative/upload",
+        headers=auth_header(token),
+        files=files,
     )
-    item = _item(warehouse, TEST_PRODUCT_DEFICIT)
-    assert item["available"] == -80
-    assert item["plan"] == -30
-    assert item["normative_quantity"] == 1000
-    assert item["deficit"] == 1030
-    assert item["status"] == "warning"
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["warnings"] == 2
+    async with AsyncSessionLocal() as session:
+        stored = await session.get(AvailableBalance, (warehouse, TEST_PRODUCT_DEFICIT))
+        missing = await session.get(AvailableBalance, (warehouse, unknown))
+        assert stored is not None
+        assert stored.available == Decimal("4")
+        assert stored.no_ready == Decimal("2")
+        assert stored.plan == Decimal("7")
+        assert missing is None
+
+    only_unknown = _upload_files(
+        [
+            _available_row(
+                product_code=unknown,
+                warehouse="F005",
+                full_stock=1,
+                available=1,
+            )
+        ]
+    )
+    blocked = await client.post(
+        "/api/v1/logistics/normative/preview",
+        headers=auth_header(token),
+        files=only_unknown,
+    )
+    assert blocked.json()["data"]["can_upload"] is False
+    assert blocked.json()["data"]["warnings"] == 1
+    rejected = await client.post(
+        "/api/v1/logistics/normative/upload",
+        headers=auth_header(token),
+        files=only_unknown,
+    )
+    assert rejected.status_code == 400
+    async with AsyncSessionLocal() as session:
+        stored = await session.get(AvailableBalance, (warehouse, TEST_PRODUCT_DEFICIT))
+        assert stored is not None
+        assert stored.available == Decimal("4")
+
+
+async def test_upload_rejects_duplicates_missing_columns_and_cross_check(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    logistics_catalog: dict,
+) -> None:
+    token = await login_token(client, logistics_user)
+    warehouse = logistics_catalog["warehouse_code"]
+    duplicate = _upload_files(
+        [
+            _available_row(
+                product_code=TEST_PRODUCT_DEFICIT,
+                warehouse="F005",
+                available=1,
+            ),
+            _available_row(
+                product_code=TEST_PRODUCT_DEFICIT,
+                warehouse="F005",
+                available=2,
+            ),
+        ]
+    )
+    preview = await client.post(
+        "/api/v1/logistics/normative/preview",
+        headers=auth_header(token),
+        files=duplicate,
+    )
+    assert preview.status_code == 200, preview.text
+    assert any(
+        "Повтор пары" in item["message"]
+        for item in preview.json()["data"]["error_details"]
+    )
+
+    missing_column = _sheet(
+        ["КССС материала", "Завод", "Склад", "Доступно из запаса"],
+        [
+            {
+                "КССС материала": TEST_PRODUCT_DEFICIT,
+                "Завод": 2401,
+                "Склад": "F005",
+                "Доступно из запаса": 1,
+            }
+        ],
+    )
+    column_preview = await client.post(
+        "/api/v1/logistics/normative/preview",
+        headers=auth_header(token),
+        files=_upload_files([], available_content=missing_column),
+    )
+    assert column_preview.status_code == 200, column_preview.text
+    assert any(
+        item["message"] == "Нет колонки «Запас»"
+        for item in column_preview.json()["data"]["error_details"]
+    )
+
+    cross = _upload_files(
+        [
+            _available_row(
+                product_code=TEST_PRODUCT_DEFICIT,
+                warehouse="F005",
+                available=1,
+            )
+        ],
+        [
+            _moving_row(product_code=TEST_PRODUCT_OK, warehouse="F005", opened=1),
+            _moving_row(
+                product_code=TEST_PRODUCT_DEFICIT,
+                warehouse="F005",
+                opened=1,
+            ),
+            _moving_row(
+                product_code=TEST_PRODUCT_DEFICIT,
+                warehouse="F005",
+                opened=2,
+            ),
+        ],
+    )
+    cross_preview = await client.post(
+        "/api/v1/logistics/normative/preview",
+        headers=auth_header(token),
+        files=cross,
+    )
+    assert cross_preview.status_code == 200, cross_preview.text
+    cross_data = cross_preview.json()["data"]
+    assert cross_data["can_upload"] is True
+    assert cross_data["errors"] == 0
+    assert not any(
+        "отсутствует в файле" in item["message"]
+        for item in cross_data["error_details"]
+    )
+    assert len(cross_data["available_preview"]) == 1
+    assert len(cross_data["moving_preview"]) == 3
+
+    many = _upload_files(
+        [
+            _available_row(
+                product_code=TEST_PRODUCT_DEFICIT,
+                warehouse="F005",
+                available=index,
+            )
+            for index in range(12)
+        ]
+    )
+    many_preview = await client.post(
+        "/api/v1/logistics/normative/preview",
+        headers=auth_header(token),
+        files=many,
+    )
+    assert many_preview.status_code == 200, many_preview.text
+    assert len(many_preview.json()["data"]["available_preview"]) == 10
+    assert many_preview.json()["data"]["available_rows"] == 12
+
+    async with AsyncSessionLocal() as session:
+        stored = await session.get(AvailableBalance, (warehouse, TEST_PRODUCT_DEFICIT))
+        assert stored is not None
+        assert stored.available == Decimal("600")
+
+
+async def test_upload_fills_missing_available_pair_with_zeros(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    logistics_catalog: dict,
+) -> None:
+    token = await login_token(client, logistics_user)
+    warehouse = logistics_catalog["warehouse_code"]
+    other_warehouse = 2002
+    async with AsyncSessionLocal() as session:
+        session.add(
+            AvailableBalance(
+                warehouse_code=other_warehouse,
+                product_code=TEST_PRODUCT_STOCK_ONLY,
+                available=Decimal("77"),
+                plan=Decimal("77"),
+                unit="шт",
+                source="manual",
+            )
+        )
+        await session.commit()
+
+    response = await client.post(
+        "/api/v1/logistics/normative/upload",
+        headers=auth_header(token),
+        files=_upload_files(
+            [
+                _available_row(
+                    product_code=TEST_PRODUCT_DEFICIT,
+                    warehouse="F005",
+                    full_stock=20,
+                    available=10,
+                    on_way=3,
+                )
+            ],
+            [
+                _moving_row(
+                    product_code=TEST_PRODUCT_OK,
+                    warehouse="F005",
+                    opened=4,
+                ),
+                _moving_row(
+                    product_code=TEST_PRODUCT_OK,
+                    warehouse="F005",
+                    status="A",
+                    net=6,
+                ),
+                _moving_row(
+                    product_code=TEST_PRODUCT_DEFICIT,
+                    warehouse="F006",
+                    opened=5,
+                ),
+            ],
+        ),
+    )
+    assert response.status_code == 200, response.text
+    async with AsyncSessionLocal() as session:
+        same_warehouse = await session.get(
+            AvailableBalance, (warehouse, TEST_PRODUCT_OK)
+        )
+        from_file = await session.get(
+            AvailableBalance, (warehouse, TEST_PRODUCT_DEFICIT)
+        )
+        other_product = await session.get(
+            AvailableBalance, (other_warehouse, TEST_PRODUCT_DEFICIT)
+        )
+        untouched = await session.get(
+            AvailableBalance, (other_warehouse, TEST_PRODUCT_STOCK_ONLY)
+        )
+        removed = await session.get(
+            AvailableBalance, (warehouse, TEST_PRODUCT_STOCK_ONLY)
+        )
+        assert same_warehouse is not None
+        assert same_warehouse.full_stock == Decimal("0")
+        assert same_warehouse.available == Decimal("0")
+        assert same_warehouse.on_way == Decimal("0")
+        assert same_warehouse.no_ready == Decimal("4")
+        assert same_warehouse.ready == Decimal("6")
+        assert same_warehouse.plan == Decimal("10")
+        assert from_file is not None
+        assert from_file.full_stock == Decimal("20")
+        assert from_file.available == Decimal("10")
+        assert from_file.on_way == Decimal("3")
+        assert from_file.plan == Decimal("13")
+        assert other_product is not None
+        assert other_product.full_stock == Decimal("0")
+        assert other_product.available == Decimal("0")
+        assert other_product.on_way == Decimal("0")
+        assert other_product.no_ready == Decimal("5")
+        assert other_product.plan == Decimal("5")
+        assert untouched is not None
+        assert untouched.available == Decimal("77")
+        assert untouched.source == "manual"
+        assert removed is None
 
 
 async def _clear_balance_history(*warehouse_codes: int) -> None:
@@ -1187,14 +1558,8 @@ async def _clear_balance_history(*warehouse_codes: int) -> None:
         await session.commit()
 
 
-def _history_file(*rows: list) -> dict:
-    return {
-        "file": (
-            "balances.xlsx",
-            _build_balances_xlsx(list(rows)),
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
-    }
+def _history_file(*rows: dict) -> dict:
+    return _upload_files(list(rows))
 
 
 async def test_upload_replaces_daily_balance_snapshot(
@@ -1227,21 +1592,19 @@ async def test_upload_replaces_daily_balance_snapshot(
         "/api/v1/logistics/normative/upload",
         headers=auth_header(token),
         files=_history_file(
-            _balance_excel_row(
+            _available_row(
                 product_code=TEST_PRODUCT_DEFICIT,
-                plant=2401,
                 warehouse="F005",
+                full_stock=15,
                 available=10,
-                plan=12,
-                unit="ШТ",
+                on_way=2,
             ),
-            _balance_excel_row(
+            _available_row(
                 product_code=TEST_PRODUCT_OK,
-                plant=2401,
                 warehouse="F005",
+                full_stock=3,
                 available=3,
-                plan=4,
-                unit="КГ",
+                on_way=0,
             ),
         ),
     )
@@ -1259,11 +1622,12 @@ async def test_upload_replaces_daily_balance_snapshot(
         by_product = {row.product_code: row for row in stored}
         assert set(by_product) == {TEST_PRODUCT_DEFICIT, TEST_PRODUCT_OK}
         assert by_product[TEST_PRODUCT_DEFICIT].available == Decimal("10.00")
+        assert by_product[TEST_PRODUCT_DEFICIT].full_stock == Decimal("15.00")
         assert by_product[TEST_PRODUCT_DEFICIT].plan == Decimal("12.00")
-        assert by_product[TEST_PRODUCT_DEFICIT].unit == "ШТ"
+        assert by_product[TEST_PRODUCT_DEFICIT].unit == "кг"
         assert by_product[TEST_PRODUCT_DEFICIT].source == "excel_upload"
         assert by_product[TEST_PRODUCT_DEFICIT].uploaded_by == logistics_user.id
-        assert by_product[TEST_PRODUCT_OK].unit == "КГ"
+        assert by_product[TEST_PRODUCT_OK].unit == "кг"
         kept = await session.scalar(
             select(AvailableBalanceHistory).where(
                 AvailableBalanceHistory.warehouse_code == other,
@@ -1277,13 +1641,12 @@ async def test_upload_replaces_daily_balance_snapshot(
         "/api/v1/logistics/normative/upload",
         headers=auth_header(token),
         files=_history_file(
-            _balance_excel_row(
+            _available_row(
                 product_code=TEST_PRODUCT_DEFICIT,
-                plant=2401,
                 warehouse="F005",
+                full_stock=30,
                 available=21,
-                plan=22,
-                unit="ШТ",
+                on_way=1,
             )
         ),
     )
@@ -1313,7 +1676,8 @@ async def test_upload_replaces_daily_balance_snapshot(
         assert balance_gone is None
         assert balance_kept is not None
         assert balance_kept.available == Decimal("21.00")
-        assert balance_kept.source == "excel"
+        assert balance_kept.plan == Decimal("22.00")
+        assert balance_kept.source == "excel_upload"
         assert other_snapshot is not None
         await session.execute(
             delete(AvailableBalanceHistory).where(
@@ -1337,19 +1701,17 @@ async def test_balance_history_filters_for_any_role(
         "/api/v1/logistics/normative/upload",
         headers=auth_header(token),
         files=_history_file(
-            _balance_excel_row(
+            _available_row(
                 product_code=TEST_PRODUCT_DEFICIT,
-                plant=2401,
                 warehouse="F005",
+                full_stock=12,
                 available=8,
-                plan=9,
+                on_way=1,
             ),
-            _balance_excel_row(
+            _available_row(
                 product_code=TEST_PRODUCT_STOCK_ONLY,
-                plant=2401,
                 warehouse="F005",
                 available=1,
-                plan=1,
             ),
         ),
     )
@@ -1387,6 +1749,7 @@ async def test_balance_history_filters_for_any_role(
     assert body["meta"]["total"] == 1
     assert body["data"][0]["available"] == 8
     assert body["data"][0]["plan"] == 9
+    assert body["data"][0]["full_stock"] == 12
     assert body["data"][0]["product_code"] == TEST_PRODUCT_DEFICIT
     assert body["data"][0]["product_name"] == "Тестовый подшипник логистики"
     assert body["data"][0]["warehouse_name"] == "Склад Ростов"

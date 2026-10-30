@@ -1,14 +1,13 @@
-import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from io import BytesIO
 from typing import Any, Literal
 from uuid import UUID
 
-from openpyxl import Workbook, load_workbook
-from sqlalchemy import case, delete, exists, func, or_, select, tuple_
+from openpyxl import Workbook
+from sqlalchemy import exists, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -26,8 +25,6 @@ from app.schemas.logistics import (
     BalanceHistoryItem,
     BalanceSyncInfo,
     BalanceSyncUser,
-    BalanceUploadError,
-    BalanceUploadResult,
     DashboardResponse,
     DashboardSummary,
     DeficitItem,
@@ -40,8 +37,6 @@ from app.schemas.logistics import (
 )
 from app.services.coefficients import CoefficientSet, calculate_requirement
 from app.services.params import load_coefficient_set
-
-logger = logging.getLogger(__name__)
 
 ESTIMATED_DELIVERY_DAYS = 5
 KG_IN_TON = Decimal("1000")
@@ -897,27 +892,6 @@ async def export_excel(
     return buffer.getvalue()
 
 
-EXCEL_COL_PRODUCT = 1
-EXCEL_COL_PLANT = 3
-EXCEL_COL_WAREHOUSE = 5
-EXCEL_COL_UNIT = 17
-EXCEL_COL_AVAILABLE = 19
-EXCEL_COL_PLAN = 20
-HEADER_MARKERS = {
-    "product_code",
-    "артикул",
-    "код",
-    "material",
-    "мат",
-    "код материала",
-}
-
-
-def _cell(row: tuple[Any, ...], column: int) -> Any:
-    index = column - 1
-    if index < 0 or index >= len(row):
-        return None
-    return row[index]
 
 
 def _is_blank(value: Any) -> bool:
@@ -926,18 +900,6 @@ def _is_blank(value: Any) -> bool:
     text = str(value).strip()
     return text == "" or text.lower() in {"none", "nan"}
 
-
-def _looks_like_header(value: Any) -> bool:
-    if _is_blank(value):
-        return False
-    text = str(value).strip().lower()
-    if text in HEADER_MARKERS:
-        return True
-    try:
-        float(text.replace(",", "."))
-        return False
-    except ValueError:
-        return any(char.isalpha() for char in text)
 
 
 def _parse_int_cell(value: Any, field: str) -> int:
@@ -997,17 +959,6 @@ def _parse_warehouse_code(value: Any) -> str:
     return text
 
 
-def _parse_balance_unit(value: Any) -> str:
-    if _is_blank(value):
-        return "ШТ"
-    text = str(value).strip().upper().replace(" ", "")
-    if text in {"ШТ", "ШТ."}:
-        return "ШТ"
-    if text in {"КГ", "КГ."}:
-        return "КГ"
-    raise ValueError("Единица измерения должна быть ШТ или КГ")
-
-
 def _parse_quantity(value: Any, field: str) -> Decimal:
     if _is_blank(value):
         raise ValueError(f"Укажите {field}")
@@ -1022,135 +973,6 @@ def _parse_quantity(value: Any, field: str) -> Decimal:
         except (InvalidOperation, TypeError, ValueError) as exc:
             raise ValueError(f"{field} должен быть числом") from exc
     return amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-
-
-def _row_empty(row: tuple[Any, ...]) -> bool:
-    tracked = (
-        EXCEL_COL_PRODUCT,
-        EXCEL_COL_PLANT,
-        EXCEL_COL_WAREHOUSE,
-        EXCEL_COL_AVAILABLE,
-        EXCEL_COL_PLAN,
-    )
-    return all(_is_blank(_cell(row, column)) for column in tracked)
-
-
-@dataclass
-class ParsedBalanceRow:
-    warehouse_code: int
-    product_code: int
-    available: Decimal
-    plan: Decimal
-    unit: str
-
-
-async def _find_plant(db: AsyncSession, erp_plant_code: int) -> Object:
-    logger.info(
-        "Plant lookup: searching objects.erp_plant_code=%s (int)",
-        erp_plant_code,
-    )
-    result = await db.execute(
-        select(Object)
-        .where(
-            Object.erp_plant_code == erp_plant_code,
-            Object.deleted_at.is_(None),
-        )
-        .order_by(
-            case((Object.type == "plant", 0), else_=1),
-            Object.is_active.desc(),
-            Object.code.asc(),
-        )
-        .limit(1)
-    )
-    plant = result.scalars().first()
-    if plant is None:
-        logger.warning(
-            "Plant lookup: no object with erp_plant_code=%s "
-            "(not searching objects.code)",
-            erp_plant_code,
-        )
-        raise ValueError(f"Завод ERP {erp_plant_code} не найден")
-    logger.info(
-        "Plant lookup: found objects.code=%s name=%r type=%s "
-        "erp_plant_code=%s is_active=%s",
-        plant.code,
-        plant.name,
-        plant.type,
-        plant.erp_plant_code,
-        plant.is_active,
-    )
-    return plant
-
-
-async def _find_warehouse(db: AsyncSession, erp_warehouse_code: str) -> Object:
-    warehouse_key = str(erp_warehouse_code)
-    logger.info(
-        "Warehouse lookup: searching objects.erp_warehouse_code=%r (str)",
-        warehouse_key,
-    )
-    result = await db.execute(
-        select(Object)
-        .where(
-            Object.erp_warehouse_code == warehouse_key,
-            Object.type == "warehouse",
-            Object.deleted_at.is_(None),
-        )
-        .order_by(Object.is_active.desc(), Object.code.asc())
-        .limit(1)
-    )
-    warehouse = result.scalars().first()
-    if warehouse is None:
-        logger.warning(
-            "Warehouse lookup: no warehouse with erp_warehouse_code=%r",
-            warehouse_key,
-        )
-        raise ValueError(f"Склад ERP {warehouse_key} не найден")
-    logger.info(
-        "Warehouse lookup: found objects.code=%s name=%r type=%s erp_warehouse_code=%r",
-        warehouse.code,
-        warehouse.name,
-        warehouse.type,
-        warehouse.erp_warehouse_code,
-    )
-    return warehouse
-
-
-async def _find_product(db: AsyncSession, product_code: int) -> Product:
-    logger.info("Product lookup: searching products.code=%s (int)", product_code)
-    product = await db.scalar(
-        select(Product).where(
-            Product.code == product_code,
-            Product.deleted_at.is_(None),
-        )
-    )
-    if product is None:
-        logger.warning("Product lookup: no product with code=%s", product_code)
-        raise ValueError(f"Продукт {product_code} не найден")
-    logger.info(
-        "Product lookup: found products.code=%s name=%r",
-        product.code,
-        product.name,
-    )
-    return product
-
-
-async def _touch_sync_metadata(
-    db: AsyncSession, *, user_id: UUID, synced_at: datetime
-) -> None:
-    row = await db.get(SyncMetadata, 1)
-    if row is None:
-        db.add(
-            SyncMetadata(
-                id=1,
-                last_balances_sync_at=synced_at,
-                last_balances_sync_by=user_id,
-                updated_at=synced_at,
-            )
-        )
-        return
-    row.last_balances_sync_at = synced_at
-    row.last_balances_sync_by = user_id
-    row.updated_at = synced_at
 
 
 def _sync_user_brief(user: User | None) -> BalanceSyncUser | None:
@@ -1170,40 +992,6 @@ def _check_period(date_from: date | None, date_to: date | None) -> None:
             400,
             "VALIDATION_ERROR",
             "date_from не может быть позже date_to",
-        )
-
-
-async def _replace_daily_snapshot(
-    db: AsyncSession,
-    *,
-    rows: dict[tuple[int, int], ParsedBalanceRow],
-    snapshot_at: datetime,
-    user_id: UUID,
-) -> None:
-    warehouse_codes = {item.warehouse_code for item in rows.values()}
-    if not warehouse_codes:
-        return
-    snapshot_date = snapshot_at.date()
-    await db.execute(
-        delete(AvailableBalanceHistory).where(
-            AvailableBalanceHistory.snapshot_date == snapshot_date,
-            AvailableBalanceHistory.warehouse_code.in_(warehouse_codes),
-        )
-    )
-    await db.flush()
-    for parsed in rows.values():
-        db.add(
-            AvailableBalanceHistory(
-                snapshot_date=snapshot_date,
-                snapshot_at=snapshot_at,
-                warehouse_code=parsed.warehouse_code,
-                product_code=parsed.product_code,
-                available=parsed.available,
-                plan=parsed.plan,
-                unit=parsed.unit,
-                source="excel_upload",
-                uploaded_by=user_id,
-            )
         )
 
 
@@ -1258,6 +1046,7 @@ async def list_balance_history(
             product_name=product_name,
             available=row.available,
             plan=row.plan,
+            full_stock=row.full_stock,
             unit=row.unit,
             source=row.source,
             uploaded_by=row.uploaded_by,
@@ -1287,140 +1076,4 @@ async def get_sync_info(db: AsyncSession) -> BalanceSyncInfo:
     return BalanceSyncInfo(
         last_balances_sync_at=row.last_balances_sync_at if row else None,
         last_balances_sync_by=_sync_user_brief(user),
-    )
-
-
-async def upload_balances(
-    db: AsyncSession,
-    content: bytes,
-    filename: str,
-    *,
-    user_id: UUID,
-) -> BalanceUploadResult:
-    lowered = filename.lower()
-    if not lowered.endswith((".xlsx", ".xls")):
-        raise APIError(400, "INVALID_FILE", "Загрузите файл .xlsx или .xls")
-    try:
-        workbook = load_workbook(BytesIO(content), data_only=True)
-    except Exception as exc:
-        raise APIError(
-            400,
-            "INVALID_FILE",
-            "Не удалось прочитать Excel. Используйте формат .xlsx",
-        ) from exc
-
-    sheet = workbook.active
-    rows = list(sheet.iter_rows(values_only=True))
-    if not rows:
-        raise APIError(400, "INVALID_FILE", "Файл пуст")
-
-    error_details: list[BalanceUploadError] = []
-    parsed_rows: list[ParsedBalanceRow] = []
-    start_index = 1
-    if rows and _looks_like_header(_cell(rows[0], EXCEL_COL_PRODUCT)):
-        start_index = 2
-
-    for excel_row, row in enumerate(rows[start_index - 1 :], start=start_index):
-        if row is None or _row_empty(row):
-            continue
-        try:
-            raw_plant = _cell(row, EXCEL_COL_PLANT)
-            raw_warehouse = _cell(row, EXCEL_COL_WAREHOUSE)
-            raw_product = _cell(row, EXCEL_COL_PRODUCT)
-            product_code = _parse_int_cell(raw_product, "артикул (product_code)")
-            erp_plant_code = _parse_int_cell(raw_plant, "завод (erp_plant_code)")
-            erp_warehouse_code = _parse_warehouse_code(raw_warehouse)
-            logger.info(
-                "Excel row %s: plant raw=%r (%s) -> %s; "
-                "warehouse raw=%r (%s) -> %r; product raw=%r -> %s",
-                excel_row,
-                raw_plant,
-                type(raw_plant).__name__,
-                erp_plant_code,
-                raw_warehouse,
-                type(raw_warehouse).__name__,
-                erp_warehouse_code,
-                raw_product,
-                product_code,
-            )
-            available = _parse_quantity(_cell(row, EXCEL_COL_AVAILABLE), "available")
-            plan = _parse_quantity(_cell(row, EXCEL_COL_PLAN), "plan")
-            unit = _parse_balance_unit(_cell(row, EXCEL_COL_UNIT))
-            await _find_plant(db, erp_plant_code)
-            warehouse = await _find_warehouse(db, erp_warehouse_code)
-            await _find_product(db, product_code)
-            parsed_rows.append(
-                ParsedBalanceRow(
-                    warehouse_code=warehouse.code,
-                    product_code=product_code,
-                    available=available,
-                    plan=plan,
-                    unit=unit,
-                )
-            )
-        except (ValueError, APIError) as exc:
-            message = exc.message if isinstance(exc, APIError) else str(exc)
-            error_details.append(BalanceUploadError(row=excel_row, message=message))
-
-    unique_rows: dict[tuple[int, int], ParsedBalanceRow] = {}
-    for parsed in parsed_rows:
-        unique_rows[(parsed.warehouse_code, parsed.product_code)] = parsed
-
-    warehouse_codes = {item.warehouse_code for item in unique_rows.values()}
-    existing_keys: set[tuple[int, int]] = set()
-    if warehouse_codes:
-        existing = await db.execute(
-            select(
-                AvailableBalance.warehouse_code,
-                AvailableBalance.product_code,
-            ).where(AvailableBalance.warehouse_code.in_(warehouse_codes))
-        )
-        existing_keys = {(row[0], row[1]) for row in existing.all()}
-        await db.execute(
-            delete(AvailableBalance).where(
-                AvailableBalance.warehouse_code.in_(warehouse_codes)
-            )
-        )
-        await db.flush()
-
-    now = datetime.now(UTC)
-    await _replace_daily_snapshot(
-        db,
-        rows=unique_rows,
-        snapshot_at=now,
-        user_id=user_id,
-    )
-    created = 0
-    updated = 0
-    for key, parsed in unique_rows.items():
-        db.add(
-            AvailableBalance(
-                warehouse_code=parsed.warehouse_code,
-                product_code=parsed.product_code,
-                available=parsed.available,
-                plan=parsed.plan,
-                unit=parsed.unit,
-                last_sync_at=now,
-                source="excel",
-            )
-        )
-        if key in existing_keys:
-            updated += 1
-        else:
-            created += 1
-
-    await _touch_sync_metadata(db, user_id=user_id, synced_at=now)
-    await db.commit()
-    from app.services.dashboard import refresh_mv_normative_daily
-
-    await refresh_mv_normative_daily(db)
-    await db.commit()
-    loaded = created + updated
-    return BalanceUploadResult(
-        uploaded=loaded,
-        created=created,
-        updated=updated,
-        errors=len(error_details),
-        message=f"Загружено {loaded}, ошибок {len(error_details)}",
-        error_details=error_details,
     )

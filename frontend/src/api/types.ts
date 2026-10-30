@@ -587,13 +587,55 @@ export interface PalletNormsUploadResult {
   error_details: ProductUploadError[]
 }
 
+export interface BalanceUploadError {
+  row: number
+  message: string
+  file?: 'available' | 'moving' | null
+}
+
+export interface AvailableBalancePreviewRow {
+  row: number
+  product_code: string | null
+  plant: string | null
+  warehouse: string | null
+  full_stock: string | null
+  available: string | null
+  on_way: string | null
+}
+
+export interface MovingBalancePreviewRow {
+  row: number
+  product_code: string | null
+  warehouse: string | null
+  status: string | null
+  net_weight: string | null
+  opened: string | null
+  sales_unit: string | null
+  transport_order: string | null
+}
+
+export interface BalancePreviewResult {
+  available_preview: AvailableBalancePreviewRow[]
+  moving_preview: MovingBalancePreviewRow[]
+  available_rows: number
+  moving_rows: number
+  errors: number
+  warnings?: number
+  message: string
+  can_upload: boolean
+  error_details: BalanceUploadError[]
+  warning_details?: BalanceUploadError[]
+}
+
 export interface BalanceUploadResult {
   uploaded: number
   created: number
   updated: number
   errors: number
+  warnings?: number
   message: string
-  error_details: ProductUploadError[]
+  error_details: BalanceUploadError[]
+  warning_details?: BalanceUploadError[]
 }
 
 export interface BalanceSyncUser {
@@ -1005,6 +1047,7 @@ export interface BalanceHistoryItem {
   product_name: string
   available: number
   plan: number
+  full_stock: number
   unit: string
   source: string
   uploaded_by?: string | null

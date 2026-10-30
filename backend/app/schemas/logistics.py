@@ -48,6 +48,7 @@ class DeficitItem(BaseModel):
 class BalanceUploadError(BaseModel):
     row: int
     message: str
+    file: Literal["available", "moving"] | None = None
 
 
 class BalanceUploadResult(BaseModel):
@@ -55,8 +56,44 @@ class BalanceUploadResult(BaseModel):
     created: int
     updated: int
     errors: int
+    warnings: int = 0
     message: str
     error_details: list[BalanceUploadError]
+    warning_details: list[BalanceUploadError] = Field(default_factory=list)
+
+
+class AvailablePreviewRow(BaseModel):
+    row: int
+    product_code: str | None = None
+    plant: str | None = None
+    warehouse: str | None = None
+    full_stock: str | None = None
+    available: str | None = None
+    on_way: str | None = None
+
+
+class MovingPreviewRow(BaseModel):
+    row: int
+    product_code: str | None = None
+    warehouse: str | None = None
+    status: str | None = None
+    net_weight: str | None = None
+    opened: str | None = None
+    sales_unit: str | None = None
+    transport_order: str | None = None
+
+
+class BalancePreviewResult(BaseModel):
+    available_preview: list[AvailablePreviewRow]
+    moving_preview: list[MovingPreviewRow]
+    available_rows: int
+    moving_rows: int
+    errors: int
+    warnings: int = 0
+    message: str
+    can_upload: bool
+    error_details: list[BalanceUploadError]
+    warning_details: list[BalanceUploadError] = Field(default_factory=list)
 
 
 class BalanceSyncUser(BaseModel):
@@ -187,6 +224,7 @@ class BalanceHistoryItem(BaseModel):
     product_name: str
     available: DecimalNumber
     plan: DecimalNumber
+    full_stock: DecimalNumber
     unit: str
     source: str
     uploaded_by: UUID | None = None

@@ -89,6 +89,7 @@ const generateOrdersBulk = vi.fn()
 const exportOrders = vi.fn()
 const exportB2B = vi.fn()
 const uploadBalances = vi.fn()
+const previewBalances = vi.fn()
 const getSyncInfo = vi.fn()
 const getObjects = vi.fn()
 const getParams = vi.fn()
@@ -101,6 +102,7 @@ vi.mock('../api/logistics', () => ({
     exportOrders: (...args: unknown[]) => exportOrders(...args),
     exportB2B: (...args: unknown[]) => exportB2B(...args),
     uploadBalances: (...args: unknown[]) => uploadBalances(...args),
+    previewBalances: (...args: unknown[]) => previewBalances(...args),
     getSyncInfo: (...args: unknown[]) => getSyncInfo(...args),
   },
 }))
@@ -158,6 +160,7 @@ describe('LogisticsDashboardPage', () => {
     exportB2B.mockReset()
     downloadBlob.mockReset()
     uploadBalances.mockReset()
+    previewBalances.mockReset()
     getSyncInfo.mockReset()
     getObjects.mockReset()
     getParams.mockReset()
@@ -484,17 +487,42 @@ describe('LogisticsDashboardPage', () => {
     })
   })
 
-  it('opens upload modal and shows report', async () => {
-    uploadBalances.mockResolvedValue({
+  it('requires both balance files and blocks upload while preview has errors', async () => {
+    previewBalances.mockResolvedValue({
       data: {
         status: 'success',
         data: {
-          uploaded: 1,
-          created: 0,
-          updated: 1,
+          available_preview: [
+            {
+              row: 2,
+              product_code: '19001',
+              plant: '2401',
+              warehouse: 'F005',
+              full_stock: '10',
+              available: '8',
+              on_way: '1',
+            },
+          ],
+          moving_preview: [
+            {
+              row: 2,
+              product_code: '19001',
+              warehouse: 'X999',
+              status: null,
+              net_weight: '0',
+              opened: '1',
+              sales_unit: 'КГ',
+              transport_order: null,
+            },
+          ],
+          available_rows: 1,
+          moving_rows: 1,
           errors: 1,
-          message: 'Загружено 1, ошибок 1',
-          error_details: [{ row: 3, message: 'Склад ERP X999 не найден' }],
+          message: 'Проверка не пройдена: 1 ошибок',
+          can_upload: false,
+          error_details: [
+            { row: 2, file: 'moving', message: 'Склад-получатель X999 не найден' },
+          ],
         },
       },
     })
@@ -507,21 +535,183 @@ describe('LogisticsDashboardPage', () => {
       expect(screen.getByText('Склад Ростов')).toBeTruthy()
     })
     fireEvent.click(screen.getByRole('button', { name: /Загрузить актуальные остатки/ }))
-    expect(screen.getByText(/Перетащите Excel-файл/)).toBeTruthy()
+    expect(screen.getByText('Доступные остатки')).toBeTruthy()
+    expect(screen.getByText('Перемещения')).toBeTruthy()
+    const uploadButton = screen.getByRole('button', { name: 'Загрузить' }) as HTMLButtonElement
+    expect(uploadButton.disabled).toBe(true)
 
-    const file = new File(['data'], 'balances.xlsx', {
+    const inputs = document.querySelectorAll('input[type="file"]')
+    expect(inputs.length).toBe(2)
+    const available = new File(['a'], 'available.xlsx', {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     })
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement
-    fireEvent.change(input, { target: { files: [file] } })
+    fireEvent.change(inputs[0], { target: { files: [available] } })
+    expect(previewBalances).not.toHaveBeenCalled()
+    expect(uploadButton.disabled).toBe(true)
 
+    const moving = new File(['m'], 'moving.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    fireEvent.change(inputs[1], { target: { files: [moving] } })
+    await waitFor(() => {
+      expect(previewBalances).toHaveBeenCalled()
+    })
+    await waitFor(() => {
+      expect(screen.getByText(/Склад-получатель X999 не найден/)).toBeTruthy()
+    })
+    expect(
+      (screen.getByRole('button', { name: 'Загрузить' }) as HTMLButtonElement).disabled,
+    ).toBe(true)
+    expect(uploadBalances).not.toHaveBeenCalled()
+  }, 15000)
+
+  it('uploads balances after a clean preview of both files', async () => {
+    previewBalances.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: {
+          available_preview: [],
+          moving_preview: [],
+          available_rows: 1,
+          moving_rows: 0,
+          errors: 0,
+          message: 'Можно загрузить 1 позиций',
+          can_upload: true,
+          error_details: [],
+        },
+      },
+    })
+    uploadBalances.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: {
+          uploaded: 1,
+          created: 0,
+          updated: 1,
+          errors: 0,
+          message: 'Загружено 1',
+          error_details: [],
+        },
+      },
+    })
+    render(
+      <MemoryRouter>
+        <LogisticsDashboardPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByText('Склад Ростов')).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Загрузить актуальные остатки/ }))
+    const inputs = document.querySelectorAll('input[type="file"]')
+    fireEvent.change(inputs[0], {
+      target: {
+        files: [
+          new File(['a'], 'available.xlsx', {
+            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          }),
+        ],
+      },
+    })
+    fireEvent.change(inputs[1], {
+      target: {
+        files: [
+          new File(['m'], 'moving.xlsx', {
+            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          }),
+        ],
+      },
+    })
+    const uploadButton = screen.getByRole('button', { name: 'Загрузить' }) as HTMLButtonElement
+    await waitFor(() => {
+      expect(uploadButton.disabled).toBe(false)
+    })
+    fireEvent.click(uploadButton)
+    await waitFor(() => {
+      expect(uploadBalances).toHaveBeenCalledTimes(1)
+    })
+    await waitFor(() => {
+      expect(screen.getByText('Загружено 1')).toBeTruthy()
+    })
+    const closeButton = screen.getByRole('button', { name: 'Закрыть' }) as HTMLButtonElement
+    expect(closeButton.disabled).toBe(false)
+    expect(screen.queryByRole('button', { name: 'Загрузить' })).toBeNull()
+    fireEvent.click(closeButton)
+    expect(uploadBalances).toHaveBeenCalledTimes(1)
+  }, 15000)
+
+  it('keeps upload available when unknown articles are only warnings', async () => {
+    previewBalances.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: {
+          available_preview: [],
+          moving_preview: [],
+          available_rows: 2,
+          moving_rows: 0,
+          errors: 0,
+          warnings: 1,
+          message: 'Можно загрузить 1 позиций. Пропущено 1: артикул не найден',
+          can_upload: true,
+          error_details: [],
+          warning_details: [
+            { row: 1154, file: 'available', message: 'Артикул 99999999 не найден' },
+          ],
+        },
+      },
+    })
+    uploadBalances.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: {
+          uploaded: 1,
+          created: 0,
+          updated: 1,
+          errors: 0,
+          warnings: 1,
+          message: 'Загружено 1. Пропущено 1: артикул не найден',
+          error_details: [],
+          warning_details: [],
+        },
+      },
+    })
+    render(
+      <MemoryRouter>
+        <LogisticsDashboardPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByText('Склад Ростов')).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Загрузить актуальные остатки/ }))
+    const inputs = document.querySelectorAll('input[type="file"]')
+    fireEvent.change(inputs[0], {
+      target: {
+        files: [
+          new File(['a'], 'available.xlsx', {
+            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          }),
+        ],
+      },
+    })
+    fireEvent.change(inputs[1], {
+      target: {
+        files: [
+          new File(['m'], 'moving.xlsx', {
+            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          }),
+        ],
+      },
+    })
+    await waitFor(() => {
+      expect(screen.getByText(/Артикул 99999999 не найден/)).toBeTruthy()
+    })
+    const uploadButton = screen.getByRole('button', { name: 'Загрузить' }) as HTMLButtonElement
+    expect(uploadButton.disabled).toBe(false)
+    fireEvent.click(uploadButton)
     await waitFor(() => {
       expect(uploadBalances).toHaveBeenCalled()
     })
-    await waitFor(() => {
-      expect(screen.getByText('Загружено 1, ошибок 1')).toBeTruthy()
-    })
-    expect(screen.getByText(/Строка 3/)).toBeTruthy()
   }, 15000)
 
   it('keeps related articles visible and hides shared group metrics', async () => {

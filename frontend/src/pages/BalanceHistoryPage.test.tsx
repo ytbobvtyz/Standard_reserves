@@ -15,6 +15,7 @@ const row: BalanceHistoryItem = {
   product_name: 'Подшипник',
   available: 10,
   plan: 12,
+  full_stock: 15,
   unit: 'ШТ',
   source: 'excel_upload',
   created_at: '2026-10-27T09:00:00Z',

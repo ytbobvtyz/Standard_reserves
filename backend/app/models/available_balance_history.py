@@ -62,6 +62,12 @@ class AvailableBalanceHistory(CreatedAtMixin, Base):
     )
     available: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     plan: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    full_stock: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+        default=Decimal("0"),
+        server_default=text("0"),
+    )
     unit: Mapped[str] = mapped_column(String(10), nullable=False)
     source: Mapped[str] = mapped_column(
         String(50),

@@ -1449,11 +1449,11 @@ text
 |-------|----------|----------|-------|
 | POST | `/logistics/normative/upload` | Загрузить остатки из Excel | logistics |
 
-Колонки Excel (1-based): 1 `product_code`, 3 `erp_plant_code`, 5 `erp_warehouse_code`, 19 `available`, 20 `plan`. Upsert по складу и артикулу.
+Два файла: «Доступные остатки» и «Перемещения». Колонки по заголовкам, не по номерам. `plan` = available + no_ready + ready + collected + on_way. Предпросмотр: `POST /logistics/normative/preview`.
 
-Дашборд (`GET /logistics/normative/dashboard`) возвращает `available` и `plan` вместо `fact_quantity`. Кнопка «Загрузить актуальные остатки» — только у логиста.
+Дашборд (`GET /logistics/normative/dashboard`) возвращает `available` и `plan`. Кнопка «Загрузить актуальные остатки» — только у логиста и требует оба файла.
 
-При загрузке: для складов из файла старые `available_balances` удаляются, затем вставляются строки файла. Обновляется `sync_metadata` (`GET /logistics/normative/sync-info`).
+При успешной проверке: для складов из файла остатков старые `available_balances` удаляются, затем вставляются строки обоих файлов. Обновляется `sync_metadata` (`GET /logistics/normative/sync-info`). Ошибки проверки блокируют запись.
 
 ---
 

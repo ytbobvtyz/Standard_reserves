@@ -4,6 +4,7 @@ import type {
   B2BExportRequest,
   BalanceHistoryItem,
   BalanceHistoryParams,
+  BalancePreviewResult,
   BalanceSyncInfo,
   BalanceUploadResult,
   ExecuteOneTimeData,
@@ -45,20 +46,25 @@ export const logisticsApi = {
       responseType: 'blob',
     }),
 
-  uploadBalances: (file: File, onProgress?: (percent: number) => void) => {
+  previewBalances: (availableFile: File, movingFile: File) => {
     const form = new FormData()
-    form.append('file', file)
+    form.append('available_file', availableFile)
+    form.append('moving_file', movingFile)
+    return api.post<ApiSuccess<BalancePreviewResult>>(
+      '/logistics/normative/preview',
+      form,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    )
+  },
+
+  uploadBalances: (availableFile: File, movingFile: File) => {
+    const form = new FormData()
+    form.append('available_file', availableFile)
+    form.append('moving_file', movingFile)
     return api.post<ApiSuccess<BalanceUploadResult>>(
       '/logistics/normative/upload',
       form,
-      {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        onUploadProgress: (event) => {
-          if (event.total) {
-            onProgress?.(Math.round((event.loaded / event.total) * 100))
-          }
-        },
-      },
+      { headers: { 'Content-Type': 'multipart/form-data' } },
     )
   },
 

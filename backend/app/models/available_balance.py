@@ -25,7 +25,7 @@ class AvailableBalance(Base):
     __tablename__ = "available_balances"
     __table_args__ = (
         CheckConstraint(
-            "unit IN ('шт', 'т', 'ШТ', 'КГ')",
+            "unit IN ('шт', 'т', 'ШТ', 'КГ', 'кг')",
             name="ck_available_balances_unit",
         ),
         Index("idx_available_balances_warehouse", "warehouse_code"),
@@ -54,6 +54,36 @@ class AvailableBalance(Base):
         server_default=text("0"),
     )
     plan: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+        default=Decimal("0"),
+        server_default=text("0"),
+    )
+    full_stock: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+        default=Decimal("0"),
+        server_default=text("0"),
+    )
+    on_way: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+        default=Decimal("0"),
+        server_default=text("0"),
+    )
+    no_ready: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+        default=Decimal("0"),
+        server_default=text("0"),
+    )
+    ready: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+        default=Decimal("0"),
+        server_default=text("0"),
+    )
+    collected: Mapped[Decimal] = mapped_column(
         Numeric(12, 2),
         nullable=False,
         default=Decimal("0"),
