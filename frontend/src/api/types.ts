@@ -385,6 +385,10 @@ export interface DeficitItem {
   normative_quantity: number
   requirement: number
   available: number
+  no_ready?: number | null
+  ready?: number | null
+  collected?: number | null
+  on_way?: number | null
   plan: number
   unit: Unit
   deficit: number

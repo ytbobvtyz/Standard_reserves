@@ -56,6 +56,21 @@ function QuantityCell({ value, unit }: { value: number; unit: Unit }) {
   )
 }
 
+function movementColumn(
+  title: string,
+  dataIndex: 'no_ready' | 'ready' | 'collected' | 'on_way',
+  unit: Unit,
+): ColumnsType<DeficitItem>[number] {
+  return {
+    title,
+    dataIndex,
+    width: 180,
+    render: (value: number | null | undefined) => (
+      <QuantityCell value={value ?? 0} unit={unit} />
+    ),
+  }
+}
+
 function sumItems(
   items: DeficitItem[],
   field: 'normative_quantity' | 'requirement' | 'available' | 'plan',
@@ -103,6 +118,10 @@ function convertItem(item: DeficitItem, unit: Unit): DeficitItem {
     normative_quantity: fromPieces(item.normative_quantity, unit, weightKg),
     requirement: fromPieces(item.requirement ?? 0, unit, weightKg),
     available: fromPieces(item.available, unit, weightKg),
+    no_ready: fromPieces(item.no_ready ?? 0, unit, weightKg),
+    ready: fromPieces(item.ready ?? 0, unit, weightKg),
+    collected: fromPieces(item.collected ?? 0, unit, weightKg),
+    on_way: fromPieces(item.on_way ?? 0, unit, weightKg),
     plan: fromPieces(item.plan, unit, weightKg),
     deficit: fromPieces(item.deficit, unit, weightKg),
   }
@@ -354,6 +373,10 @@ export function LogisticsDashboardPage() {
       width: 120,
       render: (value: number) => <QuantityCell value={value} unit={unit} />,
     },
+    movementColumn('Перемещения: не произведено', 'no_ready', unit),
+    movementColumn('Перемещения: произведено', 'ready', unit),
+    movementColumn('Перемещения: собрано в ТС', 'collected', unit),
+    movementColumn('Перемещения: в пути', 'on_way', unit),
     {
       title: 'Доступно + Запланировано',
       dataIndex: 'plan',

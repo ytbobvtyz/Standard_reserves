@@ -840,7 +840,7 @@ deleted_at	TIMESTAMP	❌	Дата удаления (soft delete)
 5.2. available_balances — Остатки ERP
 Загружается из двух Excel ERP: «Доступные остатки» и «Перемещения». Все количества пишутся в килограммах, `unit` = `кг`.
 
-`available` — «Доступно из запаса». `full_stock` — «Запас». `on_way` — «Всего поступлений». `no_ready`, `ready`, `collected` суммируются из «Перемещений». `plan` = `available + no_ready + ready + collected + on_way`. Дефицит на дашборде по-прежнему потребность − plan. Новые поля на самом дашборде — следующая итерация.
+`available` — «Доступно из запаса». `full_stock` — «Запас». `on_way` — «Всего поступлений». `no_ready`, `ready`, `collected` суммируются из «Перемещений». `plan` = `available + no_ready + ready + collected + on_way`. Дефицит на дашборде по-прежнему потребность − plan. На `/logistics/dashboard` между «Доступно» и «Доступно + Запланировано» показываются `no_ready`, `ready`, `collected` и `on_way` (в кг, на экране в шт или т). `full_stock` на этой таблице не показывается.
 
 sql
 CREATE TABLE available_balances (
@@ -1649,6 +1649,6 @@ mv_normative_daily	✅ Ежедневная агрегация действую�
 
 Полные DDL — в разделах 5.4 и 5.5. Кратко: партия Excel создаёт `production_requests` + `production_request_items` и активные `normatives` с `request_id IS NULL`. Удаление партии каскадно снимает позиции и нормативы. Миграция: `0017_production_requests.py`.
 
-Версия: 2.12
-Дата: 28.10.2026
+Версия: 2.13
+Дата: 30.10.2026
 Статус: Утверждена

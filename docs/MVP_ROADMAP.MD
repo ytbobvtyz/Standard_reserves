@@ -1451,7 +1451,7 @@ text
 
 Два файла: «Доступные остатки» и «Перемещения». Колонки по заголовкам, не по номерам. `plan` = available + no_ready + ready + collected + on_way. Предпросмотр: `POST /logistics/normative/preview`.
 
-Дашборд (`GET /logistics/normative/dashboard`) возвращает `available` и `plan`. Кнопка «Загрузить актуальные остатки» — только у логиста и требует оба файла.
+Дашборд (`GET /logistics/normative/dashboard`) возвращает `available`, `no_ready`, `ready`, `collected`, `on_way` и `plan`. Кнопка «Загрузить актуальные остатки» — только у логиста и требует оба файла.
 
 При успешной проверке: для складов из файла остатков старые `available_balances` удаляются, затем вставляются строки обоих файлов. Обновляется `sync_metadata` (`GET /logistics/normative/sync-info`). Ошибки проверки блокируют запись.
 

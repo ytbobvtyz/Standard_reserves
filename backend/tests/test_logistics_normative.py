@@ -231,7 +231,18 @@ async def test_dashboard_returns_deficit(
     assert item["normative_quantity"] == 1000
     assert item["requirement"] == 1000
     assert item["available"] == 600
+    assert item["no_ready"] == 0
+    assert item["ready"] == 0
+    assert item["collected"] == 0
+    assert item["on_way"] == 0
     assert item["plan"] == 600
+    assert item["plan"] == pytest.approx(
+        item["available"]
+        + item["no_ready"]
+        + item["ready"]
+        + item["collected"]
+        + item["on_way"]
+    )
     assert item["deficit"] == 400
     assert item["unit"] == "шт"
     assert item["status"] == "warning"
@@ -853,7 +864,42 @@ async def test_upload_balances_stores_kg_and_recalculates_plan(
     )
     assert item["stock_unit"] == "КГ"
     assert item["available"] == 160
+    assert item["no_ready"] == 12
+    assert item["ready"] == 18
+    assert item["collected"] == 28
+    assert item["on_way"] == 40
     assert item["plan"] == 258
+    assert item["plan"] == pytest.approx(
+        item["available"]
+        + item["no_ready"]
+        + item["ready"]
+        + item["collected"]
+        + item["on_way"]
+    )
+
+    tons = await client.get(
+        "/api/v1/logistics/normative/dashboard",
+        params={"warehouse_code": warehouse, "unit": "т"},
+        headers=auth_header(token),
+    )
+    assert tons.status_code == 200, tons.text
+    tons_item = _item(
+        _warehouse(tons.json()["data"], warehouse),
+        TEST_PRODUCT_DEFICIT,
+    )
+    assert tons_item["available"] == pytest.approx(0.04)
+    assert tons_item["no_ready"] == pytest.approx(0.003)
+    assert tons_item["ready"] == pytest.approx(0.0045)
+    assert tons_item["collected"] == pytest.approx(0.007)
+    assert tons_item["on_way"] == pytest.approx(0.01)
+    assert tons_item["plan"] == pytest.approx(0.0645)
+    assert tons_item["plan"] == pytest.approx(
+        tons_item["available"]
+        + tons_item["no_ready"]
+        + tons_item["ready"]
+        + tons_item["collected"]
+        + tons_item["on_way"]
+    )
 
 
 async def test_upload_balances_replaces_warehouse_and_keeps_others(

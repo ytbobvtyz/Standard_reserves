@@ -28,6 +28,10 @@ class DeficitItem(BaseModel):
     normative_quantity: DecimalNumber
     requirement: DecimalNumber
     available: DecimalNumber
+    no_ready: DecimalNumber = Decimal("0")
+    ready: DecimalNumber = Decimal("0")
+    collected: DecimalNumber = Decimal("0")
+    on_way: DecimalNumber = Decimal("0")
     plan: DecimalNumber
     unit: str
     deficit: DecimalNumber

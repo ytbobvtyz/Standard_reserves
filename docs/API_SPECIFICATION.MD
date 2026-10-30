@@ -816,6 +816,10 @@ json
                     "normative_quantity": 1000,
                     "requirement": 1000,
                     "available": 100,
+                    "no_ready": 0,
+                    "ready": 0,
+                    "collected": 0,
+                    "on_way": 0,
                     "plan": 100,
                     "unit": "шт",
                     "deficit": 300,
@@ -836,7 +840,11 @@ json
                     "category": "A",
                     "normative_quantity": 0,
                     "requirement": 0,
-                    "available": 600,
+                    "available": 400,
+                    "no_ready": 100,
+                    "ready": 50,
+                    "collected": 30,
+                    "on_way": 20,
                     "plan": 600,
                     "unit": "шт",
                     "deficit": 0,
@@ -863,16 +871,18 @@ json
     }
 }
 
-`available` — «Доступно из запаса». `plan` — `available + no_ready + ready + collected + on_way`. На дашборде оба значения пересчитаны в единицу склада.
+`available` — «Доступно из запаса». `no_ready` — «Перемещения: не произведено». `ready` — «Перемещения: произведено». `collected` — «Перемещения: собрано в ТС». `on_way` — «Перемещения: в пути». `plan` — `available + no_ready + ready + collected + on_way`.
+
+`no_ready`, `ready`, `collected` и `on_way` в БД хранятся в кг. В ответе они, как `available` и `plan`, пересчитаны в запрошенную `unit`: `шт` = кг / `products.weight_kg`, `т` = кг / 1000. Если веса нет, в ответе 0. Округление: 2 знака для `шт`, 6 знаков для `т`. Пустого остатка нет: поля всегда числа, 0 если количества нет. `full_stock` в этот ответ не входит.
 
 `requirement` (Потребность) = `normative_quantity` × коэффициент категории (A=1, B=1.5, C=2) × коэффициент удалённости (`long_distance` false=1, true=1.5).
 
 Родственные артикулы (`parent_code` / `children_code`) на одном складе склеиваются в группу:
 
 - главный — `is_active = true` и `children_code IS NULL`, идёт первым (`is_group_main: true`);
-- у главного `normative_quantity` / `requirement` — сумма по группе; `available` / `plan` — только свои;
+- у главного `normative_quantity` / `requirement` — сумма по группе; `available`, `no_ready`, `ready`, `collected`, `on_way` и `plan` — только свои;
 - `deficit` главного = потребность группы − сумма `plan` всех членов группы;
-- у остальных `hide_group_metrics: true`: норматив, потребность и дефицит в ответе 0 (на UI скрыты), свои `available` и `plan` сохраняются;
+- у остальных `hide_group_metrics: true`: норматив, потребность и дефицит в ответе 0 (на UI скрыты), свои `available`, `no_ready`, `ready`, `collected`, `on_way` и `plan` сохраняются;
 - `generate-orders` создаёт позицию только на главный артикул с групповым дефицитом.
 
 `deficit` одиночной позиции без родственников = `requirement` − `plan`, как раньше.
@@ -2972,6 +2982,6 @@ json
     "message": "Партия загрузки удалена"
 }
 
-Версия: 1.15
-Дата: 28.10.2026
+Версия: 1.16
+Дата: 30.10.2026
 Статус: Утверждена

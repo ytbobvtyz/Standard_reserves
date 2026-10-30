@@ -62,6 +62,10 @@ class DeficitRow:
     normative_quantity: Decimal
     requirement: Decimal
     available: Decimal
+    no_ready: Decimal
+    ready: Decimal
+    collected: Decimal
+    on_way: Decimal
     plan: Decimal
     deficit: Decimal
     unit: str
@@ -110,6 +114,13 @@ def from_pieces(quantity: Decimal, unit: Unit, weight_kg: Decimal) -> Decimal:
     if unit == "шт":
         return quantity
     return quantity * weight_kg / KG_IN_TON
+
+
+def kg_to_pieces(quantity: Decimal | None, weight_kg: Decimal) -> Decimal:
+    """Movement fields are stored in kilograms, regardless of available.unit."""
+    if quantity is None:
+        return Decimal("0")
+    return to_pieces(quantity, "кг", weight_kg)
 
 
 def resolve_plant_id(product: Product) -> int:
@@ -266,6 +277,10 @@ def _convert_row(
     normative_pcs: Decimal,
     available_pcs: Decimal,
     plan_pcs: Decimal,
+    no_ready_pcs: Decimal,
+    ready_pcs: Decimal,
+    collected_pcs: Decimal,
+    on_way_pcs: Decimal,
     unit: Unit,
     client_name: str,
     expiry_date: date | None,
@@ -312,6 +327,10 @@ def _convert_row(
             from_pieces(requirement_pcs, unit, product.weight_kg), unit
         ),
         available=_quantize(from_pieces(available_pcs, unit, product.weight_kg), unit),
+        no_ready=_quantize(from_pieces(no_ready_pcs, unit, product.weight_kg), unit),
+        ready=_quantize(from_pieces(ready_pcs, unit, product.weight_kg), unit),
+        collected=_quantize(from_pieces(collected_pcs, unit, product.weight_kg), unit),
+        on_way=_quantize(from_pieces(on_way_pcs, unit, product.weight_kg), unit),
         plan=_quantize(from_pieces(plan_pcs, unit, product.weight_kg), unit),
         deficit=_quantize(from_pieces(deficit_pcs, unit, product.weight_kg), unit),
         unit=unit,
@@ -609,13 +628,34 @@ async def collect_deficit_rows(
             product = bucket["product"]
             warehouse: Object = bucket["warehouse"]
             balance = balances.get(key)
+            weight_kg = product.weight_kg
             available_pcs = (
-                to_pieces(balance.available, balance.unit, product.weight_kg)
+                to_pieces(balance.available, balance.unit, weight_kg)
                 if balance is not None
                 else Decimal("0")
             )
             plan_pcs = (
-                to_pieces(balance.plan, balance.unit, product.weight_kg)
+                to_pieces(balance.plan, balance.unit, weight_kg)
+                if balance is not None
+                else Decimal("0")
+            )
+            no_ready_pcs = (
+                kg_to_pieces(balance.no_ready, weight_kg)
+                if balance is not None
+                else Decimal("0")
+            )
+            ready_pcs = (
+                kg_to_pieces(balance.ready, weight_kg)
+                if balance is not None
+                else Decimal("0")
+            )
+            collected_pcs = (
+                kg_to_pieces(balance.collected, weight_kg)
+                if balance is not None
+                else Decimal("0")
+            )
+            on_way_pcs = (
+                kg_to_pieces(balance.on_way, weight_kg)
                 if balance is not None
                 else Decimal("0")
             )
@@ -631,6 +671,10 @@ async def collect_deficit_rows(
                     normative_pcs=group_normative_pcs if is_main else Decimal("0"),
                     available_pcs=available_pcs,
                     plan_pcs=plan_pcs,
+                    no_ready_pcs=no_ready_pcs,
+                    ready_pcs=ready_pcs,
+                    collected_pcs=collected_pcs,
+                    on_way_pcs=on_way_pcs,
                     unit=unit,
                     client_name=", ".join(
                         group_clients if is_main else bucket["clients"]
@@ -663,6 +707,10 @@ def _to_deficit_item(row: DeficitRow) -> DeficitItem:
         normative_quantity=row.normative_quantity,
         requirement=row.requirement,
         available=row.available,
+        no_ready=row.no_ready,
+        ready=row.ready,
+        collected=row.collected,
+        on_way=row.on_way,
         plan=row.plan,
         unit=row.unit,
         deficit=row.deficit,

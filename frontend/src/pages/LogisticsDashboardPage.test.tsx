@@ -273,6 +273,80 @@ describe('LogisticsDashboardPage', () => {
     expect(getSyncInfo).toHaveBeenCalled()
   })
 
+  it('shows movement columns and converts them with the unit toggle', async () => {
+    getDashboard.mockResolvedValue({
+      data: {
+        ...dashboard,
+        data: dashboard.data.map((warehouse, warehouseIndex) =>
+          warehouseIndex === 0
+            ? {
+                ...warehouse,
+                deficit_items: warehouse.deficit_items.map((item, itemIndex) =>
+                  itemIndex === 0
+                    ? {
+                        ...item,
+                        no_ready: 10.126,
+                        ready: 50,
+                        collected: 30,
+                        on_way: 20,
+                      }
+                    : item,
+                ),
+              }
+            : warehouse,
+        ),
+      },
+    })
+
+    render(
+      <MemoryRouter>
+        <LogisticsDashboardPage />
+      </MemoryRouter>,
+    )
+    await expandWarehouse('Склад Ростов')
+
+    const headers = screen.getAllByRole('columnheader').map((header) => header.textContent)
+    const availableIndex = headers.indexOf('Доступно')
+    expect(headers.slice(availableIndex, availableIndex + 6)).toEqual([
+      'Доступно',
+      'Перемещения: не произведено',
+      'Перемещения: произведено',
+      'Перемещения: собрано в ТС',
+      'Перемещения: в пути',
+      'Доступно + Запланировано',
+    ])
+
+    const cells = (name: string) =>
+      [...screen.getByText(name).closest('tr')!.querySelectorAll('td')].map(
+        (cell) => cell.textContent,
+      )
+
+    expect(cells('Подшипник 6204ZZ').slice(5, 11)).toEqual([
+      '0,15',
+      '0,002532',
+      '0,0125',
+      '0,0075',
+      '0,005',
+      '0,15',
+    ])
+    expect(cells('Корпус без дефицита').slice(6, 10)).toEqual(['0', '0', '0', '0'])
+
+    fireEvent.click(screen.getByRole('radio', { name: 'шт' }))
+    await waitFor(() => {
+      expect(cells('Подшипник 6204ZZ')[6]).toBe('10,13')
+    })
+    expect(cells('Подшипник 6204ZZ').slice(5, 11)).toEqual([
+      '600',
+      '10,13',
+      '50',
+      '30',
+      '20',
+      '600',
+    ])
+    expect(cells('Корпус без дефицита').slice(6, 10)).toEqual(['0', '0', '0', '0'])
+    expect(screen.queryByText('—', { selector: 'td' })).toBeNull()
+  })
+
   it('converts units on the client without refetching', async () => {
     render(
       <MemoryRouter>
