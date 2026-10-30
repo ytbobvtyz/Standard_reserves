@@ -940,14 +940,11 @@ async def export_excel(
     return buffer.getvalue()
 
 
-
-
 def _is_blank(value: Any) -> bool:
     if value is None:
         return True
     text = str(value).strip()
     return text == "" or text.lower() in {"none", "nan"}
-
 
 
 def _parse_int_cell(value: Any, field: str) -> int:

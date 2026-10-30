@@ -6,7 +6,9 @@ from app.services.logistics_normative import get_dashboard
 
 async def main() -> None:
     async with AsyncSessionLocal() as db:
-        result = await get_dashboard(db, warehouse_code=2001, filter_mode="all", unit="шт")
+        result = await get_dashboard(
+            db, warehouse_code=2001, filter_mode="all", unit="шт"
+        )
     shown = 0
     nonzero = 0
     samples: list[tuple] = []

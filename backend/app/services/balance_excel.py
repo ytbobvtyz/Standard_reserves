@@ -413,9 +413,7 @@ def _prefer_object(items: list[Object]) -> Object:
     return sorted(items, key=lambda item: (not item.is_active, item.code))[0]
 
 
-async def _load_products(
-    db: AsyncSession, codes: set[int]
-) -> dict[int, Decimal]:
+async def _load_products(db: AsyncSession, codes: set[int]) -> dict[int, Decimal]:
     if not codes:
         return {}
     result = await db.execute(

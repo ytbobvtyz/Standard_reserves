@@ -23,10 +23,16 @@ def _server_secret() -> str:
 async def main() -> None:
     async with AsyncSessionLocal() as db:
         user = (
-            await db.execute(
-                select(User).where(User.role == "logistics", User.deleted_at.is_(None))
+            (
+                await db.execute(
+                    select(User).where(
+                        User.role == "logistics", User.deleted_at.is_(None)
+                    )
+                )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
     if user is None:
         print("no logistics user")
         return
@@ -52,11 +58,22 @@ async def main() -> None:
         body = json.load(response)
     items = body["data"][0]["deficit_items"]
     keys = sorted(items[0].keys())
-    print("keys", "no_ready" in keys, "ready" in keys, "collected" in keys, "on_way" in keys)
+    print(
+        "keys",
+        "no_ready" in keys,
+        "ready" in keys,
+        "collected" in keys,
+        "on_way" in keys,
+    )
     nonzero = 0
     sample = None
     for item in items:
-        parts = [item.get("no_ready"), item.get("ready"), item.get("collected"), item.get("on_way")]
+        parts = [
+            item.get("no_ready"),
+            item.get("ready"),
+            item.get("collected"),
+            item.get("on_way"),
+        ]
         if any(part not in (0, 0.0, None) for part in parts):
             nonzero += 1
             if sample is None:

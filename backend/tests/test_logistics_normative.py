@@ -725,16 +725,20 @@ def _upload_files(
     return {
         "available_file": (
             available_name,
-            available_content
-            if available_content is not None
-            else _sheet(AVAILABLE_HEADERS, available_rows),
+            (
+                available_content
+                if available_content is not None
+                else _sheet(AVAILABLE_HEADERS, available_rows)
+            ),
             content_type,
         ),
         "moving_file": (
             moving_name,
-            moving_content
-            if moving_content is not None
-            else _sheet(MOVING_HEADERS, moving_rows or []),
+            (
+                moving_content
+                if moving_content is not None
+                else _sheet(MOVING_HEADERS, moving_rows or [])
+            ),
             content_type,
         ),
     }
@@ -1468,8 +1472,7 @@ async def test_upload_rejects_duplicates_missing_columns_and_cross_check(
     assert cross_data["can_upload"] is True
     assert cross_data["errors"] == 0
     assert not any(
-        "отсутствует в файле" in item["message"]
-        for item in cross_data["error_details"]
+        "отсутствует в файле" in item["message"] for item in cross_data["error_details"]
     )
     assert len(cross_data["available_preview"]) == 1
     assert len(cross_data["moving_preview"]) == 3
