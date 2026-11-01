@@ -305,16 +305,34 @@ describe('LogisticsDashboardPage', () => {
     )
     await expandWarehouse('Склад Ростов')
 
+    expect(screen.getByRole('columnheader', { name: 'Перемещения' }).className).toContain(
+      'logistics-movement-start',
+    )
+    expect(screen.getByRole('columnheader', { name: 'Перемещения' }).className).toContain(
+      'logistics-movement-end',
+    )
+    expect(screen.getByRole('columnheader', { name: 'не произведено' }).className).toContain(
+      'logistics-movement-start',
+    )
+    expect(screen.getByRole('columnheader', { name: 'в пути' }).className).toContain(
+      'logistics-movement-end',
+    )
+    const table = document.querySelector('.logistics-deficit-table table')
+    expect(table?.querySelector('thead')).toBeTruthy()
+    expect(table?.textContent).toContain('Подшипник 6204ZZ')
+    expect(document.querySelector('.ant-table-sticky-holder')).toBeNull()
     const headers = screen.getAllByRole('columnheader').map((header) => header.textContent)
-    const availableIndex = headers.indexOf('Доступно')
-    expect(headers.slice(availableIndex, availableIndex + 6)).toEqual([
-      'Доступно',
-      'Перемещения: не произведено',
-      'Перемещения: произведено',
-      'Перемещения: собрано в ТС',
-      'Перемещения: в пути',
-      'Доступно + Запланировано',
-    ])
+    expect(headers).toContain('Перемещения')
+    expect(headers).toEqual(
+      expect.arrayContaining([
+        'Доступно',
+        'не произведено',
+        'произведено',
+        'собрано в ТС',
+        'в пути',
+        'Доступно + Запланировано',
+      ]),
+    )
 
     const cells = (name: string) =>
       [...screen.getByText(name).closest('tr')!.querySelectorAll('td')].map(
@@ -345,6 +363,135 @@ describe('LogisticsDashboardPage', () => {
     ])
     expect(cells('Корпус без дефицита').slice(6, 10)).toEqual(['0', '0', '0', '0'])
     expect(screen.queryByText('—', { selector: 'td' })).toBeNull()
+  })
+
+  it('sorts article groups inside the open warehouse', async () => {
+    getDashboard.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: [
+          {
+            warehouse_code: 2001,
+            warehouse_name: 'Склад Ростов',
+            total_deficit: 310,
+            deficit_count: 2,
+            deficit_items: [
+              {
+                product_code: 30000,
+                product_name: 'Средний',
+                category: 'A',
+                normative_quantity: 40,
+                requirement: 40,
+                available: 20,
+                plan: 20,
+                unit: 'шт',
+                deficit: 20,
+                client_name: "ООО 'Ромашка'",
+                expiry_date: '2026-12-31',
+                status: 'warning',
+                stock_unit: 'ШТ',
+                weight_kg: 1,
+                group_key: '30000',
+                group_index: 0,
+                is_group_main: true,
+                hide_group_metrics: false,
+              },
+              {
+                product_code: 10004,
+                product_name: 'Главный группы',
+                category: 'A',
+                normative_quantity: 1000,
+                requirement: 1000,
+                available: 10,
+                plan: 10,
+                unit: 'шт',
+                deficit: 300,
+                client_name: "ООО 'Ромашка'",
+                expiry_date: '2026-12-31',
+                status: 'warning',
+                stock_unit: 'ШТ',
+                weight_kg: 1,
+                group_key: '10004',
+                group_index: 1,
+                is_group_main: true,
+                hide_group_metrics: false,
+              },
+              {
+                product_code: 10001,
+                product_name: 'Старый группы',
+                category: 'A',
+                normative_quantity: 0,
+                requirement: 0,
+                available: 100,
+                plan: 100,
+                unit: 'шт',
+                deficit: 0,
+                client_name: "ООО 'Ромашка'",
+                expiry_date: '2026-12-31',
+                status: 'ok',
+                stock_unit: 'ШТ',
+                weight_kg: 1,
+                group_key: '10004',
+                group_index: 1,
+                is_group_main: false,
+                hide_group_metrics: true,
+              },
+              {
+                product_code: 20000,
+                product_name: 'Малый',
+                category: 'A',
+                normative_quantity: 80,
+                requirement: 80,
+                available: 5,
+                plan: 5,
+                unit: 'шт',
+                deficit: 10,
+                client_name: "ООО 'Ромашка'",
+                expiry_date: '2026-12-31',
+                status: 'warning',
+                stock_unit: 'ШТ',
+                weight_kg: 1,
+                group_key: '20000',
+                group_index: 2,
+                is_group_main: true,
+                hide_group_metrics: false,
+              },
+            ],
+          },
+        ],
+        summary: { total_deficit: 310, deficit_warehouses: 1, deficit_products: 2 },
+      },
+    })
+
+    render(
+      <MemoryRouter>
+        <LogisticsDashboardPage />
+      </MemoryRouter>,
+    )
+    await expandWarehouse('Склад Ростов')
+
+    const names = () =>
+      [...document.querySelectorAll('.logistics-deficit-table tbody tr')].map(
+        (row) => row.querySelectorAll('td')[1]?.textContent,
+      )
+
+    expect(names()).toEqual(['Средний', 'Главный группы', 'Старый группы', 'Малый'])
+    fireEvent.click(screen.getByRole('columnheader', { name: 'Доступно' }))
+    await waitFor(() => {
+      expect(names()[0]).toBe('Малый')
+    })
+    expect(names()).toEqual(['Малый', 'Средний', 'Главный группы', 'Старый группы'])
+
+    fireEvent.click(screen.getByRole('columnheader', { name: 'Доступно' }))
+    await waitFor(() => {
+      expect(names()[0]).toBe('Главный группы')
+    })
+    expect(names()).toEqual(['Главный группы', 'Старый группы', 'Средний', 'Малый'])
+
+    fireEvent.click(screen.getByRole('columnheader', { name: 'Доступно' }))
+    await waitFor(() => {
+      expect(names()).toEqual(['Средний', 'Главный группы', 'Старый группы', 'Малый'])
+    })
   })
 
   it('converts units on the client without refetching', async () => {
@@ -705,7 +852,10 @@ describe('LogisticsDashboardPage', () => {
       expect(uploadBalances).toHaveBeenCalledTimes(1)
     })
     await waitFor(() => {
-      expect(screen.getByText('Загружено 1')).toBeTruthy()
+      const messages = [...document.querySelectorAll('.ant-alert-message')].map(
+        (node) => node.textContent,
+      )
+      expect(messages).toContain('Загружено 1')
     })
     const closeButton = screen.getByRole('button', { name: 'Закрыть' }) as HTMLButtonElement
     expect(closeButton.disabled).toBe(false)

@@ -100,6 +100,45 @@ body {
   background: #fafafa;
 }
 
+.logistics-deficit-table .ant-table-thead > tr > th.logistics-movement-header {
+  background: #e6f4ff;
+}
+
+.logistics-deficit-table .ant-table-thead > tr > th.logistics-movement-header:hover {
+  background: #bae0ff;
+}
+
+.logistics-warehouse-collapse.ant-collapse
+  > .ant-collapse-item
+  > .ant-collapse-content.ant-collapse-content-active {
+  overflow: visible;
+}
+
+.logistics-warehouse-collapse .logistics-deficit-table .ant-table-thead > tr > th {
+  position: sticky;
+  z-index: 3;
+}
+
+.logistics-warehouse-collapse .logistics-deficit-table .ant-table-thead > tr:first-child > th {
+  top: 0;
+}
+
+.logistics-warehouse-collapse .logistics-deficit-table .ant-table-thead > tr:nth-child(2) > th {
+  top: var(--logistics-sticky-header-offset, 0px);
+}
+
+.logistics-deficit-table .logistics-movement-start {
+  box-shadow: inset 1.5px 0 0 #595959;
+}
+
+.logistics-deficit-table .logistics-movement-end {
+  box-shadow: inset -1.5px 0 0 #595959;
+}
+
+.logistics-deficit-table .logistics-movement-start.logistics-movement-end {
+  box-shadow: inset 1.5px 0 0 #595959, inset -1.5px 0 0 #595959;
+}
+
 .expiry-heatmap {
   display: grid;
   grid-template-columns: repeat(7, 18px);

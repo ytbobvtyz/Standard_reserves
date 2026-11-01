@@ -17,7 +17,7 @@ import {
 } from 'antd'
 import { DownloadOutlined, SendOutlined, UploadOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getApiErrorMessage } from '../api/client'
 import { logisticsApi } from '../api/logistics'
@@ -56,19 +56,133 @@ function QuantityCell({ value, unit }: { value: number; unit: Unit }) {
   )
 }
 
+type QuantityColumn =
+  | 'normative_quantity'
+  | 'requirement'
+  | 'available'
+  | 'no_ready'
+  | 'ready'
+  | 'collected'
+  | 'on_way'
+  | 'plan'
+  | 'deficit'
+
+type SortOrder = 'ascend' | 'descend'
+
+interface WarehouseSort {
+  column: QuantityColumn
+  order: SortOrder
+}
+
+const MAIN_SORT_COLUMNS = new Set<QuantityColumn>([
+  'normative_quantity',
+  'requirement',
+  'deficit',
+])
+
+function isQuantityColumn(value: string): value is QuantityColumn {
+  return (
+    value === 'normative_quantity' ||
+    value === 'requirement' ||
+    value === 'available' ||
+    value === 'no_ready' ||
+    value === 'ready' ||
+    value === 'collected' ||
+    value === 'on_way' ||
+    value === 'plan' ||
+    value === 'deficit'
+  )
+}
+
+function groupSortValue(members: DeficitItem[], column: QuantityColumn): number {
+  if (MAIN_SORT_COLUMNS.has(column)) {
+    const main = members.find(isGroupMain) ?? members[0]
+    return main?.[column] ?? 0
+  }
+  return members.reduce((total, item) => total + (item[column] ?? 0), 0)
+}
+
+function sortGroups(
+  groups: DeficitItem[][],
+  sort: WarehouseSort,
+): DeficitItem[][] {
+  const direction = sort.order === 'ascend' ? 1 : -1
+  return [...groups].sort((left, right) => {
+    const delta = groupSortValue(left, sort.column) - groupSortValue(right, sort.column)
+    if (delta !== 0) {
+      return delta * direction
+    }
+    return (left[0]?.group_index ?? 0) - (right[0]?.group_index ?? 0)
+  })
+}
+
+function movementClass(edge: 'start' | 'middle' | 'end'): string {
+  const names = ['logistics-movement-cell']
+  if (edge === 'start') {
+    names.push('logistics-movement-start')
+  }
+  if (edge === 'end') {
+    names.push('logistics-movement-end')
+  }
+  return names.join(' ')
+}
+
 function movementColumn(
   title: string,
   dataIndex: 'no_ready' | 'ready' | 'collected' | 'on_way',
   unit: Unit,
+  edge: 'start' | 'middle' | 'end',
+  sort: WarehouseSort | undefined,
 ): ColumnsType<DeficitItem>[number] {
+  const edgeClass = movementClass(edge)
   return {
     title,
+    key: dataIndex,
     dataIndex,
-    width: 180,
+    width: 140,
+    className: edgeClass,
+    onHeaderCell: () => ({
+      className: `${edgeClass} logistics-movement-header`,
+    }),
+    onCell: () => ({ className: edgeClass }),
+    sorter: () => 0,
+    sortOrder: sort?.column === dataIndex ? sort.order : null,
     render: (value: number | null | undefined) => (
       <QuantityCell value={value ?? 0} unit={unit} />
     ),
   }
+}
+
+function StickyTableFrame({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const root = ref.current
+    if (!root) {
+      return
+    }
+    const apply = () => {
+      const row = root.querySelector('thead > tr:first-child')
+      if (!(row instanceof HTMLElement)) {
+        return
+      }
+      root.style.setProperty(
+        '--logistics-sticky-header-offset',
+        `${row.getBoundingClientRect().height}px`,
+      )
+    }
+    apply()
+    if (typeof ResizeObserver === 'undefined') {
+      return
+    }
+    const observer = new ResizeObserver(apply)
+    observer.observe(root)
+    return () => observer.disconnect()
+  }, [])
+  return (
+    <div ref={ref} className="logistics-sticky-table-frame">
+      {children}
+    </div>
+  )
 }
 
 function sumItems(
@@ -236,6 +350,7 @@ export function LogisticsDashboardPage() {
   const [confirmedOrders, setConfirmedOrders] = useState<GeneratedOrder[]>([])
   const [selectedWarehouseCodes, setSelectedWarehouseCodes] = useState<number[]>([])
   const [syncInfo, setSyncInfo] = useState<BalanceSyncInfo | null>(null)
+  const [warehouseSort, setWarehouseSort] = useState<Record<number, WarehouseSort>>({})
   const hasRowsRef = useRef(false)
 
   const load = useCallback(async () => {
@@ -291,13 +406,15 @@ export function LogisticsDashboardPage() {
           warehouseCode == null || warehouse.warehouse_code === warehouseCode,
       )
       .map((warehouse) => {
-        const deficitItems = groupItems(warehouse.deficit_items)
+        const groups = groupItems(warehouse.deficit_items)
           .filter(
             (members) =>
               matchesFilter(members, filterMode) &&
               groupMatchesSearch(members, search),
           )
-          .flatMap((members) => members.map((item) => convertItem(item, unit)))
+          .map((members) => members.map((item) => convertItem(item, unit)))
+        const sort = warehouseSort[warehouse.warehouse_code]
+        const deficitItems = (sort ? sortGroups(groups, sort) : groups).flat()
         return {
           ...warehouse,
           deficit_items: deficitItems,
@@ -305,7 +422,7 @@ export function LogisticsDashboardPage() {
         }
       })
       .filter((warehouse) => warehouse.deficit_items.length > 0)
-  }, [items, warehouseCode, filterMode, search, unit])
+  }, [items, warehouseCode, filterMode, search, unit, warehouseSort])
 
   const visibleWarehouseCodes = useMemo(
     () => visibleWarehouses.map((item) => item.warehouse_code),
@@ -338,7 +455,16 @@ export function LogisticsDashboardPage() {
     )
   }, [visibleWarehouseCodes])
 
-  const itemColumns = (longDistance: boolean): ColumnsType<DeficitItem> => [
+  const itemColumns = (
+    longDistance: boolean,
+    sort: WarehouseSort | undefined,
+  ): ColumnsType<DeficitItem> => {
+    const sortable = (field: QuantityColumn) => ({
+      key: field,
+      sorter: () => 0,
+      sortOrder: sort?.column === field ? sort.order : null,
+    })
+    return [
     { title: 'Артикул', dataIndex: 'product_code', width: 110 },
     { title: 'Название', dataIndex: 'product_name' },
     {
@@ -351,6 +477,7 @@ export function LogisticsDashboardPage() {
       title: 'Норматив',
       dataIndex: 'normative_quantity',
       width: 120,
+      ...sortable('normative_quantity'),
       render: (value: number, record) =>
         record.hide_group_metrics ? hiddenGroupMetric() : formatQty(value, unit),
     },
@@ -358,6 +485,7 @@ export function LogisticsDashboardPage() {
       title: 'Потребность',
       dataIndex: 'requirement',
       width: 130,
+      ...sortable('requirement'),
       render: (value: number, record) =>
         record.hide_group_metrics ? (
           hiddenGroupMetric()
@@ -371,22 +499,36 @@ export function LogisticsDashboardPage() {
       title: 'Доступно',
       dataIndex: 'available',
       width: 120,
+      ...sortable('available'),
       render: (value: number) => <QuantityCell value={value} unit={unit} />,
     },
-    movementColumn('Перемещения: не произведено', 'no_ready', unit),
-    movementColumn('Перемещения: произведено', 'ready', unit),
-    movementColumn('Перемещения: собрано в ТС', 'collected', unit),
-    movementColumn('Перемещения: в пути', 'on_way', unit),
+    {
+      title: 'Перемещения',
+      key: 'movements',
+      className: 'logistics-movement-header logistics-movement-start logistics-movement-end',
+      onHeaderCell: () => ({
+        className:
+          'logistics-movement-header logistics-movement-start logistics-movement-end',
+      }),
+      children: [
+        movementColumn('не произведено', 'no_ready', unit, 'start', sort),
+        movementColumn('произведено', 'ready', unit, 'middle', sort),
+        movementColumn('собрано в ТС', 'collected', unit, 'middle', sort),
+        movementColumn('в пути', 'on_way', unit, 'end', sort),
+      ],
+    },
     {
       title: 'Доступно + Запланировано',
       dataIndex: 'plan',
       width: 210,
+      ...sortable('plan'),
       render: (value: number) => <QuantityCell value={value} unit={unit} />,
     },
     {
       title: 'Дефицит',
       dataIndex: 'deficit',
       width: 140,
+      ...sortable('deficit'),
       render: (value: number, record) =>
         record.hide_group_metrics ? (
           hiddenGroupMetric()
@@ -400,7 +542,30 @@ export function LogisticsDashboardPage() {
       render: (_, record) => record.stock_unit || record.unit,
     },
     { title: 'Клиент', dataIndex: 'client_name' },
-  ]
+    ]
+  }
+
+  const applyWarehouseSort = (
+    warehouseCodeValue: number,
+    sorter: { columnKey?: unknown; field?: unknown; order?: SortOrder | null } | null,
+  ) => {
+    const column = String(sorter?.columnKey ?? sorter?.field ?? '')
+    if (!sorter?.order || !isQuantityColumn(column)) {
+      setWarehouseSort((current) => {
+        if (!(warehouseCodeValue in current)) {
+          return current
+        }
+        const next = { ...current }
+        delete next[warehouseCodeValue]
+        return next
+      })
+      return
+    }
+    setWarehouseSort((current) => ({
+      ...current,
+      [warehouseCodeValue]: { column, order: sorter.order as SortOrder },
+    }))
+  }
 
   const generateForWarehouses = async (codes: number[]) => {
     if (codes.length === 0) {
@@ -599,6 +764,7 @@ export function LogisticsDashboardPage() {
             </Checkbox>
           ) : null}
           <Collapse
+            className="logistics-warehouse-collapse"
             activeKey={activeKeys}
             onChange={(keys) =>
               setActiveKeys(
@@ -673,23 +839,33 @@ export function LogisticsDashboardPage() {
                         }
                       />
                     ) : null}
-                    <Table
-                      className="logistics-deficit-table"
-                      rowKey={(item) => `${item.product_code}-${item.client_name}`}
-                      pagination={false}
-                      size="small"
-                      columns={itemColumns(Boolean(warehouse.long_distance))}
-                      dataSource={warehouse.deficit_items}
-                      rowClassName={(item) => {
-                        const stripe =
-                          (item.group_index ?? 0) % 2 === 0
-                            ? 'logistics-group-even'
-                            : 'logistics-group-odd'
-                        const start =
-                          item.is_group_main !== false ? ' logistics-group-start' : ''
-                        return `${stripe}${start}`
-                      }}
-                    />
+                    <StickyTableFrame>
+                      <Table
+                        className="logistics-deficit-table"
+                        rowKey={(item) => `${item.product_code}-${item.client_name}`}
+                        pagination={false}
+                        tableLayout="auto"
+                        size="small"
+                        columns={itemColumns(
+                          Boolean(warehouse.long_distance),
+                          warehouseSort[warehouse.warehouse_code],
+                        )}
+                        onChange={(_pagination, _filters, sorter) => {
+                          const current = Array.isArray(sorter) ? sorter[0] : sorter
+                          applyWarehouseSort(warehouse.warehouse_code, current ?? null)
+                        }}
+                        dataSource={warehouse.deficit_items}
+                        rowClassName={(item) => {
+                          const stripe =
+                            (item.group_index ?? 0) % 2 === 0
+                              ? 'logistics-group-even'
+                              : 'logistics-group-odd'
+                          const start =
+                            item.is_group_main !== false ? ' logistics-group-start' : ''
+                          return `${stripe}${start}`
+                        }}
+                      />
+                    </StickyTableFrame>
                   </Space>
                 ) : null,
               }
