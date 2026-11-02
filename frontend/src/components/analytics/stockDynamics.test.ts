@@ -4,6 +4,9 @@ import { TOP_WAREHOUSE_COLORS } from '../dashboard/warehouseTrendColors'
 import {
   STOCK_ACTUAL_COLOR,
   STOCK_AVAILABLE_COLOR,
+  STOCK_FULL_STOCK_COLOR,
+  STOCK_FULL_STOCK_MAX_COLOR,
+  STOCK_FULL_STOCK_MIN_COLOR,
   STOCK_AVAILABLE_MAX_COLOR,
   STOCK_AVAILABLE_MIN_COLOR,
   STOCK_NORMATIVE_COLOR,
@@ -51,6 +54,9 @@ describe('buildStockChartModel', () => {
       available_min: [4, 4],
       available_median: [8, 8],
       available_max: [10, 10],
+      full_stock_min: [9, null],
+      full_stock_median: [11, null],
+      full_stock_max: [12, null],
       actual: [1.5, null],
       unit: 'т',
     })
@@ -58,12 +64,18 @@ describe('buildStockChartModel', () => {
     expect(model.showAvailableMin).toBe(true)
     expect(model.showAvailableLevel).toBe(true)
     expect(model.showAvailableMax).toBe(true)
+    expect(model.showFullStockMin).toBe(true)
+    expect(model.showFullStockLevel).toBe(true)
+    expect(model.showFullStockMax).toBe(true)
     expect(model.showActual).toBe(true)
     expect(model.rows[1]).toMatchObject({
       normative: null,
       availableMin: 4,
       availableMedian: 8,
       availableMax: 10,
+      fullStockMin: null,
+      fullStockMedian: null,
+      fullStockMax: null,
       actual: null,
     })
   })
@@ -75,6 +87,9 @@ describe('buildStockChartModel', () => {
       available_min: [1, 2],
       available_median: [1, 2],
       available_max: [1, 2],
+      full_stock_min: [null, null],
+      full_stock_median: [null, null],
+      full_stock_max: [null, null],
       actual: [1, 2],
       unit: 'т',
     })
@@ -88,12 +103,18 @@ describe('buildStockChartModel', () => {
       available_min: [null, null],
       available_median: [8, 0],
       available_max: [null, null],
+      full_stock_min: [null, null],
+      full_stock_median: [8, 0],
+      full_stock_max: [null, null],
       actual: [null, null],
       unit: 'т',
     })
     expect(model.showAvailableMin).toBe(false)
     expect(model.showAvailableMax).toBe(false)
     expect(model.showAvailableLevel).toBe(true)
+    expect(model.showFullStockMin).toBe(false)
+    expect(model.showFullStockLevel).toBe(true)
+    expect(model.showFullStockMax).toBe(false)
     expect(model.showActual).toBe(false)
   })
 })
@@ -105,5 +126,8 @@ describe('stock dynamics colors', () => {
     expect(STOCK_AVAILABLE_MIN_COLOR).toBe('#95de64')
     expect(STOCK_AVAILABLE_MAX_COLOR).toBe('#237804')
     expect(STOCK_ACTUAL_COLOR).toBe('#fa8c16')
+    expect(STOCK_FULL_STOCK_MIN_COLOR).toBe('#D1D5DB')
+    expect(STOCK_FULL_STOCK_COLOR).toBe('#9CA3AF')
+    expect(STOCK_FULL_STOCK_MAX_COLOR).toBe('#6B7280')
   })
 })

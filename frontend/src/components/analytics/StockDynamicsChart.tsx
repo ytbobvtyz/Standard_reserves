@@ -14,6 +14,9 @@ import type { StockDynamicsData } from '../../api/types'
 import {
   STOCK_ACTUAL_COLOR,
   STOCK_AVAILABLE_COLOR,
+  STOCK_FULL_STOCK_COLOR,
+  STOCK_FULL_STOCK_MAX_COLOR,
+  STOCK_FULL_STOCK_MIN_COLOR,
   STOCK_AVAILABLE_MAX_COLOR,
   STOCK_AVAILABLE_MIN_COLOR,
   STOCK_NORMATIVE_COLOR,
@@ -26,6 +29,7 @@ import {
 interface StockDynamicsChartProps {
   data: StockDynamicsData | null
   granularity: StockGranularity
+  showFullStock?: boolean
 }
 
 function LegendItem({
@@ -51,7 +55,11 @@ function LegendItem({
   )
 }
 
-export function StockDynamicsChart({ data, granularity }: StockDynamicsChartProps) {
+export function StockDynamicsChart({
+  data,
+  granularity,
+  showFullStock = false,
+}: StockDynamicsChartProps) {
   if (!data) {
     return null
   }
@@ -60,6 +68,8 @@ export function StockDynamicsChart({ data, granularity }: StockDynamicsChartProp
     return <Empty description="Нет данных за период" />
   }
   const levelLabel = granularity === 'day' ? 'Доступный запас' : 'Медиана остатка'
+  const fullLevelLabel =
+    granularity === 'day' ? 'Фактический остаток' : 'Медиана факт. остатка'
   const chartWidth = Math.max(model.rows.length * 48, 560)
 
   return (
@@ -128,6 +138,45 @@ export function StockDynamicsChart({ data, granularity }: StockDynamicsChartProp
                   isAnimationActive={false}
                 />
               ) : null}
+              {showFullStock && model.showFullStockMin ? (
+                <Line
+                  type="monotone"
+                  dataKey="fullStockMin"
+                  name="Мин. фактический остаток"
+                  stroke={STOCK_FULL_STOCK_MIN_COLOR}
+                  strokeWidth={2}
+                  strokeDasharray="5 5"
+                  connectNulls={false}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              ) : null}
+              {showFullStock && model.showFullStockMax ? (
+                <Line
+                  type="monotone"
+                  dataKey="fullStockMax"
+                  name="Макс. фактический остаток"
+                  stroke={STOCK_FULL_STOCK_MAX_COLOR}
+                  strokeWidth={2}
+                  strokeDasharray="5 5"
+                  connectNulls={false}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              ) : null}
+              {showFullStock && model.showFullStockLevel ? (
+                <Line
+                  type="monotone"
+                  dataKey="fullStockMedian"
+                  name={fullLevelLabel}
+                  stroke={STOCK_FULL_STOCK_COLOR}
+                  strokeWidth={2}
+                  strokeDasharray="5 5"
+                  connectNulls={false}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              ) : null}
               {model.showActual ? (
                 <Line
                   type="monotone"
@@ -160,6 +209,23 @@ export function StockDynamicsChart({ data, granularity }: StockDynamicsChartProp
         ) : null}
         {model.showAvailableMax ? (
           <LegendItem color={STOCK_AVAILABLE_MAX_COLOR} label="Макс. остаток" kind="dashed" />
+        ) : null}
+        {showFullStock && model.showFullStockMin ? (
+          <LegendItem
+            color={STOCK_FULL_STOCK_MIN_COLOR}
+            label="Мин. фактический остаток"
+            kind="dashed"
+          />
+        ) : null}
+        {showFullStock && model.showFullStockLevel ? (
+          <LegendItem color={STOCK_FULL_STOCK_COLOR} label={fullLevelLabel} kind="dashed" />
+        ) : null}
+        {showFullStock && model.showFullStockMax ? (
+          <LegendItem
+            color={STOCK_FULL_STOCK_MAX_COLOR}
+            label="Макс. фактический остаток"
+            kind="dashed"
+          />
         ) : null}
         {model.showActual ? (
           <LegendItem color={STOCK_ACTUAL_COLOR} label="Реализация" kind="solid" />

@@ -297,6 +297,7 @@ async def stock_dataset(catalog: dict[str, int], logistics_user: AuthUser):
                     product_code=PRODUCT,
                     available=Decimal("8"),
                     plan=Decimal("8"),
+                    full_stock=Decimal("12"),
                     unit="т",
                 ),
                 AvailableBalanceHistory(
@@ -306,6 +307,7 @@ async def stock_dataset(catalog: dict[str, int], logistics_user: AuthUser):
                     product_code=PRODUCT,
                     available=Decimal("-5"),
                     plan=Decimal("-5"),
+                    full_stock=Decimal("-3"),
                     unit="т",
                 ),
                 AvailableBalanceHistory(
@@ -315,6 +317,7 @@ async def stock_dataset(catalog: dict[str, int], logistics_user: AuthUser):
                     product_code=PRODUCT,
                     available=Decimal("9"),
                     plan=Decimal("9"),
+                    full_stock=Decimal("11"),
                     unit="т",
                 ),
                 AvailableBalanceHistory(
@@ -324,6 +327,17 @@ async def stock_dataset(catalog: dict[str, int], logistics_user: AuthUser):
                     product_code=PRODUCT,
                     available=Decimal("1"),
                     plan=Decimal("1"),
+                    full_stock=Decimal("3"),
+                    unit="т",
+                ),
+                AvailableBalanceHistory(
+                    snapshot_date=date(2026, 10, 7),
+                    snapshot_at=datetime(2026, 10, 7, 12, tzinfo=UTC),
+                    warehouse_code=WAREHOUSE,
+                    product_code=PRODUCT,
+                    available=Decimal("6"),
+                    plan=Decimal("6"),
+                    full_stock=Decimal("0"),
                     unit="т",
                 ),
                 AvailableBalanceHistory(
@@ -333,6 +347,7 @@ async def stock_dataset(catalog: dict[str, int], logistics_user: AuthUser):
                     product_code=PRODUCT,
                     available=Decimal("4"),
                     plan=Decimal("4"),
+                    full_stock=Decimal("7"),
                     unit="т",
                 ),
                 AvailableBalanceHistory(
@@ -342,6 +357,7 @@ async def stock_dataset(catalog: dict[str, int], logistics_user: AuthUser):
                     product_code=OTHER_PRODUCT,
                     available=Decimal("50"),
                     plan=Decimal("50"),
+                    full_stock=Decimal("80"),
                     unit="т",
                 ),
             ]
@@ -510,6 +526,16 @@ async def test_stock_dynamics_day_sums_filters_and_nulls(
         None,
     ]
     assert data["available_max"] == [None] * 6
+    assert data["full_stock_min"] == [None] * 6
+    assert _tons(data["full_stock_median"]) == [
+        None,
+        Decimal("12.000"),
+        Decimal("0.000"),
+        Decimal("14.000"),
+        None,
+        None,
+    ]
+    assert data["full_stock_max"] == [None] * 6
     assert _tons(data["actual"]) == [
         None,
         None,
@@ -533,6 +559,7 @@ async def test_stock_dynamics_day_sums_filters_and_nulls(
         Decimal("0.464"),
     ]
     assert _tons(client_only["available_median"]) == _tons(data["available_median"])
+    assert _tons(client_only["full_stock_median"]) == _tons(data["full_stock_median"])
     assert _tons(client_only["actual"]) == [
         None,
         None,
@@ -553,6 +580,7 @@ async def test_stock_dynamics_day_sums_filters_and_nulls(
     )
     assert _tons(department["normative"]) == _tons(client_only["normative"])
     assert _tons(department["actual"]) == _tons(client_only["actual"])
+    assert _tons(department["full_stock_median"]) == _tons(data["full_stock_median"])
 
     warehouse = await _get(
         client,
@@ -570,6 +598,16 @@ async def test_stock_dynamics_day_sums_filters_and_nulls(
         None,
     ]
     assert warehouse["available_max"] == [None] * 6
+    assert warehouse["full_stock_min"] == [None] * 6
+    assert _tons(warehouse["full_stock_median"]) == [
+        None,
+        Decimal("12.000"),
+        Decimal("0.000"),
+        Decimal("11.000"),
+        None,
+        None,
+    ]
+    assert warehouse["full_stock_max"] == [None] * 6
 
 
 @pytest.mark.asyncio
@@ -595,9 +633,20 @@ async def test_stock_dynamics_week_month_and_rounding(
         Decimal("3.750"),
         Decimal("3.750"),
     ]
-    assert _tons(week["available_min"]) == [None, Decimal("4.000"), None]
+    assert _tons(week["available_min"]) == [
+        Decimal("6.000"),
+        Decimal("4.000"),
+        None,
+    ]
     assert week["available_median"] == [None, None, None]
-    assert _tons(week["available_max"]) == [None, Decimal("4.000"), None]
+    assert _tons(week["available_max"]) == [
+        Decimal("6.000"),
+        Decimal("4.000"),
+        None,
+    ]
+    assert _tons(week["full_stock_min"]) == [None, Decimal("7.000"), None]
+    assert week["full_stock_median"] == [None, None, None]
+    assert _tons(week["full_stock_max"]) == [None, Decimal("7.000"), None]
 
     week_span = await _get(
         client,
@@ -610,9 +659,12 @@ async def test_stock_dynamics_week_month_and_rounding(
         },
     )
     assert week_span["dates"] == ["2026-09-28", "2026-10-05"]
-    assert _tons(week_span["available_min"]) == [Decimal("0.000"), None]
+    assert _tons(week_span["available_min"]) == [Decimal("0.000"), Decimal("6.000")]
     assert week_span["available_median"] == [None, None]
-    assert _tons(week_span["available_max"]) == [Decimal("10.000"), None]
+    assert _tons(week_span["available_max"]) == [Decimal("10.000"), Decimal("6.000")]
+    assert _tons(week_span["full_stock_min"]) == [Decimal("0.000"), None]
+    assert week_span["full_stock_median"] == [None, None]
+    assert _tons(week_span["full_stock_max"]) == [Decimal("14.000"), None]
     assert _tons(week["actual"]) == [
         Decimal("3.000"),
         Decimal("3.000"),
@@ -634,6 +686,9 @@ async def test_stock_dynamics_week_month_and_rounding(
     assert _tons(month["available_min"]) == [Decimal("0.000")]
     assert _tons(month["available_median"]) == [Decimal("6.000")]
     assert _tons(month["available_max"]) == [Decimal("10.000")]
+    assert _tons(month["full_stock_min"]) == [Decimal("0.000")]
+    assert _tons(month["full_stock_median"]) == [Decimal("9.500")]
+    assert _tons(month["full_stock_max"]) == [Decimal("14.000")]
     assert _tons(month["actual"]) == [Decimal("8.000")]
 
     rounded = await _get(
@@ -696,6 +751,9 @@ async def test_stock_dynamics_bounds_follow_filters(
     assert empty["available_min"] == [None, None]
     assert empty["available_median"] == [None, None]
     assert empty["available_max"] == [None, None]
+    assert empty["full_stock_min"] == [None, None]
+    assert empty["full_stock_median"] == [None, None]
+    assert empty["full_stock_max"] == [None, None]
     assert empty["actual"] == [None, None]
 
 

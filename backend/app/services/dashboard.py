@@ -34,7 +34,11 @@ from app.schemas.dashboard import (
     WarehouseCoverageData,
     WarehouseCoverageItem,
 )
-from app.services.logistics_normative import collect_deficit_rows, to_pieces
+from app.services.logistics_normative import (
+    _normalize_stock_unit,
+    collect_deficit_rows,
+    to_pieces,
+)
 
 ZERO = Decimal("0")
 HUNDRED = Decimal("100")
@@ -77,6 +81,16 @@ def to_mass(
     if target == "кг":
         return _quantize_mass(kilograms, "кг")
     return _quantize_mass(kilograms / KG_IN_TON, "т")
+
+
+def balance_to_tons(quantity: Decimal, source_unit: str, weight_kg: Decimal) -> Decimal:
+    """Килограммы делятся на 1000, тонны остаются тоннами, штуки — через вес."""
+    normalized = _normalize_stock_unit(source_unit)
+    if normalized == "КГ":
+        return quantity / KG_IN_TON
+    if normalized == "т":
+        return quantity
+    return quantity * (weight_kg or ZERO) / KG_IN_TON
 
 
 def _period_start(value: date, group_by: GroupBy) -> date:
@@ -246,6 +260,27 @@ async def _kpi_position_masses(
     return total, deficit_transfers, deficit_available, expiring
 
 
+async def _company_stock_tons(db: AsyncSession) -> tuple[Decimal, Decimal]:
+    """Сумма full_stock и available по всем складам, без фильтров дашборда."""
+    rows = (
+        await db.execute(
+            select(
+                AvailableBalance.full_stock,
+                AvailableBalance.available,
+                AvailableBalance.unit,
+                Product.weight_kg,
+            ).join(Product, Product.code == AvailableBalance.product_code)
+        )
+    ).all()
+    full_stock = ZERO
+    available = ZERO
+    for full_qty, available_qty, unit, weight in rows:
+        weight_kg = weight or ZERO
+        full_stock += balance_to_tons(full_qty, unit, weight_kg)
+        available += balance_to_tons(available_qty, unit, weight_kg)
+    return _round_kpi_mass(full_stock), _round_kpi_mass(available)
+
+
 async def get_summary(
     db: AsyncSession,
     *,
@@ -296,6 +331,7 @@ async def get_summary(
         avg_remaining = Decimal(str(avg_days)).quantize(
             Decimal("0.01"), rounding=ROUND_HALF_UP
         )
+    total_full_stock, total_available = await _company_stock_tons(db)
     return DashboardNorthStar(
         active_count=active_count,
         active_quantity=active_quantity,
@@ -306,6 +342,8 @@ async def get_summary(
         expiring_30d=expiring_30d,
         expiring_30d_quantity=expiring_quantity,
         avg_remaining_days=avg_remaining,
+        total_full_stock=total_full_stock,
+        total_available=total_available,
         unit=unit,
     )
 

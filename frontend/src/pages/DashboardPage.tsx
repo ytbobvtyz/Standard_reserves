@@ -32,6 +32,7 @@ import type {
   TopClientsData,
   WarehouseCoverageData,
 } from '../api/types'
+import { CompanyStockRow } from '../components/dashboard/CompanyStockRow'
 import { NorthStarRow } from '../components/dashboard/NorthStarRow'
 import { NormativeTrendChart } from '../components/dashboard/NormativeTrendChart'
 import { WarehouseCoverageChart } from '../components/dashboard/WarehouseCoverageChart'
@@ -221,6 +222,10 @@ export function DashboardPage() {
       {error ? <Alert type="error" message={error} /> : null}
       <Spin spinning={loading}>
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
+          <CompanyStockRow
+            fullStock={summary?.total_full_stock ?? 0}
+            available={summary?.total_available ?? 0}
+          />
           <NorthStarRow
             activeQuantity={summary?.active_quantity ?? 0}
             deficitQuantity={summary?.deficit_quantity ?? 0}

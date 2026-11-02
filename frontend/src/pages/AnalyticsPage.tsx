@@ -1,4 +1,15 @@
-import { Alert, Card, DatePicker, Empty, Select, Space, Spin, Typography, message } from 'antd'
+import {
+  Alert,
+  Card,
+  Checkbox,
+  DatePicker,
+  Empty,
+  Select,
+  Space,
+  Spin,
+  Typography,
+  message,
+} from 'antd'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useState } from 'react'
@@ -28,6 +39,7 @@ export function AnalyticsPage() {
   const [departmentId, setDepartmentId] = useState<string | undefined>()
   const [clientId, setClientId] = useState<string | undefined>()
   const [granularity, setGranularity] = useState<StockGranularity>('month')
+  const [showFullStock, setShowFullStock] = useState(false)
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [rangeMode, setRangeMode] = useState<'auto' | 'manual'>('auto')
@@ -277,6 +289,12 @@ export function AnalyticsPage() {
               ]}
             />
           </div>
+          <Checkbox
+            checked={showFullStock}
+            onChange={(event) => setShowFullStock(event.target.checked)}
+          >
+            Показывать фактические остатки
+          </Checkbox>
         </Space>
       </Card>
       {error ? <Alert type="error" message={error} /> : null}
@@ -285,7 +303,11 @@ export function AnalyticsPage() {
           <Empty description="Выберите продукт" />
         ) : (
           <Spin spinning={loading}>
-            <StockDynamicsChart data={series} granularity={granularity} />
+            <StockDynamicsChart
+              data={series}
+              granularity={granularity}
+              showFullStock={showFullStock}
+            />
           </Spin>
         )}
       </Card>

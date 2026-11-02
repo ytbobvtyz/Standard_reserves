@@ -9,6 +9,9 @@ export const STOCK_AVAILABLE_COLOR = TOP_WAREHOUSE_COLORS[1]
 export const STOCK_AVAILABLE_MIN_COLOR = '#95de64'
 export const STOCK_AVAILABLE_MAX_COLOR = '#237804'
 export const STOCK_ACTUAL_COLOR = TOP_WAREHOUSE_COLORS[2]
+export const STOCK_FULL_STOCK_MIN_COLOR = '#D1D5DB'
+export const STOCK_FULL_STOCK_COLOR = '#9CA3AF'
+export const STOCK_FULL_STOCK_MAX_COLOR = '#6B7280'
 
 export interface StockChartRow {
   date: string
@@ -16,6 +19,9 @@ export interface StockChartRow {
   availableMin: number | null
   availableMedian: number | null
   availableMax: number | null
+  fullStockMin: number | null
+  fullStockMedian: number | null
+  fullStockMax: number | null
   actual: number | null
 }
 
@@ -24,6 +30,9 @@ export interface StockChartModel {
   showAvailableMin: boolean
   showAvailableLevel: boolean
   showAvailableMax: boolean
+  showFullStockMin: boolean
+  showFullStockLevel: boolean
+  showFullStockMax: boolean
   showActual: boolean
   rows: StockChartRow[]
 }
@@ -62,6 +71,9 @@ export function buildStockChartModel(data: StockDynamicsData): StockChartModel {
     availableMin: data.available_min[index] ?? null,
     availableMedian: data.available_median[index] ?? null,
     availableMax: data.available_max[index] ?? null,
+    fullStockMin: data.full_stock_min[index] ?? null,
+    fullStockMedian: data.full_stock_median[index] ?? null,
+    fullStockMax: data.full_stock_max[index] ?? null,
     actual: data.actual[index] ?? null,
   }))
   return {
@@ -69,6 +81,9 @@ export function buildStockChartModel(data: StockDynamicsData): StockChartModel {
     showAvailableMin: definedPointCount(data.available_min) > 0,
     showAvailableLevel: definedPointCount(data.available_median) > 0,
     showAvailableMax: definedPointCount(data.available_max) > 0,
+    showFullStockMin: definedPointCount(data.full_stock_min) > 0,
+    showFullStockLevel: definedPointCount(data.full_stock_median) > 0,
+    showFullStockMax: definedPointCount(data.full_stock_max) > 0,
     showActual: definedPointCount(data.actual) > 0,
     rows,
   }

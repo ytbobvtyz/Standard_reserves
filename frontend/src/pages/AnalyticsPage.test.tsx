@@ -85,6 +85,9 @@ const series = {
     available_min: [4, 5],
     available_median: [8, 7],
     available_max: [10, 9],
+    full_stock_min: [5, 4],
+    full_stock_median: [6, 9],
+    full_stock_max: [8, 10],
     actual: [1, 2],
     unit: 'т',
   },
@@ -150,6 +153,11 @@ describe('AnalyticsPage', () => {
     expect(legend.textContent).toContain('Макс. остаток')
     expect(legend.textContent).toContain('Реализация')
     expect(legend.textContent).not.toContain('накопл')
+    expect(legend.textContent).not.toContain('факт. остатка')
+    expect(
+      (screen.getByRole('checkbox', { name: 'Показывать фактические остатки' }) as HTMLInputElement)
+        .checked,
+    ).toBe(false)
     await waitFor(() => {
       expect(getStockSummary).toHaveBeenCalledWith(
         expect.objectContaining({ product_code: 10001 }),
@@ -164,6 +172,52 @@ describe('AnalyticsPage', () => {
     expect(table.textContent).toContain('—')
     expect(table.textContent).toContain('Среднее')
     expect(table.textContent).toContain('13,5')
+  })
+
+  it('keeps the physical stock line while filters change', async () => {
+    getStockDynamics.mockImplementation(async (params: { granularity?: string }) => ({
+      data: {
+        status: 'success',
+        data: {
+          ...series.data,
+          full_stock_median:
+            params.granularity === 'week' ? [null, null] : series.data.full_stock_median,
+        },
+      },
+    }))
+    render(<AnalyticsPage />)
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Продукт' }))
+    fireEvent.click(await screen.findByText('10001 — Масло'))
+    const checkbox = await screen.findByRole('checkbox', {
+      name: 'Показывать фактические остатки',
+    })
+    expect((checkbox as HTMLInputElement).checked).toBe(false)
+    fireEvent.click(checkbox)
+    expect((checkbox as HTMLInputElement).checked).toBe(true)
+    expect((await screen.findByTestId('stock-legend')).textContent).toContain(
+      'Медиана факт. остатка',
+    )
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Гранулярность' }))
+    fireEvent.click(await screen.findByText('Неделя'))
+    await waitFor(() => {
+      expect(getStockDynamics).toHaveBeenCalledWith(
+        expect.objectContaining({ granularity: 'week' }),
+      )
+    })
+    expect(
+      (
+        screen.getByRole('checkbox', {
+          name: 'Показывать фактические остатки',
+        }) as HTMLInputElement
+      ).checked,
+    ).toBe(true)
+    expect(screen.getByTestId('stock-legend').textContent).toContain('Мин. фактический остаток')
+    expect(screen.getByTestId('stock-legend').textContent).toContain('Макс. фактический остаток')
+    expect(screen.getByTestId('stock-legend').textContent).not.toContain('Медиана факт. остатка')
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Показывать фактические остатки' }))
+    expect(screen.getByTestId('stock-legend').textContent).not.toContain('факт')
   })
 
   it('switches the period to a year for weeks and to 90 days for days', async () => {
@@ -209,6 +263,9 @@ describe('AnalyticsPage', () => {
           available_min: [1],
           available_median: [1],
           available_max: [1],
+          full_stock_min: [null],
+          full_stock_median: [2],
+          full_stock_max: [null],
           actual: [1],
           unit: 'т',
         },

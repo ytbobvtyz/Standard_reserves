@@ -14,6 +14,9 @@ class StockDynamicsData(BaseModel):
     available_min: list[DecimalNumber | None]
     available_median: list[DecimalNumber | None]
     available_max: list[DecimalNumber | None]
+    full_stock_min: list[DecimalNumber | None]
+    full_stock_median: list[DecimalNumber | None]
+    full_stock_max: list[DecimalNumber | None]
     actual: list[DecimalNumber | None]
     unit: Literal["т"] = "т"
 

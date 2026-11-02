@@ -877,6 +877,8 @@ export interface DashboardSummary {
   expiring_30d: number
   expiring_30d_quantity: number
   avg_remaining_days: number | null
+  total_full_stock: number
+  total_available: number
   unit: DashboardMassUnit
 }
 
@@ -924,6 +926,9 @@ export interface StockDynamicsData {
   available_min: Array<number | null>
   available_median: Array<number | null>
   available_max: Array<number | null>
+  full_stock_min: Array<number | null>
+  full_stock_median: Array<number | null>
+  full_stock_max: Array<number | null>
   actual: Array<number | null>
   unit: 'т'
 }

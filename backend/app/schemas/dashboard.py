@@ -21,6 +21,8 @@ class DashboardNorthStar(BaseModel):
     expiring_30d: int
     expiring_30d_quantity: DecimalNumber
     avg_remaining_days: DecimalNumber | None = None
+    total_full_stock: DecimalNumber
+    total_available: DecimalNumber
     unit: MassUnit = "т"
 
 

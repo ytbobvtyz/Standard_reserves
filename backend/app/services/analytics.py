@@ -227,22 +227,19 @@ def _normative_series(
     ]
 
 
-async def _available_series(
+def _clamp_mass(quantity: Decimal, unit: str, weight_kg: Decimal | None) -> Decimal:
+    mass = _tons(quantity, unit, weight_kg)
+    return ZERO if mass < ZERO else mass
+
+
+async def _history_rows(
     db: AsyncSession,
     *,
     product_code: int,
     warehouse_code: int | None,
-    periods: list[date],
-    granularity: Granularity,
     date_from: date,
     date_to: date,
-) -> tuple[list[Decimal | None], list[Decimal | None], list[Decimal | None]]:
-    """Минимум, медиана и максимум остатка внутри интервала точки.
-
-    Месяц — по дневным итогам месяца. Неделя — минимум и максимум недели,
-    без медианы. День отдаёт сам дневной итог в медиане.
-    Отрицательный снимок склада заменяется нулём до суммы по складам.
-    """
+):
     conditions = [
         AvailableBalanceHistory.product_code == product_code,
         AvailableBalanceHistory.snapshot_date >= date_from,
@@ -250,11 +247,12 @@ async def _available_series(
     ]
     if warehouse_code is not None:
         conditions.append(AvailableBalanceHistory.warehouse_code == warehouse_code)
-    rows = (
+    return (
         await db.execute(
             select(
                 AvailableBalanceHistory.snapshot_date,
                 AvailableBalanceHistory.available,
+                AvailableBalanceHistory.full_stock,
                 AvailableBalanceHistory.unit,
                 Product.weight_kg,
             )
@@ -262,18 +260,76 @@ async def _available_series(
             .where(*conditions)
         )
     ).all()
+
+
+def _daily_totals(
+    rows,
+    field: str,
+    dates: set[date] | None = None,
+) -> dict[date, Decimal]:
+    """Сумма снимков по дням. Дня без строки в словаре нет, ноль за него не пишется.
+
+    Отрицательный снимок склада заменяется нулём до суммы по складам.
+    `dates` оставляет только переданные дни загрузки.
+    """
     daily: dict[date, Decimal] = {}
     for row in rows:
-        mass = _tons(row.available, row.unit, row.weight_kg)
-        if mass < ZERO:
-            mass = ZERO
+        if dates is not None and row.snapshot_date not in dates:
+            continue
+        mass = _clamp_mass(getattr(row, field), row.unit, row.weight_kg)
         daily[row.snapshot_date] = daily.get(row.snapshot_date, ZERO) + mass
+    return daily
+
+
+async def _full_stock_snapshot_dates(
+    db: AsyncSession,
+    *,
+    date_from: date,
+    date_to: date,
+) -> set[date]:
+    """Даты, где слепок записал фактический остаток, а не нули по умолчанию."""
+    rows = await db.scalars(
+        select(AvailableBalanceHistory.snapshot_date)
+        .where(
+            AvailableBalanceHistory.snapshot_date >= date_from,
+            AvailableBalanceHistory.snapshot_date <= date_to,
+            AvailableBalanceHistory.full_stock != 0,
+        )
+        .distinct()
+    )
+    return set(rows.all())
+
+
+def _bucket_values(
+    daily: dict[date, Decimal],
+    period: date,
+    granularity: Granularity,
+    date_from: date,
+    date_to: date,
+) -> list[Decimal]:
+    start, end = _bucket_bounds(period, granularity, date_from, date_to)
+    return [total for day, total in daily.items() if start <= day <= end]
+
+
+def _band_series(
+    daily: dict[date, Decimal],
+    periods: list[date],
+    granularity: Granularity,
+    date_from: date,
+    date_to: date,
+) -> tuple[list[Decimal | None], list[Decimal | None], list[Decimal | None]]:
+    """Минимум, медиана и максимум остатка внутри интервала точки.
+
+    В ряд входят только дни, которые есть в `daily`. Пропущенный день
+    слепка не становится нулём. Месяц — по дневным итогам месяца.
+    Неделя — минимум и максимум недели, без медианы. День отдаёт
+    сам дневной итог в медиане.
+    """
     minimum: list[Decimal | None] = []
     median: list[Decimal | None] = []
     maximum: list[Decimal | None] = []
     for period in periods:
-        start, end = _bucket_bounds(period, granularity, date_from, date_to)
-        values = [total for day, total in daily.items() if start <= day <= end]
+        values = _bucket_values(daily, period, granularity, date_from, date_to)
         if not values:
             minimum.append(None)
             median.append(None)
@@ -291,6 +347,32 @@ async def _available_series(
             continue
         median.append(_round_tons(_median(values)))
     return minimum, median, maximum
+
+
+async def _available_series(
+    db: AsyncSession,
+    *,
+    product_code: int,
+    warehouse_code: int | None,
+    periods: list[date],
+    granularity: Granularity,
+    date_from: date,
+    date_to: date,
+) -> tuple[list[Decimal | None], list[Decimal | None], list[Decimal | None]]:
+    rows = await _history_rows(
+        db,
+        product_code=product_code,
+        warehouse_code=warehouse_code,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    return _band_series(
+        _daily_totals(rows, "available"),
+        periods,
+        granularity,
+        date_from,
+        date_to,
+    )
 
 
 async def _loading_point(db: AsyncSession, warehouse_code: int) -> str | None:
@@ -487,14 +569,29 @@ async def get_stock_dynamics(
         date_to=date_to,
     )
     normative = _normative_series(rows, periods, granularity, date_from, date_to)
-    available_min, available_median, available_max = await _available_series(
+    history = await _history_rows(
         db,
         product_code=product_code,
         warehouse_code=warehouse_code,
-        periods=periods,
-        granularity=granularity,
         date_from=date_from,
         date_to=date_to,
+    )
+    available_min, available_median, available_max = _band_series(
+        _daily_totals(history, "available"),
+        periods,
+        granularity,
+        date_from,
+        date_to,
+    )
+    full_dates = await _full_stock_snapshot_dates(
+        db, date_from=date_from, date_to=date_to
+    )
+    full_stock_min, full_stock_median, full_stock_max = _band_series(
+        _daily_totals(history, "full_stock", full_dates),
+        periods,
+        granularity,
+        date_from,
+        date_to,
     )
     actual = await _actual_series(
         db,
@@ -513,6 +610,9 @@ async def get_stock_dynamics(
         available_min=available_min,
         available_median=available_median,
         available_max=available_max,
+        full_stock_min=full_stock_min,
+        full_stock_median=full_stock_median,
+        full_stock_max=full_stock_max,
         actual=actual,
         unit="т",
     )

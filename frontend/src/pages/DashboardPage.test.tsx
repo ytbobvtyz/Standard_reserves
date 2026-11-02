@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { formatKpiMass } from '../components/dashboard/formatMass'
 import { DashboardPage } from './DashboardPage'
 import { useAuthStore } from '../stores/auth'
 import type {
@@ -98,6 +99,8 @@ const summary: DashboardSummary = {
   expiring_30d: 12,
   expiring_30d_quantity: 0.25,
   avg_remaining_days: 45,
+  total_full_stock: 1234.568,
+  total_available: 987.654,
   unit: 'т',
 }
 
@@ -270,6 +273,12 @@ describe('DashboardPage', () => {
   it('renders north star, chart, exceptions and heatmap', async () => {
     renderPage()
     expect(await screen.findByText('Дашборд нормативов')).toBeTruthy()
+    const companyStock = screen.getByTestId('company-stock-row')
+    expect(companyStock.textContent).toContain('Фактический остаток')
+    expect(companyStock.textContent).toContain(formatKpiMass(1234.568))
+    expect(companyStock.textContent).toContain('Доступный остаток')
+    expect(companyStock.textContent).toContain(formatKpiMass(987.654))
+    expect(companyStock.textContent).toContain('т')
     expect(screen.getByText('Активных НЗ')).toBeTruthy()
     expect(screen.getByText('1,500')).toBeTruthy()
     expect(screen.getByText('0,100')).toBeTruthy()

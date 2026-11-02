@@ -1,5 +1,5 @@
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from uuid import uuid4
 
 import pytest
@@ -178,6 +178,140 @@ async def test_dashboard_summary_metrics(
     kg_data = kg_response.json()["data"]
     assert kg_data["unit"] == "кг"
     assert Decimal(str(kg_data["deficit_quantity"])) >= Decimal("100")
+    assert Decimal(str(data["total_full_stock"])) == Decimal(
+        str(kg_data["total_full_stock"])
+    )
+    assert Decimal(str(data["total_available"])) == Decimal(
+        str(kg_data["total_available"])
+    )
+
+
+def _balance_tons(quantity: Decimal, unit: str, weight_kg: Decimal) -> Decimal:
+    text = (unit or "").strip()
+    if text.upper() == "КГ":
+        return quantity / Decimal(1000)
+    if text == "т":
+        return quantity
+    return quantity * weight_kg / Decimal(1000)
+
+
+@pytest.mark.asyncio
+async def test_dashboard_company_stock_ignores_filters(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    kg_product = 29163
+    piece_product = 29164
+    codes = [kg_product, piece_product]
+    token = await login_token(client, logistics_user)
+
+    async def _cleanup() -> None:
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                delete(AvailableBalance).where(AvailableBalance.product_code.in_(codes))
+            )
+            await session.execute(delete(Product).where(Product.code.in_(codes)))
+            await session.commit()
+
+    await _cleanup()
+    async with AsyncSessionLocal() as session:
+        session.add_all(
+            [
+                Product(
+                    code=kg_product,
+                    name="Остаток в килограммах",
+                    category="A",
+                    plant_id=catalog["plant_code"],
+                    weight_kg=Decimal("0"),
+                    is_active=True,
+                ),
+                Product(
+                    code=piece_product,
+                    name="Остаток в штуках",
+                    category="A",
+                    plant_id=catalog["plant_code"],
+                    weight_kg=Decimal("2.5000"),
+                    is_active=True,
+                ),
+            ]
+        )
+        session.add_all(
+            [
+                AvailableBalance(
+                    warehouse_code=catalog["warehouse_code"],
+                    product_code=kg_product,
+                    available=Decimal("2000.50"),
+                    plan=Decimal("0"),
+                    full_stock=Decimal("5000"),
+                    unit="кг",
+                    source="manual",
+                ),
+                AvailableBalance(
+                    warehouse_code=catalog["warehouse_code_2"],
+                    product_code=piece_product,
+                    available=Decimal("400"),
+                    plan=Decimal("0"),
+                    full_stock=Decimal("100"),
+                    unit="шт",
+                    source="manual",
+                ),
+            ]
+        )
+        await session.commit()
+        stored = (
+            await session.execute(
+                select(
+                    AvailableBalance.full_stock,
+                    AvailableBalance.available,
+                    AvailableBalance.unit,
+                    Product.weight_kg,
+                ).join(Product, Product.code == AvailableBalance.product_code)
+            )
+        ).all()
+    expected_full = sum(
+        (
+            _balance_tons(full, unit, weight)
+            for full, _available, unit, weight in stored
+        ),
+        Decimal(0),
+    ).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+    expected_available = sum(
+        (
+            _balance_tons(available, unit, weight)
+            for _full, available, unit, weight in stored
+        ),
+        Decimal(0),
+    ).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+
+    try:
+        plain = await client.get(
+            "/api/v1/dashboard/summary", headers=auth_header(token)
+        )
+        assert plain.status_code == 200, plain.text
+        body = plain.json()["data"]
+        assert Decimal(str(body["total_full_stock"])) == expected_full
+        assert Decimal(str(body["total_available"])) == expected_available
+
+        filtered = await client.get(
+            "/api/v1/dashboard/summary",
+            headers=auth_header(token),
+            params={
+                "unit": "кг",
+                "warehouse_code": catalog["warehouse_code"],
+                "department_id": str(uuid4()),
+            },
+        )
+        assert filtered.status_code == 200, filtered.text
+        filtered_body = filtered.json()["data"]
+        assert filtered_body["unit"] == "кг"
+        assert Decimal(str(filtered_body["total_full_stock"])) == expected_full
+        assert Decimal(str(filtered_body["total_available"])) == expected_available
+        assert Decimal(str(filtered_body["total_full_stock"])) == Decimal(
+            str(body["total_full_stock"])
+        )
+    finally:
+        await _cleanup()
 
 
 @pytest.mark.asyncio
