@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import UTC, date, datetime, time
+from datetime import date
 from decimal import Decimal
 from io import BytesIO
 from typing import Literal
@@ -8,7 +8,7 @@ from uuid import UUID
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
-from sqlalchemy import String, and_, cast, exists, func, or_, select
+from sqlalchemy import String, cast, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -32,6 +32,7 @@ from app.services.coefficients import (
     category_factor,
     distance_factor,
 )
+from app.services.normative_dates import commercial_active_on
 from app.services.params import load_coefficient_set
 
 DEFAULT_UNIT = "шт"
@@ -50,10 +51,6 @@ EXPORT_HEADERS = [
 EXPORT_COLUMN_WIDTHS = [14, 36, 28, 14, 24, 14, 8, 16, 28, 28]
 
 CategoryFilter = Literal["A", "B", "C"]
-
-
-def _end_of_day(value: date) -> datetime:
-    return datetime.combine(value, time.max, tzinfo=UTC)
 
 
 def _product_search_condition(search: str | None):
@@ -109,10 +106,7 @@ def _production_valid_from_condition(on_date: date):
 
 def _valid_on_condition(on_date: date):
     return or_(
-        and_(
-            Normative.production_request_item_id.is_(None),
-            Normative.created_at <= _end_of_day(on_date),
-        ),
+        commercial_active_on(on_date),
         _production_valid_from_condition(on_date),
     )
 

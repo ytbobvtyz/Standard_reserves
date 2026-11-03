@@ -42,7 +42,9 @@ class ApprovalPendingItem(BaseModel):
 class ApprovalPendingRequest(BaseModel):
     id: UUID
     request_type: str
+    client_id: UUID
     client_name: str
+    auto_complete_previous: bool = False
     initiator: UserBrief
     items: list[ApprovalPendingItem]
     expiry_date: date | None = None

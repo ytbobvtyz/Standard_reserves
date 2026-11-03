@@ -138,6 +138,52 @@ export interface RequestCreatePayload {
   expiry_date?: string | null
   items: RequestItemPayload[]
   comment?: string
+  auto_complete_previous?: boolean
+}
+
+export interface OptimalCalculateItem {
+  product_code: number
+  warehouse_code: number
+}
+
+export interface OptimalCalculatedItem {
+  product_code: number
+  warehouse_code: number
+  product_name: string
+  warehouse_name: string
+  category: string
+  weight_kg: number
+  pallet_qty: number | null
+  calculated_quantity: number
+  unit: 'кг'
+  months_used: number
+}
+
+export interface OptimalExistingNormative {
+  id: string
+  request_id: string | null
+  created_at: string
+  client_name: string
+  quantity: number
+  unit: string
+  expiry_date: string
+  product_code: number
+  product_name: string
+}
+
+export interface OptimalSkippedItem {
+  product_code: number
+  warehouse_code: number | null
+  product_name: string
+  warehouse_name: string
+  reason: string
+}
+
+export interface OptimalCalculateData {
+  client_name: string
+  items: OptimalCalculatedItem[]
+  existing_normatives: OptimalExistingNormative[]
+  skipped_items: OptimalSkippedItem[]
 }
 
 export interface RequestListItem {
@@ -197,6 +243,7 @@ export interface RequestDetail {
   comment_pp: string | null
   comment_economy: string | null
   expiry_date: string | null
+  auto_complete_previous?: boolean
   order_number?: string | null
   executed_at?: string | null
   executed_comment?: string | null
@@ -230,10 +277,18 @@ export interface ApprovalPendingItem {
   requirement?: number
 }
 
+export interface OverlappingRequestRef {
+  id: string
+  created_at: string
+  expiry_date?: string | null
+}
+
 export interface ApprovalPendingRequest {
   id: string
   request_type: RequestType
+  client_id?: string
   client_name: string
+  auto_complete_previous?: boolean
   initiator: User
   items: ApprovalPendingItem[]
   expiry_date?: string | null

@@ -2,6 +2,9 @@ import { Button, DatePicker, Input, InputNumber, Modal, Space, Table, Tooltip, T
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
+import { requestsApi } from '../../api/requests'
+import type { OverlappingRequestRef } from '../../api/types'
+import { OverlappingNormativesNotice } from '../requests/OverlappingNormatives'
 import type {
   ApprovalAction,
   ApprovalActionPayload,
@@ -56,12 +59,14 @@ export function ApprovalModal({
   const [editableItems, setEditableItems] = useState<EditableItem[]>([])
   const [comment, setComment] = useState('')
   const [expiryDate, setExpiryDate] = useState<Dayjs | null>(null)
+  const [overlaps, setOverlaps] = useState<OverlappingRequestRef[]>([])
 
   useEffect(() => {
     if (!request) {
       setEditableItems([])
       setComment('')
       setExpiryDate(null)
+      setOverlaps([])
       return
     }
     setComment('')
@@ -72,6 +77,33 @@ export function ApprovalModal({
         quantity_approved_input: item.quantity_approved ?? item.quantity_requested,
       })),
     )
+    if (request.request_type !== 'normative' || !request.client_id) {
+      setOverlaps([])
+      return
+    }
+    let cancelled = false
+    void requestsApi
+      .overlapping({
+        client_id: request.client_id,
+        exclude_request_id: request.id,
+        items: request.items.map((item) => ({
+          product_code: item.product_code,
+          warehouse_code: item.warehouse_code,
+        })),
+      })
+      .then(({ data }) => {
+        if (!cancelled) {
+          setOverlaps(data.data.requests)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setOverlaps([])
+        }
+      })
+    return () => {
+      cancelled = true
+    }
   }, [request])
 
   const isNormative = request?.request_type === 'normative'
@@ -159,6 +191,12 @@ export function ApprovalModal({
             {' · '}
             Тип: {TYPE_LABEL[request.request_type] ?? request.request_type}
           </Typography.Text>
+          {isNormative && (request.auto_complete_previous || overlaps.length > 0) ? (
+            <OverlappingNormativesNotice
+              mode={request.auto_complete_previous ? 'complete' : 'increase'}
+              requests={overlaps}
+            />
+          ) : null}
           {isNormative ? (
             <div>
               <Typography.Text>Срок действия</Typography.Text>

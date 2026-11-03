@@ -80,6 +80,7 @@ class RequestCreate(BaseModel):
     )
     items: list[RequestItemCreate] = Field(min_length=1)
     comment: str | None = None
+    auto_complete_previous: bool = False
 
     @model_validator(mode="after")
     def expiry_within_six_months(self) -> Self:
@@ -99,6 +100,7 @@ class RequestUpdate(BaseModel):
     )
     items: list[RequestItemCreate] | None = Field(default=None, min_length=1)
     comment: str | None = None
+    auto_complete_previous: bool | None = None
 
 
 class RequestItemCreated(BaseModel):
@@ -129,6 +131,7 @@ class RequestCreated(BaseModel):
     initiator_id: UUID
     department_id: UUID | None = None
     expiry_date: date | None = None
+    auto_complete_previous: bool = False
     items: list[RequestItemCreated]
     created_at: datetime
 
@@ -225,6 +228,7 @@ class RequestDetail(BaseModel):
     comment_pp: str | None = None
     comment_economy: str | None = None
     expiry_date: date | None = None
+    auto_complete_previous: bool = False
     order_number: str | None = None
     executed_at: datetime | None = None
     executed_comment: str | None = None
@@ -240,6 +244,31 @@ class RequestStatusData(BaseModel):
     id: UUID
     status: str
     updated_at: datetime
+
+
+class RequestSubmit(BaseModel):
+    auto_complete_previous: bool = False
+
+
+class OverlappingPosition(BaseModel):
+    product_code: int
+    warehouse_code: int
+
+
+class OverlappingNormativesQuery(BaseModel):
+    client_id: UUID
+    items: list[OverlappingPosition] = Field(default_factory=list)
+    exclude_request_id: UUID | None = None
+
+
+class OverlappingRequestRef(BaseModel):
+    id: UUID
+    created_at: date
+    expiry_date: date | None = None
+
+
+class OverlappingNormativesData(BaseModel):
+    requests: list[OverlappingRequestRef]
 
 
 class RequestExpiryUpdate(BaseModel):

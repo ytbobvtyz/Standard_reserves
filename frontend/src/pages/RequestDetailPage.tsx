@@ -22,11 +22,16 @@ import { getApiErrorMessage } from '../api/client'
 import { ClientAutocomplete } from '../components/clients/ClientAutocomplete'
 import { requestsApi } from '../api/requests'
 import type {
+  OverlappingRequestRef,
   RequestDetail,
   RequestHistoryEntry,
   RequestItemDetail,
   RequestItemHistoryEntry,
 } from '../api/types'
+import {
+  OverlappingNormativesNotice,
+  SendNormativeModal,
+} from '../components/requests/OverlappingNormatives'
 import { StatusBadge } from '../components/common/StatusBadge'
 import { useAuthStore } from '../stores/auth'
 import {
@@ -83,6 +88,9 @@ export function RequestDetailPage() {
   const [expiryDraft, setExpiryDraft] = useState<Dayjs | null>(null)
   const [savingExpiry, setSavingExpiry] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [overlaps, setOverlaps] = useState<OverlappingRequestRef[]>([])
+  const [sendOpen, setSendOpen] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
 
   const load = useCallback(async () => {
     if (!id) {
@@ -108,6 +116,41 @@ export function RequestDetailPage() {
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    if (
+      !request ||
+      request.request_type !== 'normative' ||
+      !request.client_id ||
+      request.items.length === 0
+    ) {
+      setOverlaps([])
+      return
+    }
+    let cancelled = false
+    void requestsApi
+      .overlapping({
+        client_id: request.client_id,
+        exclude_request_id: request.id,
+        items: request.items.map((item) => ({
+          product_code: item.product.code,
+          warehouse_code: item.warehouse.code,
+        })),
+      })
+      .then(({ data }) => {
+        if (!cancelled) {
+          setOverlaps(data.data.requests)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setOverlaps([])
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [request])
 
   const canExport = user?.role === 'commercial' || user?.role === 'logistics'
 
@@ -141,17 +184,49 @@ export function RequestDetailPage() {
     ((user?.role === 'pp' && request?.status === 'pp_approved') ||
       (user?.role === 'economist' && request?.status === 'economy_check'))
 
-  const submit = async () => {
+  const sendDraft = async (completePrevious: boolean) => {
     if (!id) {
       return
     }
+    setSubmitting(true)
     try {
-      await requestsApi.submit(id)
+      await requestsApi.submit(id, completePrevious)
       message.success('Запрос отправлен на согласование')
+      setSendOpen(false)
       await load()
     } catch (error) {
       message.error(getApiErrorMessage(error, 'Не удалось отправить запрос'))
+    } finally {
+      setSubmitting(false)
     }
+  }
+
+  const submit = async () => {
+    if (
+      request?.request_type === 'normative' &&
+      request.client_id &&
+      request.items.length > 0
+    ) {
+      try {
+        const { data } = await requestsApi.overlapping({
+          client_id: request.client_id,
+          exclude_request_id: request.id,
+          items: request.items.map((item) => ({
+            product_code: item.product.code,
+            warehouse_code: item.warehouse.code,
+          })),
+        })
+        setOverlaps(data.data.requests)
+        if (data.data.requests.length > 0) {
+          setSendOpen(true)
+          return
+        }
+      } catch (error) {
+        message.error(getApiErrorMessage(error, 'Не удалось проверить нормативы'))
+        return
+      }
+    }
+    await sendDraft(false)
   }
 
   const remove = async () => {
@@ -222,7 +297,11 @@ export function RequestDetailPage() {
             </Button>
           ) : null}
           {isOwner && isDraft ? (
-            <Button type="primary" onClick={() => void submit()}>
+            <Button
+              type="primary"
+              loading={submitting}
+              onClick={() => void submit()}
+            >
               Отправить на согласование
             </Button>
           ) : null}
@@ -236,6 +315,13 @@ export function RequestDetailPage() {
           ) : null}
         </Space>
       </Space>
+      {request.request_type === 'normative' &&
+      (request.auto_complete_previous || overlaps.length > 0) ? (
+        <OverlappingNormativesNotice
+          mode={request.auto_complete_previous ? 'complete' : 'increase'}
+          requests={overlaps}
+        />
+      ) : null}
       <Card loading={loading}>
         <Descriptions column={2} bordered size="small">
           <Descriptions.Item label="Тип">
@@ -475,6 +561,13 @@ export function RequestDetailPage() {
           <Typography.Text type="secondary">{ACTIVE_EXPIRY_HINT}</Typography.Text>
         </Space>
       </Modal>
+      <SendNormativeModal
+        open={sendOpen}
+        requests={overlaps}
+        confirmLoading={submitting}
+        onCancel={() => setSendOpen(false)}
+        onSubmit={(completePrevious) => void sendDraft(completePrevious)}
+      />
     </Space>
   )
 }

@@ -1,16 +1,14 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import APIError
 from app.core.pagination import paginate
-from app.models.client import SYSTEM_CLIENT_ID
-from app.models.event import Event
 from app.models.normative import Normative
 from app.models.request import Request
 from app.models.request_item import RequestItem
@@ -28,8 +26,8 @@ from app.schemas.request import (
     validate_expiry_date_limit,
 )
 from app.schemas.user import UserBrief
-from app.services.clients import names_match
 from app.services.coefficients import CoefficientSet, item_coefficient_fields
+from app.services.normative_dates import complete_overlapping_requests
 from app.services.requests import load_request
 
 Stage = Literal["pp", "economy"]
@@ -90,6 +88,8 @@ def to_pending(
         ],
         expiry_date=request.expiry_date,
         created_at=request.created_at,
+        client_id=request.client_id,
+        auto_complete_previous=request.auto_complete_previous,
     )
 
 
@@ -245,7 +245,9 @@ def _normative_quantity(item: RequestItem) -> Decimal:
     return item.quantity_requested
 
 
-async def _ensure_normatives(db: AsyncSession, request: Request) -> None:
+async def _ensure_normatives(
+    db: AsyncSession, request: Request, approval_day: date
+) -> None:
     if request.request_type != "normative":
         return
     if request.expiry_date is None:
@@ -288,64 +290,20 @@ async def _ensure_normatives(db: AsyncSession, request: Request) -> None:
             normative.category = category
             normative.unit = item.unit
         else:
-            prev_result = await db.execute(
-                select(Normative).where(
-                    Normative.product_code == prod_code,
-                    Normative.warehouse_code == wh_code,
-                    or_(
-                        Normative.request_id.is_(None),
-                        Normative.request_id != request.id,
-                    ),
-                    Normative.production_request_item_id.is_(None),
-                    Normative.deleted_at.is_(None),
-                    or_(
-                        Normative.client_id == request.client_id,
-                        Normative.client_id == SYSTEM_CLIENT_ID,
-                    ),
+            db.add(
+                Normative(
+                    request_id=request.id,
+                    product_code=prod_code,
+                    warehouse_code=wh_code,
+                    quantity=qty,
+                    unit=item.unit,
+                    client_id=request.client_id,
+                    client_name=request.client_name,
+                    expiry_date=request.expiry_date,
+                    valid_from=approval_day + timedelta(days=1),
+                    category=category,
                 )
             )
-            replaced_by_name: list[Normative] = []
-            for prev_norm in prev_result.scalars().all():
-                same_client = prev_norm.client_id == request.client_id
-                by_name = (
-                    not same_client
-                    and prev_norm.client_id == SYSTEM_CLIENT_ID
-                    and names_match(prev_norm.client_name, request.client_name)
-                )
-                if not same_client and not by_name:
-                    continue
-                prev_norm.deleted_at = now
-                if by_name:
-                    replaced_by_name.append(prev_norm)
-
-            normative = Normative(
-                request_id=request.id,
-                product_code=prod_code,
-                warehouse_code=wh_code,
-                quantity=qty,
-                unit=item.unit,
-                client_id=request.client_id,
-                client_name=request.client_name,
-                expiry_date=request.expiry_date,
-                category=category,
-            )
-            db.add(normative)
-            await db.flush()
-            for old in replaced_by_name:
-                db.add(
-                    Event(
-                        event_type="normative_replaced_by_name",
-                        request_id=request.id,
-                        payload={
-                            "old_normative_id": str(old.id),
-                            "new_normative_id": str(normative.id),
-                            "client_name": request.client_name,
-                            "product_code": prod_code,
-                            "warehouse_code": wh_code,
-                        },
-                        processed=False,
-                    )
-                )
 
     for (prod_code, wh_code), normative in existing_by_key.items():
         if (prod_code, wh_code) not in items_by_key:
@@ -416,7 +374,15 @@ async def apply_action(
             if body.action == "approve":
                 request.approved_at = now
                 await db.flush()
-                await _ensure_normatives(db, request)
+                approval_day = date.today()
+                await _ensure_normatives(db, request, approval_day)
+                if (
+                    request.request_type == "normative"
+                    and request.auto_complete_previous
+                ):
+                    await complete_overlapping_requests(
+                        db, request, on_date=approval_day
+                    )
 
         await db.commit()
     except APIError:

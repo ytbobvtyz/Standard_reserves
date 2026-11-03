@@ -36,6 +36,7 @@ from app.schemas.logistics import (
     WarehouseDeficit,
 )
 from app.services.coefficients import CoefficientSet, calculate_requirement
+from app.services.normative_dates import commercial_active_on
 from app.services.params import load_coefficient_set
 
 ESTIMATED_DELIVERY_DAYS = 5
@@ -410,7 +411,7 @@ async def collect_deficit_rows(
         Normative.deleted_at.is_(None),
         Normative.expiry_date >= today,
         or_(
-            Normative.production_request_item_id.is_(None),
+            commercial_active_on(today),
             exists(
                 select(1)
                 .select_from(ProductionRequestItem)

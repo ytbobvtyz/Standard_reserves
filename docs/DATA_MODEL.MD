@@ -145,6 +145,7 @@ erDiagram
         text comment_pp "комментарий ПП"
         text comment_economy "комментарий экономиста"
         date expiry_date "срок действия (только нормативные)"
+        boolean auto_complete_previous "завершить найденные запросы в день утверждения"
         timestamp approved_at "дата утверждения"
         timestamp executed_at "дата исполнения"
         uuid executed_by FK "кто исполнил (разовые)"
@@ -230,6 +231,7 @@ erDiagram
         decimal quantity "утвержденный объем"
         varchar unit "шт / кг / т"
         text client_name "метка авторства"
+        date valid_from "начало действия коммерческой строки"
         date expiry_date "срок действия"
         char category "A/B/C"
         timestamp created_at "дата создания"
@@ -662,6 +664,7 @@ CREATE TABLE requests (
     comment_pp TEXT,
     comment_economy TEXT,
     expiry_date DATE,
+    auto_complete_previous BOOLEAN NOT NULL DEFAULT false,
     approved_at TIMESTAMP WITH TIME ZONE,
     executed_at TIMESTAMP WITH TIME ZONE,
     executed_by UUID REFERENCES users(id),
@@ -698,6 +701,7 @@ initiator_comment	TEXT	❌	Комментарий инициатора
 comment_pp	TEXT	❌	Комментарий ПП
 comment_economy	TEXT	❌	Комментарий экономиста
 expiry_date	DATE	❌	Срок действия (только нормативные), от created_at + 3 месяца до created_at + 6 месяцев
+auto_complete_previous	BOOLEAN	✅	Коммерсант при отправке согласился завершить найденные запросы в день утверждения экономистом. По умолчанию false. Черновик и «Применить» в расчёте флаг не ставят. При утверждении экономистом у каждого действующего коммерческого запроса этого клиента, в котором есть позиция нового запроса, `requests.expiry_date` и `expiry_date` всех его неудалённых нормативов становятся днём утверждения. Нормативы Excel и остальные запросы клиента не меняются
 approved_at	TIMESTAMP	❌	Дата утверждения
 executed_at	TIMESTAMP	❌	Дата исполнения (разовые)
 executed_by	UUID	❌	Кто исполнил → users.id (разовые)
@@ -786,8 +790,8 @@ comment	TEXT	❌	Комментарий
 Записывается после утверждения коммерческого запроса или после загрузки Excel-партии. На одном складе и артикуле может быть несколько нормативов под разных клиентов.
 
 Расчёт на дату:
-- коммерческий норматив: активен в интервале `created_at` — `expiry_date`;
-- Excel-норматив: активен в интервале `production_requests.valid_from` — `normatives.expiry_date`.
+- коммерческий норматив: активен в интервале `valid_from` — `expiry_date`. Для строк, созданных утверждением, `valid_from` — день после утверждения экономистом. Уже существовавшие строки получают `valid_from` = календарная дата `created_at` (UTC);
+- Excel-норматив: активен в интервале `production_requests.valid_from` — `normatives.expiry_date`. Собственный `normatives.valid_from` это условие не подменяет.
 
 Норматив создаётся одним из двух путей:
 - согласование коммерческого запроса (`request_id` заполнен, `production_request_item_id` = NULL);
@@ -805,6 +809,7 @@ CREATE TABLE normatives (
     quantity DECIMAL(16,6) NOT NULL,
     unit VARCHAR(10) NOT NULL CHECK (unit IN ('шт', 'кг', 'т')),
     client_name TEXT NOT NULL,
+    valid_from DATE NOT NULL DEFAULT CURRENT_DATE,
     expiry_date DATE NOT NULL,
     category CHAR(1) NOT NULL CHECK (category IN ('A', 'B', 'C')),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -817,6 +822,7 @@ CREATE INDEX idx_normatives_product_warehouse ON normatives(product_code, wareho
 CREATE INDEX idx_normatives_product_code ON normatives(product_code);
 CREATE INDEX idx_normatives_warehouse_code ON normatives(warehouse_code);
 CREATE INDEX idx_normatives_expiry_date ON normatives(expiry_date);
+CREATE INDEX idx_normatives_valid_from ON normatives(valid_from);
 CREATE INDEX idx_normatives_deleted_at ON normatives(deleted_at) WHERE deleted_at IS NULL;
 CREATE INDEX idx_normatives_created_at ON normatives(created_at);
 CREATE UNIQUE INDEX uq_normatives_production_request_item_id
@@ -832,7 +838,8 @@ warehouse_code	INTEGER	✅	Склад → objects.code
 quantity	DECIMAL(16,6)	✅	Утвержденный объем
 unit	VARCHAR(10)	✅	шт / кг / т
 client_name	TEXT	✅	Метка авторства
-expiry_date	DATE	✅	Срок действия
+valid_from	DATE	✅	Начало действия коммерческой строки. Для новых строк — день после утверждения экономистом. Для уже существующих — календарная дата `created_at`. У строки Excel активность по-прежнему задаёт `production_requests.valid_from`
+expiry_date	DATE	✅	Срок действия, включительно
 category	CHAR(1)	✅	A/B/C
 created_at	TIMESTAMP	✅	Дата создания
 updated_at	TIMESTAMP	✅	Дата обновления
@@ -1116,7 +1123,7 @@ deleted_at	TIMESTAMP	❌	Soft delete (в списке скрыто)
 
 Страница `/analytics` и `GET /analytics/stock-dynamics` не добавляют таблиц. Ряды графика считаются из уже существующих:
 
-- нормативный запас — `normatives.quantity` на дату. Коммерческая строка действует с даты `created_at` (UTC) по `expiry_date`. Строка Excel-партии действует с `production_requests.valid_from` по `expiry_date` при `status = active`. Подразделение — `clients.department_id` через `normatives.client_id`;
+- нормативный запас — `normatives.quantity` на дату. Коммерческая строка действует с `normatives.valid_from` по `expiry_date`. Строка Excel-партии действует с `production_requests.valid_from` по `expiry_date` при `status = active`. Подразделение — `clients.department_id` через `normatives.client_id`;
 - доступный остаток — `available_balances_history.available` на `snapshot_date`. Снимок не привязан к клиенту;
 - фактический остаток — `available_balances_history.full_stock` на `snapshot_date`, с теми же полосами, что у доступного остатка: на неделе минимум и максимум, на месяце ещё медиана, на дне итог дня. День без слепка в минимум и максимум не входит. Дата, где `full_stock` во всех строках равен нулю, тоже пропускается. По умолчанию линии скрыты;
 - фактическая реализация — сумма `actual_shipments.quantity` за месяц, неделю или день, без накопления. Склад отгрузки определяется по `objects.loading_point`. Доступный остаток на графике: на месяце — минимум, медиана и максимум дневных остатков, на неделе — только минимум и максимум, на дне — запас этого дня. Отрицательный остаток снимка перед этим считается как ноль. Под графиком — сводка шести последних месяцев: медианный остаток, сумма реализации и средний дневной норматив. На неделе норматив делится на 4, на дне — на 28.
@@ -1424,7 +1431,7 @@ $$ LANGUAGE plpgsql;
 - statement-level триггер `trg_refresh_mv_normative_daily_on_balances` на `available_balances`;
 - ежедневный cron: `SELECT refresh_mv_normative_daily_job();`
 
-Эндпоинты `/dashboard/*` считают агрегаты по живым таблицам. Сводка и исключения — те же фильтры активных НЗ, что у логиста (включая партии `production_requests`). График динамики растягивает НЗ на весь срок действия (коммерческий: `created_at`…`expiry_date`; Excel: `valid_from`…`expiry_date`) и переводит количество в кг/т через `weight_kg`. MV — кэш для аналитики и быстрых срезов по `snapshot_date`.
+Эндпоинты `/dashboard/*` считают агрегаты по живым таблицам. Сводка и исключения — те же фильтры активных НЗ, что у логиста (включая партии `production_requests`). График динамики растягивает НЗ на весь срок действия (коммерческий: `normatives.valid_from`…`expiry_date`; Excel: `production_requests.valid_from`…`expiry_date`) и переводит количество в кг/т через `weight_kg`. MV — кэш для аналитики и быстрых срезов по `snapshot_date`.
 
 9. ТРИГГЕРЫ
 9.1. Автоматическое создание события при создании запроса

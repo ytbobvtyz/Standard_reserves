@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
@@ -13,6 +13,8 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    event,
+    inspect,
     text,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -38,6 +40,7 @@ class Normative(TimestampMixin, SoftDeleteMixin, Base):
         Index("idx_normatives_product_code", "product_code"),
         Index("idx_normatives_warehouse_code", "warehouse_code"),
         Index("idx_normatives_expiry_date", "expiry_date"),
+        Index("idx_normatives_valid_from", "valid_from"),
         Index(
             "idx_normatives_deleted_at",
             "deleted_at",
@@ -85,6 +88,11 @@ class Normative(TimestampMixin, SoftDeleteMixin, Base):
         server_default=text("'00000000-0000-4000-8000-000000000001'"),
     )
     expiry_date: Mapped[date] = mapped_column(Date, nullable=False)
+    valid_from: Mapped[date] = mapped_column(
+        Date,
+        nullable=False,
+        server_default=text("CURRENT_DATE"),
+    )
     category: Mapped[str] = mapped_column(CHAR(1), nullable=False)
 
     client: Mapped["Client"] = relationship("Client")
@@ -98,3 +106,16 @@ class Normative(TimestampMixin, SoftDeleteMixin, Base):
     )
     product: Mapped["Product"] = relationship("Product", back_populates="normatives")
     warehouse: Mapped["Object"] = relationship("Object", back_populates="normatives")
+
+
+@event.listens_for(Normative, "before_insert")
+def _fill_valid_from(_mapper, _connection, target: Normative) -> None:
+    """Keep historical rows starting on their created day unless set explicitly."""
+    if inspect(target).attrs.valid_from.history.added:
+        return
+    created = target.created_at
+    if isinstance(created, datetime):
+        moment = created if created.tzinfo is not None else created.replace(tzinfo=UTC)
+        target.valid_from = moment.astimezone(UTC).date()
+        return
+    target.valid_from = date.today()

@@ -21,13 +21,22 @@ import { useNavigate } from 'react-router-dom'
 import { getApiErrorMessage } from '../api/client'
 import { referencesApi } from '../api/references'
 import { requestsApi } from '../api/requests'
-import type { ClientListItem, ObjectListItem, RequestCreatePayload, RequestType } from '../api/types'
+import type {
+  ClientListItem,
+  ObjectListItem,
+  OptimalCalculateData,
+  OverlappingRequestRef,
+  RequestCreatePayload,
+  RequestType,
+} from '../api/types'
 import { ClientAutocomplete } from '../components/clients/ClientAutocomplete'
 import {
   ClientFormModal,
   createClientFromForm,
   type ClientFormValues,
 } from '../components/clients/ClientFormModal'
+import { OptimalStockModal } from '../components/requests/OptimalStockModal'
+import { SendNormativeModal } from '../components/requests/OverlappingNormatives'
 import { ProductAutocomplete } from '../components/requests/ProductAutocomplete'
 import { useAuthStore } from '../stores/auth'
 import {
@@ -41,6 +50,7 @@ import {
   minExpiryDate,
 } from '../utils/expiryDate'
 import { formatInitiator } from '../utils/format'
+import { kgToRequestQuantity } from '../utils/optimalStock'
 import { ceilToPallet } from '../utils/pallet'
 import {
   calculateRequirement,
@@ -102,7 +112,7 @@ function RequestItemRow({
   const form = Form.useFormInstance<FormValues>()
   const category = Form.useWatch(['items', field.name, 'category'], form)
   const quantity = Form.useWatch(['items', field.name, 'quantity_requested'], form)
-  const unit = Form.useWatch(['items', field.name, 'unit'], form) ?? 'шт'
+  const unit = Form.useWatch(['items', field.name, 'unit'], form) ?? 'т'
   const warehouseCode = Form.useWatch(['items', field.name, 'warehouse_code'], form)
   const warehouse = warehouses.find((item) => item.code === warehouseCode)
   const longDistance = warehouse == null ? undefined : Boolean(warehouse.long_distance)
@@ -131,7 +141,7 @@ function RequestItemRow({
     const activeUnit =
       nextUnit ??
       ((form.getFieldValue(['items', field.name, 'unit']) as 'шт' | 'т' | undefined) ??
-        'шт')
+        'т')
     form.setFieldValue(
       ['items', field.name, 'quantity_requested'],
       ceilToPallet(current, palletQty, activeUnit, weightKg),
@@ -209,11 +219,7 @@ function RequestItemRow({
           onBlur={() => roundCurrent()}
         />
       </Form.Item>
-      <Form.Item
-        name={[field.name, 'unit']}
-        initialValue="шт"
-        style={{ marginBottom: 0 }}
-      >
+      <Form.Item name={[field.name, 'unit']} style={{ marginBottom: 0 }}>
         <Select
           options={[
             { value: 'шт', label: 'шт' },
@@ -262,9 +268,24 @@ export function CreateRequestPage() {
   const [clientModalOpen, setClientModalOpen] = useState(false)
   const [creatingClient, setCreatingClient] = useState(false)
   const [pinnedClient, setPinnedClient] = useState<ClientListItem | null>(null)
+  const [optimalOpen, setOptimalOpen] = useState(false)
+  const [sendOpen, setSendOpen] = useState(false)
+  const [sendOverlaps, setSendOverlaps] = useState<OverlappingRequestRef[]>([])
+  const [optimalLoading, setOptimalLoading] = useState(false)
+  const [optimalResult, setOptimalResult] = useState<OptimalCalculateData | null>(null)
   const requestType = Form.useWatch('request_type', form)
+  const watchedItems = Form.useWatch('items', form)
   const isOneTime = requestType === 'one_time'
   const isLogistics = user?.role === 'logistics'
+  const overwriteLabels = (optimalResult?.items ?? [])
+    .filter((row) =>
+      watchedItems?.some(
+        (item) =>
+          Number(item?.product_code) === row.product_code &&
+          Number(item?.warehouse_code) === row.warehouse_code,
+      ),
+    )
+    .map((row) => `${row.product_code} ${row.product_name} — ${row.warehouse_name}`)
 
   useEffect(() => {
     void referencesApi
@@ -298,6 +319,7 @@ export function CreateRequestPage() {
         ? values.expiry_date?.format('YYYY-MM-DD')
         : undefined,
     comment: values.comment,
+    auto_complete_previous: false,
     items: values.items.map((item) => ({
       product_code: Number(item.product_code),
       warehouse_code: Number(item.warehouse_code),
@@ -305,27 +327,177 @@ export function CreateRequestPage() {
         ? ceilToPallet(
             Number(item.quantity_requested),
             item.pallet_qty,
-            item.unit ?? 'шт',
+            item.unit ?? 'т',
             item.weight_kg,
           )
         : Number(item.quantity_requested),
-      unit: item.unit ?? 'шт',
+      unit: item.unit ?? 'т',
     })),
   })
+
+  const openOptimal = async () => {
+    const client = form.getFieldValue('client_id') as string | undefined
+    if (!client) {
+      message.warning('Сначала выберите клиента')
+      return
+    }
+    setOptimalOpen(true)
+    setOptimalLoading(true)
+    setOptimalResult(null)
+    try {
+      const { data } = await requestsApi.calculateOptimal({
+        client_id: client,
+        items: [],
+      })
+      setOptimalResult(data.data)
+    } catch (error) {
+      setOptimalOpen(false)
+      message.error(getApiErrorMessage(error, 'Не удалось рассчитать запас'))
+    } finally {
+      setOptimalLoading(false)
+    }
+  }
+
+  const applyOptimal = () => {
+    if (!optimalResult) {
+      return
+    }
+    const current = (form.getFieldValue('items') ?? []) as ItemFormValue[]
+    const filled = current.filter(
+      (item) => item?.product_code && item?.warehouse_code,
+    )
+    const partial = current.filter(
+      (item) =>
+        (item?.product_code || item?.warehouse_code || item?.quantity_requested) &&
+        !(item?.product_code && item?.warehouse_code),
+    )
+    const used = new Set<string>()
+    let skippedConversion = false
+    const next: ItemFormValue[] = filled.map((item) => {
+      const calculated = optimalResult.items.find(
+        (row) =>
+          row.product_code === Number(item.product_code) &&
+          row.warehouse_code === Number(item.warehouse_code),
+      )
+      if (!calculated) {
+        return item
+      }
+      used.add(`${calculated.product_code}:${calculated.warehouse_code}`)
+      const unit = item.unit ?? 'т'
+      const converted = kgToRequestQuantity(
+        calculated.calculated_quantity,
+        unit,
+        calculated.weight_kg,
+      )
+      if (converted == null) {
+        skippedConversion = true
+        return item
+      }
+      return {
+        ...item,
+        product_name: calculated.product_name,
+        category: calculated.category,
+        pallet_qty: calculated.pallet_qty,
+        weight_kg: calculated.weight_kg,
+        quantity_requested: palletMultiple
+          ? ceilToPallet(converted, calculated.pallet_qty, unit, calculated.weight_kg)
+          : converted,
+      }
+    })
+    for (const calculated of optimalResult.items) {
+      const key = `${calculated.product_code}:${calculated.warehouse_code}`
+      if (used.has(key)) {
+        continue
+      }
+      const unit = 'т' as const
+      const converted = kgToRequestQuantity(
+        calculated.calculated_quantity,
+        unit,
+        calculated.weight_kg,
+      )
+      if (converted == null) {
+        skippedConversion = true
+        continue
+      }
+      next.push({
+        product_code: calculated.product_code,
+        product_name: calculated.product_name,
+        warehouse_code: calculated.warehouse_code,
+        category: calculated.category,
+        pallet_qty: calculated.pallet_qty,
+        weight_kg: calculated.weight_kg,
+        unit,
+        quantity_requested: palletMultiple
+          ? ceilToPallet(converted, calculated.pallet_qty, unit, calculated.weight_kg)
+          : converted,
+      })
+    }
+    const rows = [...next, ...partial]
+    form.setFieldsValue({ items: rows.length > 0 ? rows : [{}] })
+    if (skippedConversion) {
+      message.warning(
+        'Для части позиций нет веса единицы — количество в штуках не заменено',
+      )
+    }
+    setOptimalOpen(false)
+  }
+
+  const saveRequest = async (
+    values: FormValues,
+    send: boolean,
+    completePrevious: boolean,
+  ) => {
+    const { data } = await requestsApi.create(buildPayload(values))
+    const requestId = data.data.id
+    if (send) {
+      await requestsApi.submit(requestId, completePrevious)
+      message.success('Запрос отправлен на согласование')
+    } else {
+      message.success('Черновик сохранен')
+    }
+    navigate(`/requests/${requestId}`)
+  }
 
   const submit = async (send: boolean) => {
     try {
       const values = await form.validateFields()
-      setSubmitting(true)
-      const { data } = await requestsApi.create(buildPayload(values))
-      const requestId = data.data.id
-      if (send) {
-        await requestsApi.submit(requestId)
-        message.success('Запрос отправлен на согласование')
-      } else {
-        message.success('Черновик сохранен')
+      if (send && values.request_type === 'normative' && values.client_id) {
+        setSubmitting(true)
+        const positions = (values.items ?? []).filter(
+          (item) => item?.product_code && item?.warehouse_code,
+        )
+        const { data } = await requestsApi.overlapping({
+          client_id: values.client_id,
+          items: positions.map((item) => ({
+            product_code: Number(item.product_code),
+            warehouse_code: Number(item.warehouse_code),
+          })),
+        })
+        if (data.data.requests.length > 0) {
+          setSendOverlaps(data.data.requests)
+          setSendOpen(true)
+          setSubmitting(false)
+          return
+        }
       }
-      navigate(`/requests/${requestId}`)
+      setSubmitting(true)
+      await saveRequest(values, send, false)
+    } catch (error) {
+      if (error && typeof error === 'object' && 'errorFields' in error) {
+        return
+      }
+      message.error(getApiErrorMessage(error, 'Не удалось сохранить запрос'))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const confirmSend = async (completePrevious: boolean) => {
+    try {
+      const values = await form.validateFields()
+      setSubmitting(true)
+      await saveRequest(values, true, completePrevious)
+      setSendOpen(false)
     } catch (error) {
       if (error && typeof error === 'object' && 'errorFields' in error) {
         return
@@ -346,7 +518,7 @@ export function CreateRequestPage() {
           initialValues={{
             request_type: isLogistics ? 'one_time' : 'normative',
             expiry_date: defaultExpiryDate(),
-            items: [{}],
+            items: [{ unit: 'т' }],
           }}
         >
           <Form.Item
@@ -414,7 +586,24 @@ export function CreateRequestPage() {
               />
             </Form.Item>
           ) : null}
-          <Typography.Title level={5}>Позиции</Typography.Title>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 12,
+              marginBottom: 8,
+            }}
+          >
+            <Typography.Title level={5} style={{ margin: 0 }}>
+              Позиции
+            </Typography.Title>
+            {!isOneTime ? (
+              <Button loading={optimalLoading} onClick={() => void openOptimal()}>
+                🪄 Рассчитать оптимальный запас
+              </Button>
+            ) : null}
+          </div>
           {palletMultiple ? (
             <Alert
               type="info"
@@ -483,7 +672,7 @@ export function CreateRequestPage() {
                 ))}
                 <Button
                   type="dashed"
-                  onClick={() => add({ unit: 'шт' })}
+                  onClick={() => add({ unit: 'т' })}
                   icon={<PlusOutlined />}
                   style={{ marginBottom: 16 }}
                 >
@@ -510,6 +699,21 @@ export function CreateRequestPage() {
           </Space>
         </Form>
       </Card>
+      <OptimalStockModal
+        open={optimalOpen}
+        loading={optimalLoading}
+        result={optimalResult}
+        overwriteLabels={overwriteLabels}
+        onCancel={() => setOptimalOpen(false)}
+        onApply={applyOptimal}
+      />
+      <SendNormativeModal
+        open={sendOpen}
+        requests={sendOverlaps}
+        confirmLoading={submitting}
+        onCancel={() => setSendOpen(false)}
+        onSubmit={(completePrevious) => void confirmSend(completePrevious)}
+      />
       <ClientFormModal
         open={clientModalOpen}
         mode="create-request"

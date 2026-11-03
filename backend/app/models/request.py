@@ -4,6 +4,7 @@ from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -101,6 +102,12 @@ class Request(TimestampMixin, SoftDeleteMixin, Base):
     comment_pp: Mapped[str | None] = mapped_column(Text)
     comment_economy: Mapped[str | None] = mapped_column(Text)
     expiry_date: Mapped[date | None] = mapped_column(Date)
+    auto_complete_previous: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     executed_by: Mapped[uuid.UUID | None] = mapped_column(

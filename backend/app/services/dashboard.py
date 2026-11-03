@@ -39,6 +39,7 @@ from app.services.logistics_normative import (
     collect_deficit_rows,
     to_pieces,
 )
+from app.services.normative_dates import commercial_active_on
 
 ZERO = Decimal("0")
 HUNDRED = Decimal("100")
@@ -172,14 +173,18 @@ def _active_conditions():
     return [
         Normative.deleted_at.is_(None),
         Normative.expiry_date >= today,
-        or_(Normative.production_request_item_id.is_(None), excel_ok),
+        or_(commercial_active_on(today), excel_ok),
     ]
 
 
-def _validity_start(created_at: datetime, valid_from: date | None) -> date:
-    if valid_from is not None:
-        return valid_from
-    return _to_date(created_at)
+def _validity_start(normative: Normative, batch_valid_from: date | None) -> date:
+    if normative.production_request_item_id is not None:
+        if batch_valid_from is not None:
+            return batch_valid_from
+        return _to_date(normative.created_at)
+    if normative.valid_from is not None:
+        return normative.valid_from
+    return _to_date(normative.created_at)
 
 
 async def _kpi_position_masses(
@@ -368,10 +373,10 @@ async def get_normative_trend(
     if date_from > date_to:
         date_from, date_to = date_to, date_from
 
-    created_date = cast(Normative.created_at, Date)
     commercial_in_range = and_(
         Normative.production_request_item_id.is_(None),
-        created_date <= date_to,
+        func.coalesce(Normative.valid_from, cast(Normative.created_at, Date))
+        <= date_to,
     )
     excel_in_range = and_(
         Normative.production_request_item_id.is_not(None),
@@ -421,7 +426,7 @@ async def get_normative_trend(
     counts: dict[tuple, dict[date, int]] = {}
 
     for normative, valid_from in rows:
-        start = _validity_start(normative.created_at, valid_from)
+        start = _validity_start(normative, valid_from)
         if start > date_to or normative.expiry_date < date_from:
             continue
         product = normative.product

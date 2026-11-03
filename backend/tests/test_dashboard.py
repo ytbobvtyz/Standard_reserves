@@ -445,6 +445,7 @@ async def test_dashboard_trend_spans_validity_window(
         normative.created_at = datetime(
             started.year, started.month, started.day, tzinfo=UTC
         )
+        normative.valid_from = started
         normative.expiry_date = until
         await session.commit()
 

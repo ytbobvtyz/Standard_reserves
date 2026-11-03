@@ -132,15 +132,22 @@ def _median(values: list[Decimal]) -> Decimal:
 def _normative_start(
     created_at: datetime,
     production_item_id: UUID | None,
-    valid_from: date | None,
+    commercial_valid_from: date | None,
+    batch_valid_from: date | None,
     status: str | None,
     batch_deleted_at: datetime | None,
 ) -> date | None:
     if production_item_id is None:
+        if commercial_valid_from is not None:
+            return commercial_valid_from
         return _utc_date(created_at)
-    if valid_from is None or status != "active" or batch_deleted_at is not None:
+    if (
+        batch_valid_from is None
+        or status != "active"
+        or batch_deleted_at is not None
+    ):
         return None
-    return valid_from
+    return batch_valid_from
 
 
 async def _normative_rows(
@@ -172,8 +179,9 @@ async def _normative_rows(
             Normative.quantity,
             Normative.unit,
             Normative.production_request_item_id,
+            Normative.valid_from.label("commercial_valid_from"),
             Product.weight_kg,
-            ProductionRequest.valid_from,
+            ProductionRequest.valid_from.label("batch_valid_from"),
             ProductionRequest.status,
             ProductionRequest.deleted_at,
         )
@@ -205,7 +213,8 @@ def _normative_series(
         start = _normative_start(
             row.created_at,
             row.production_request_item_id,
-            row.valid_from,
+            row.commercial_valid_from,
+            row.batch_valid_from,
             row.status,
             row.deleted_at,
         )
@@ -458,7 +467,8 @@ async def _earliest_normative(
             start := _normative_start(
                 row.created_at,
                 row.production_request_item_id,
-                row.valid_from,
+                row.commercial_valid_from,
+                row.batch_valid_from,
                 row.status,
                 row.deleted_at,
             )
@@ -634,7 +644,8 @@ def _normative_intervals(rows) -> list[tuple[date, date, Decimal]]:
         start = _normative_start(
             row.created_at,
             row.production_request_item_id,
-            row.valid_from,
+            row.commercial_valid_from,
+            row.batch_valid_from,
             row.status,
             row.deleted_at,
         )

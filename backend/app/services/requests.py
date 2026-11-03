@@ -261,6 +261,7 @@ def _created_schema(
         initiator_id=request.initiator_id,
         department_id=request.department_id,
         expiry_date=request.expiry_date,
+        auto_complete_previous=request.auto_complete_previous,
         items=[_item_created(item, coeffs) for item in request.items],
         created_at=request.created_at,
     )
@@ -363,6 +364,7 @@ def to_detail(request: Request, coeffs: CoefficientSet | None = None) -> Request
         comment_pp=request.comment_pp,
         comment_economy=request.comment_economy,
         expiry_date=request.expiry_date,
+        auto_complete_previous=request.auto_complete_previous,
         order_number=request.order_number,
         executed_at=request.executed_at,
         executed_comment=request.executed_comment,
@@ -543,6 +545,7 @@ async def create_request(
         department_id=user.department_id,
         initiator_comment=body.comment,
         expiry_date=body.expiry_date,
+        auto_complete_previous=False,
         items=_build_items(items),
     )
     db.add(request)
@@ -744,7 +747,16 @@ async def export_requests_xlsx(
     return build_requests_export_xlsx([found[item_id] for item_id in unique_ids])
 
 
-async def submit_draft(db: AsyncSession, request: Request) -> Request:
+async def submit_draft(
+    db: AsyncSession,
+    request: Request,
+    *,
+    auto_complete_previous: bool = False,
+) -> Request:
+    if request.request_type == "normative":
+        request.auto_complete_previous = auto_complete_previous
+    else:
+        request.auto_complete_previous = False
     request.status = "pp_approved"
     await db.commit()
     return await load_request(db, request.id, for_detail=False)

@@ -80,6 +80,33 @@ async def db_ready() -> AsyncGenerator[None, None]:
             )
         )
         await connection.execute(
+            text(
+                "ALTER TABLE requests ADD COLUMN IF NOT EXISTS "
+                "auto_complete_previous BOOLEAN NOT NULL DEFAULT false"
+            )
+        )
+        await connection.execute(
+            text("ALTER TABLE normatives ADD COLUMN IF NOT EXISTS valid_from DATE")
+        )
+        await connection.execute(
+            text(
+                "UPDATE normatives SET valid_from = "
+                "(created_at AT TIME ZONE 'UTC')::date "
+                "WHERE valid_from IS NULL"
+            )
+        )
+        await connection.execute(
+            text(
+                "ALTER TABLE normatives ALTER COLUMN valid_from SET NOT NULL"
+            )
+        )
+        await connection.execute(
+            text(
+                "ALTER TABLE normatives ALTER COLUMN valid_from "
+                "SET DEFAULT CURRENT_DATE"
+            )
+        )
+        await connection.execute(
             text("ALTER TABLE products " "ADD COLUMN IF NOT EXISTS gtin VARCHAR(13)")
         )
         await connection.execute(

@@ -18,7 +18,11 @@ from app.schemas.common import (
     PaginationMeta,
     SuccessResponse,
 )
+from app.schemas.optimal import OptimalCalculateData, OptimalCalculateRequest
 from app.schemas.request import (
+    OverlappingNormativesData,
+    OverlappingNormativesQuery,
+    OverlappingRequestRef,
     RequestCreate,
     RequestCreated,
     RequestDetail,
@@ -28,8 +32,11 @@ from app.schemas.request import (
     RequestItemHistoryEntry,
     RequestListItem,
     RequestStatusData,
+    RequestSubmit,
     RequestUpdate,
 )
+from app.services.normative_dates import find_overlapping_requests
+from app.services.optimal_stock import calculate_optimal
 from app.services.params import load_coefficient_set
 from app.services.requests import (
     LIST_OPTIONS,
@@ -66,6 +73,50 @@ async def create_request_endpoint(
 ) -> SuccessResponse[RequestCreated]:
     data = await create_request(db, current_user, body)
     return SuccessResponse(data=data)
+
+
+@router.post(
+    "/requests/calculate-optimal",
+    response_model=SuccessResponse[OptimalCalculateData],
+)
+async def calculate_optimal_endpoint(
+    body: OptimalCalculateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[OptimalCalculateData]:
+    data = await calculate_optimal(db, current_user, body)
+    return SuccessResponse(data=data)
+
+
+@router.post(
+    "/requests/overlapping-normatives",
+    response_model=SuccessResponse[OverlappingNormativesData],
+)
+async def overlapping_normatives(
+    body: OverlappingNormativesQuery,
+    _: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[OverlappingNormativesData]:
+    found = await find_overlapping_requests(
+        db,
+        client_id=body.client_id,
+        positions=[
+            (item.product_code, item.warehouse_code) for item in body.items
+        ],
+        exclude_request_id=body.exclude_request_id,
+    )
+    return SuccessResponse(
+        data=OverlappingNormativesData(
+            requests=[
+                OverlappingRequestRef(
+                    id=item.id,
+                    created_at=item.created_at,
+                    expiry_date=item.expiry_date,
+                )
+                for item in found
+            ]
+        )
+    )
 
 
 @router.post("/requests/export")
@@ -233,12 +284,14 @@ async def patch_request_expiry(
 )
 async def submit_request(
     request_id: UUID,
+    body: RequestSubmit | None = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[RequestStatusData]:
     request = await load_request(db, request_id)
     ensure_draft_owner(request, current_user)
-    submitted = await submit_draft(db, request)
+    flag = False if body is None else body.auto_complete_previous
+    submitted = await submit_draft(db, request, auto_complete_previous=flag)
     return SuccessResponse(
         data=RequestStatusData(
             id=submitted.id,

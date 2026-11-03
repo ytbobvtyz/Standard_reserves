@@ -583,7 +583,7 @@ async def test_economist_approve_saves_latest_version_and_updates_normatives_on_
         assert float(normatives[0].quantity) == 600
         assert normatives[0].expiry_date.isoformat() == expiry_economy
 
-    on_date_res = await client.get(
+    today_res = await client.get(
         "/api/v1/normatives/on-date",
         headers=auth_header(commercial_token),
         params={
@@ -591,19 +591,33 @@ async def test_economist_approve_saves_latest_version_and_updates_normatives_on_
             "warehouse_code": catalog["warehouse_code"],
         },
     )
+    assert today_res.status_code == 200
+    today_ids = [
+        detail["request_id"]
+        for item in today_res.json()["data"]
+        for detail in item["details"]
+    ]
+    assert request_id not in today_ids
+
+    tomorrow = date.today() + timedelta(days=1)
+    on_date_res = await client.get(
+        "/api/v1/normatives/on-date",
+        headers=auth_header(commercial_token),
+        params={
+            "date": tomorrow.isoformat(),
+            "warehouse_code": catalog["warehouse_code"],
+        },
+    )
     assert on_date_res.status_code == 200
-    matched = next(
-        item
+    detail = next(
+        entry
         for item in on_date_res.json()["data"]
         if item["product_code"] == catalog["product_code"]
-    )
-    assert matched["total_quantity"] == 600
-    detail = next(
-        d for d in matched["details"] if d["client_name"] == "ООО Последняя Версия"
+        for entry in item["details"]
+        if entry["request_id"] == request_id
     )
     assert detail["quantity"] == 600
     assert detail["expiry_date"] == expiry_economy
-    assert detail["request_id"] == request_id
     assert detail["author_name"] == test_user.full_name
 
     await delete_request(request_id)

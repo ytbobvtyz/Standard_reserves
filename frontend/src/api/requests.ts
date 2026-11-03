@@ -1,6 +1,9 @@
 import api from './client'
 import type {
   ApiSuccess,
+  OptimalCalculateData,
+  OptimalCalculateItem,
+  OverlappingRequestRef,
   RequestCreatePayload,
   RequestDetail,
   RequestItemHistoryEntry,
@@ -18,14 +21,35 @@ export const requestsApi = {
   create: (payload: RequestCreatePayload) =>
     api.post<ApiSuccess<RequestDetail>>('/requests', payload),
 
+  calculateOptimal: (payload: {
+    client_id: string
+    items: OptimalCalculateItem[]
+  }) =>
+    api.post<ApiSuccess<OptimalCalculateData>>(
+      '/requests/calculate-optimal',
+      payload,
+    ),
+
   update: (id: string, payload: Partial<RequestCreatePayload>) =>
     api.put<ApiSuccess<RequestStatusData>>(`/requests/${id}`, payload),
 
   remove: (id: string) =>
     api.delete<{ status: string; message: string }>(`/requests/${id}`),
 
-  submit: (id: string) =>
-    api.post<ApiSuccess<RequestStatusData>>(`/requests/${id}/submit`),
+  submit: (id: string, autoCompletePrevious = false) =>
+    api.post<ApiSuccess<RequestStatusData>>(`/requests/${id}/submit`, {
+      auto_complete_previous: autoCompletePrevious,
+    }),
+
+  overlapping: (payload: {
+    client_id: string
+    items: OptimalCalculateItem[]
+    exclude_request_id?: string
+  }) =>
+    api.post<ApiSuccess<{ requests: OverlappingRequestRef[] }>>(
+      '/requests/overlapping-normatives',
+      payload,
+    ),
 
   getHistory: (id: string) =>
     api.get<ApiSuccess<RequestItemHistoryEntry[]>>(`/requests/${id}/history`),

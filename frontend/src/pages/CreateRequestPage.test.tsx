@@ -29,10 +29,11 @@ vi.mock('../api/clients', () => ({
 }))
 
 vi.mock('../api/requests', () => ({
-  requestsApi: {
-    create: vi.fn(),
-    submit: vi.fn(),
-  },
+    requestsApi: {
+      create: vi.fn(),
+      submit: vi.fn(),
+      calculateOptimal: vi.fn(),
+    },
 }))
 
 const PALLET_HINT =
@@ -173,8 +174,28 @@ describe('CreateRequestPage', () => {
       expect(screen.getByRole('tooltip').textContent).toContain(MONTHLY_QUANTITY_HINT)
     })
 
+    expect(screen.getByText('т')).toBeTruthy()
+
     fireEvent.click(screen.getByRole('radio', { name: 'Разовое перемещение' }))
     expect(screen.queryByText('Количество в месяц')).toBeNull()
     expect(screen.getByText('Кол-во')).toBeTruthy()
+    expect(screen.getByText('т')).toBeTruthy()
+  })
+
+  it('shows the optimal stock button only for a normative request', async () => {
+    render(
+      <MemoryRouter>
+        <CreateRequestPage />
+      </MemoryRouter>,
+    )
+    const button = await screen.findByRole('button', {
+      name: '🪄 Рассчитать оптимальный запас',
+    })
+    expect((button as HTMLButtonElement).disabled).toBe(false)
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Разовое перемещение' }))
+    expect(
+      screen.queryByRole('button', { name: '🪄 Рассчитать оптимальный запас' }),
+    ).toBeNull()
   })
 })

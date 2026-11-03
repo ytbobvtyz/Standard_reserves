@@ -271,7 +271,7 @@ async def test_excel_binds_department_by_sales_name_when_id_empty(
     assert skipped is None
 
 
-async def test_name_replacement_writes_event_and_same_client_does_not(
+async def test_approval_keeps_system_client_normative(
     client: AsyncClient,
     test_user: AuthUser,
     pp_user: AuthUser,
@@ -329,7 +329,7 @@ async def test_name_replacement_writes_event_and_same_client_does_not(
     async with AsyncSessionLocal() as session:
         replaced = await session.get(Normative, old_id)
         assert replaced is not None
-        assert replaced.deleted_at is not None
+        assert replaced.deleted_at is None
         events = (
             await session.scalars(
                 select(Event).where(
@@ -338,9 +338,7 @@ async def test_name_replacement_writes_event_and_same_client_does_not(
                 )
             )
         ).all()
-        assert len(events) == 1
-        assert events[0].payload["old_normative_id"] == str(old_id)
-        assert events[0].payload["client_name"] == name
+        assert events == []
 
     second_id = await _create_submitted(
         client,
