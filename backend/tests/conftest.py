@@ -96,9 +96,7 @@ async def db_ready() -> AsyncGenerator[None, None]:
             )
         )
         await connection.execute(
-            text(
-                "ALTER TABLE normatives ALTER COLUMN valid_from SET NOT NULL"
-            )
+            text("ALTER TABLE normatives ALTER COLUMN valid_from SET NOT NULL")
         )
         await connection.execute(
             text(

@@ -92,9 +92,7 @@ async def complete_overlapping_requests(
 ) -> None:
     """End each overlapping request and all of its normatives on on_date."""
     today = on_date or date.today()
-    positions = [
-        (item.product_code, item.warehouse_code) for item in request.items
-    ]
+    positions = [(item.product_code, item.warehouse_code) for item in request.items]
     found = await find_overlapping_requests(
         db,
         client_id=request.client_id,
@@ -105,9 +103,7 @@ async def complete_overlapping_requests(
     if not found:
         return
     ids = [item.id for item in found]
-    requests = (
-        await db.scalars(select(Request).where(Request.id.in_(ids)))
-    ).all()
+    requests = (await db.scalars(select(Request).where(Request.id.in_(ids)))).all()
     for old in requests:
         old.expiry_date = today
     normatives = (

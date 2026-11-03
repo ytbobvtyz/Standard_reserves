@@ -141,11 +141,7 @@ def _normative_start(
         if commercial_valid_from is not None:
             return commercial_valid_from
         return _utc_date(created_at)
-    if (
-        batch_valid_from is None
-        or status != "active"
-        or batch_deleted_at is not None
-    ):
+    if batch_valid_from is None or status != "active" or batch_deleted_at is not None:
         return None
     return batch_valid_from
 

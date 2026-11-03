@@ -100,9 +100,7 @@ async def overlapping_normatives(
     found = await find_overlapping_requests(
         db,
         client_id=body.client_id,
-        positions=[
-            (item.product_code, item.warehouse_code) for item in body.items
-        ],
+        positions=[(item.product_code, item.warehouse_code) for item in body.items],
         exclude_request_id=body.exclude_request_id,
     )
     return SuccessResponse(
