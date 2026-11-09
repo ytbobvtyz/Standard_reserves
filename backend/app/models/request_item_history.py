@@ -27,7 +27,7 @@ class RequestItemHistory(Base):
     __tablename__ = "request_item_history"
     __table_args__ = (
         CheckConstraint(
-            "field_name IN ('quantity_requested', 'quantity_approved')",
+            "field_name IN ('quantity_requested', 'quantity_approved', 'rejected')",
             name="ck_request_item_history_field_name",
         ),
         Index("idx_request_item_history_item_id", "request_item_id"),

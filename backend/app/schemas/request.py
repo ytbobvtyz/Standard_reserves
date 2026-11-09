@@ -111,6 +111,7 @@ class RequestItemCreated(BaseModel):
     warehouse_code: int
     quantity_requested: DecimalNumber
     quantity_approved: DecimalNumber | None = None
+    rejected: bool = False
     unit: str
     comment: str | None = None
     category: str | None = None
@@ -174,6 +175,7 @@ class RequestItemDetail(BaseModel):
     warehouse: WarehouseBrief
     quantity_requested: DecimalNumber
     quantity_approved: DecimalNumber | None = None
+    rejected: bool = False
     unit: str
     comment: str | None = None
     category_factor: DecimalNumber

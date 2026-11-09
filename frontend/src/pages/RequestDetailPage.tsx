@@ -70,6 +70,17 @@ const HISTORY_LABEL: Record<string, string> = {
 const FIELD_LABEL: Record<string, string> = {
   quantity_requested: 'Запрошенное количество',
   quantity_approved: 'Утвержденное количество',
+  rejected: 'Отказ по строке',
+}
+
+function formatHistoryValue(fieldName: string, value: number | null): string {
+  if (fieldName === 'rejected') {
+    return value === 1 ? 'Отказ' : 'В согласовании'
+  }
+  if (value == null) {
+    return '—'
+  }
+  return String(value)
 }
 
 function historyTitle(entry: RequestHistoryEntry): string {
@@ -418,8 +429,15 @@ export function RequestDetailPage() {
               title: 'Утверждено',
               dataIndex: 'quantity_approved',
               width: 160,
-              render: (value: number | null) =>
-                value == null ? '—' : `Утверждено: ${value}`,
+              render: (value: number | null, item: RequestItemDetail) => {
+                if (item.rejected) {
+                  return 'Отказ'
+                }
+                if (value == null) {
+                  return '—'
+                }
+                return `Утверждено: ${value}`
+              },
             },
             { title: 'Ед.', dataIndex: 'unit', width: 70 },
             ...(request.request_type !== 'one_time'
@@ -440,6 +458,9 @@ export function RequestDetailPage() {
                     title: 'Потребность',
                     width: 140,
                     render: (_: unknown, item: RequestItemDetail) => {
+                      if (item.rejected) {
+                        return 'Отказ'
+                      }
                       const qty = item.quantity_approved ?? item.quantity_requested
                       const longDistance = item.long_distance ?? item.warehouse.long_distance
                       const value = item.requirement
@@ -506,13 +527,15 @@ export function RequestDetailPage() {
                     title: 'Было',
                     dataIndex: 'old_value',
                     width: 120,
-                    render: (value: number | null) => (value == null ? '—' : value),
+                    render: (value: number | null, row: RequestItemHistoryEntry) =>
+                      formatHistoryValue(row.field_name, value),
                   },
                   {
                     title: 'Стало',
                     dataIndex: 'new_value',
                     width: 120,
-                    render: (value: number | null) => (value == null ? '—' : value),
+                    render: (value: number | null, row: RequestItemHistoryEntry) =>
+                      formatHistoryValue(row.field_name, value),
                   },
                   {
                     title: 'Кто изменил',

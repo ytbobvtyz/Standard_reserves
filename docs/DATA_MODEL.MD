@@ -169,6 +169,7 @@ erDiagram
         int warehouse_code FK "склад"
         decimal quantity_requested "запрошенный объем"
         decimal quantity_approved "утвержденный объем"
+        boolean rejected "отказ по строке, норматив не создаётся"
         varchar unit "шт / т"
         text comment "комментарий по позиции"
         timestamp created_at "дата создания"
@@ -178,7 +179,7 @@ erDiagram
     request_item_history {
         uuid id PK "идентификатор"
         uuid request_item_id FK "позиция запроса"
-        varchar field_name "quantity_requested / quantity_approved"
+        varchar field_name "quantity_requested / quantity_approved / rejected"
         decimal old_value "первое изменение quantity_approved = quantity_requested"
         decimal new_value "новое значение"
         uuid changed_by FK "кто изменил"
@@ -729,6 +730,7 @@ CREATE TABLE request_items (
     warehouse_code INTEGER NOT NULL REFERENCES objects(code),
     quantity_requested DECIMAL(12,6) NOT NULL CHECK (quantity_requested > 0),
     quantity_approved DECIMAL(12,6),
+    rejected BOOLEAN NOT NULL DEFAULT false,
     unit VARCHAR(10) NOT NULL CHECK (unit IN ('шт', 'т')),
     comment TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -750,7 +752,8 @@ request_id	UUID	✅	Запрос → requests.id (ON DELETE CASCADE)
 product_code	INTEGER	✅	Артикул → products.code
 warehouse_code	INTEGER	✅	Склад → objects.code
 quantity_requested	DECIMAL(12,6)	✅	Запрошенный объем (>0)
-quantity_approved	DECIMAL(12,6)	❌	Утвержденный объем
+quantity_approved	DECIMAL(12,6)	❌	Утвержденный объем, больше 0
+rejected	BOOLEAN	✅	Отказ по строке. По умолчанию false. Строка остаётся в запросе, норматив и задание логисту по ней не создаются
 unit	VARCHAR(10)	✅	шт или т
 comment	TEXT	❌	Комментарий по позиции
 created_at	TIMESTAMP	✅	Дата создания
@@ -760,7 +763,7 @@ sql
 CREATE TABLE request_item_history (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     request_item_id UUID NOT NULL REFERENCES request_items(id) ON DELETE CASCADE,
-    field_name VARCHAR(30) NOT NULL CHECK (field_name IN ('quantity_requested', 'quantity_approved')),
+    field_name VARCHAR(30) NOT NULL CHECK (field_name IN ('quantity_requested', 'quantity_approved', 'rejected')),
     old_value DECIMAL(12,6),
     new_value DECIMAL(12,6),
     changed_by UUID NOT NULL REFERENCES users(id),
@@ -775,7 +778,7 @@ CREATE INDEX idx_request_item_history_changed_by ON request_item_history(changed
 Поле	Тип	Обязательное	Описание
 id	UUID	✅	Идентификатор (PK)
 request_item_id	UUID	✅	Позиция запроса → request_items.id (ON DELETE CASCADE)
-field_name	VARCHAR(30)	✅	quantity_requested / quantity_approved
+field_name	VARCHAR(30)	✅	quantity_requested / quantity_approved / rejected. Для `rejected` значения 0 и 1: 0 — строка в согласовании, 1 — отказ
 old_value	DECIMAL(12,6)	❌	Старое значение. Для `field_name = quantity_approved`: если у позиции ещё нет записей в `request_item_history`, это исходное `quantity_requested`; если записи уже есть — предыдущее `quantity_approved`
 new_value	DECIMAL(12,6)	❌	Новое значение
 changed_by	UUID	✅	Кто изменил → users.id
@@ -1577,6 +1580,7 @@ EXECUTE FUNCTION trigger_create_normative();
 | 30 | `0030_auto_complete_previous.py` | `requests.auto_complete_previous` |
 | 31 | `0031_normative_valid_from.py` | `normatives.valid_from` |
 | 32 | `0032_coverage_months.py` | `params.coverage_high_months`, `params.coverage_low_months` |
+| 33 | `0033_item_rejected.py` | `request_items.rejected`; история позиции принимает поле `rejected` |
 
 Начальные пользователи и объекты заполняются скриптом `backend/scripts/seed_data.py`, а не миграцией.
 
@@ -1672,6 +1676,6 @@ mv_normative_daily	✅ Ежедневная агрегация действую�
 
 Полные DDL — в разделах 5.4 и 5.5. Кратко: партия Excel создаёт `production_requests` + `production_request_items` и активные `normatives` с `request_id IS NULL`. Удаление партии каскадно снимает позиции и нормативы. Миграция: `0017_production_requests.py`.
 
-Версия: 2.15
+Версия: 2.16
 Дата: 09.11.2026
 Статус: Утверждена

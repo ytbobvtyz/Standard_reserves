@@ -1,4 +1,6 @@
 from datetime import date, timedelta
+from decimal import Decimal
+from uuid import uuid4
 
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -1120,4 +1122,337 @@ async def test_delete_active_keeps_normatives(
             )
         ).one()
         assert normative.deleted_at is None
+    await delete_request(request_id)
+
+
+def _two_items(catalog: dict[str, int]) -> list[dict]:
+    return [
+        {
+            "product_code": catalog["product_code"],
+            "warehouse_code": catalog["warehouse_code"],
+            "quantity_requested": 1000,
+            "unit": "шт",
+        },
+        {
+            "product_code": catalog["product_code_2"],
+            "warehouse_code": catalog["warehouse_code"],
+            "quantity_requested": 400,
+            "unit": "шт",
+        },
+    ]
+
+
+def _decision(
+    catalog: dict[str, int],
+    *,
+    product: str,
+    quantity: int,
+    rejected: bool,
+) -> dict:
+    code = catalog["product_code"] if product == "first" else catalog["product_code_2"]
+    return {
+        "product_code": code,
+        "warehouse_code": catalog["warehouse_code"],
+        "quantity_approved": quantity,
+        "rejected": rejected,
+    }
+
+
+async def test_line_reject_requires_comment_and_stays_pending(
+    client: AsyncClient,
+    test_user: AuthUser,
+    pp_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    commercial_token = await login_token(client, test_user)
+    pp_token = await login_token(client, pp_user)
+    request_id = await _create_submitted(
+        client, commercial_token, items=_two_items(catalog)
+    )
+    response = await client.post(
+        f"/api/v1/approvals/pp/{request_id}/action",
+        headers=auth_header(pp_token),
+        json={
+            "action": "approve",
+            "items": [
+                _decision(catalog, product="first", quantity=1000, rejected=True),
+                _decision(catalog, product="second", quantity=400, rejected=False),
+            ],
+        },
+    )
+    assert response.status_code == 400, response.text
+    detail = await client.get(
+        f"/api/v1/requests/{request_id}",
+        headers=auth_header(pp_token),
+    )
+    assert detail.json()["data"]["status"] == "pp_approved"
+    assert all(item["rejected"] is False for item in detail.json()["data"]["items"])
+    await delete_request(request_id)
+
+
+async def test_pp_line_reject_is_visible_and_economist_can_restore(
+    client: AsyncClient,
+    test_user: AuthUser,
+    pp_user: AuthUser,
+    economist_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    commercial_token = await login_token(client, test_user)
+    pp_token = await login_token(client, pp_user)
+    economist_token = await login_token(client, economist_user)
+    request_id = await _create_submitted(
+        client, commercial_token, items=_two_items(catalog)
+    )
+    pp_response = await client.post(
+        f"/api/v1/approvals/pp/{request_id}/action",
+        headers=auth_header(pp_token),
+        json={
+            "action": "approve",
+            "comment": "По первой позиции нет сырья",
+            "items": [
+                _decision(catalog, product="first", quantity=1000, rejected=True),
+                _decision(catalog, product="second", quantity=400, rejected=False),
+            ],
+        },
+    )
+    assert pp_response.status_code == 200, pp_response.text
+    assert pp_response.json()["data"]["status"] == "economy_check"
+
+    pending = await client.get(
+        "/api/v1/approvals/economy/pending",
+        headers=auth_header(economist_token),
+        params={"limit": 200},
+    )
+    row = next(item for item in pending.json()["data"] if item["id"] == request_id)
+    refused = next(
+        item for item in row["items"] if item["product_code"] == catalog["product_code"]
+    )
+    assert refused["rejected"] is True
+
+    economy = await client.post(
+        f"/api/v1/approvals/economy/{request_id}/action",
+        headers=auth_header(economist_token),
+        json={
+            "action": "approve",
+            "comment": "Возвращаем первую позицию",
+            "items": [
+                _decision(catalog, product="first", quantity=900, rejected=False),
+                _decision(catalog, product="second", quantity=400, rejected=False),
+            ],
+        },
+    )
+    assert economy.status_code == 200, economy.text
+    assert economy.json()["data"]["status"] == "active"
+
+    async with AsyncSessionLocal() as session:
+        normatives = (
+            await session.scalars(
+                select(Normative).where(
+                    Normative.request_id == request_id,
+                    Normative.deleted_at.is_(None),
+                )
+            )
+        ).all()
+        assert {item.product_code for item in normatives} == {
+            catalog["product_code"],
+            catalog["product_code_2"],
+        }
+        history = (
+            await session.scalars(
+                select(RequestItemHistory).where(
+                    RequestItemHistory.field_name == "rejected"
+                )
+            )
+        ).all()
+        changes = {(float(row.old_value), float(row.new_value)) for row in history}
+        assert (0, 1) in changes
+        assert (1, 0) in changes
+    await delete_request(request_id)
+
+
+async def test_rejected_line_skips_normative_but_previous_request_still_ends(
+    client: AsyncClient,
+    test_user: AuthUser,
+    pp_user: AuthUser,
+    economist_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    client_id = await ensure_client("ООО Отказ строки")
+    old_request_id = uuid4()
+    old_norm_id = uuid4()
+    old_expiry = Request.add_months(date.today(), 4)
+    request_id: str | None = None
+    try:
+        async with AsyncSessionLocal() as session:
+            session.add(
+                Request(
+                    id=old_request_id,
+                    request_type="normative",
+                    status="active",
+                    client_id=client_id,
+                    client_name="ООО Отказ строки",
+                    initiator_id=test_user.id,
+                    expiry_date=old_expiry,
+                )
+            )
+            session.add(
+                Normative(
+                    id=old_norm_id,
+                    request_id=old_request_id,
+                    product_code=catalog["product_code"],
+                    warehouse_code=catalog["warehouse_code"],
+                    quantity=Decimal("100"),
+                    unit="шт",
+                    client_id=client_id,
+                    client_name="ООО Отказ строки",
+                    expiry_date=old_expiry,
+                    valid_from=date.today() - timedelta(days=1),
+                    category="A",
+                )
+            )
+            await session.commit()
+
+        commercial_token = await login_token(client, test_user)
+        pp_token = await login_token(client, pp_user)
+        economist_token = await login_token(client, economist_user)
+        created = await client.post(
+            "/api/v1/requests",
+            headers=auth_header(commercial_token),
+            json={
+                "request_type": "normative",
+                "client_id": str(client_id),
+                "expiry_date": valid_expiry_date(),
+                "items": _two_items(catalog),
+                "comment": "Замена с отказом строки",
+            },
+        )
+        assert created.status_code == 201, created.text
+        request_id = created.json()["data"]["id"]
+        submitted = await client.post(
+            f"/api/v1/requests/{request_id}/submit",
+            headers=auth_header(commercial_token),
+            json={"auto_complete_previous": True},
+        )
+        assert submitted.status_code == 200, submitted.text
+        await _pp_approve(client, pp_token, request_id)
+        approved = await client.post(
+            f"/api/v1/approvals/economy/{request_id}/action",
+            headers=auth_header(economist_token),
+            json={
+                "action": "approve",
+                "comment": "Первую позицию не берём",
+                "items": [
+                    _decision(catalog, product="first", quantity=1000, rejected=True),
+                    _decision(catalog, product="second", quantity=400, rejected=False),
+                ],
+            },
+        )
+        assert approved.status_code == 200, approved.text
+        assert approved.json()["data"]["status"] == "active"
+
+        async with AsyncSessionLocal() as session:
+            created_normatives = (
+                await session.scalars(
+                    select(Normative).where(
+                        Normative.request_id == request_id,
+                        Normative.deleted_at.is_(None),
+                    )
+                )
+            ).all()
+            assert [item.product_code for item in created_normatives] == [
+                catalog["product_code_2"]
+            ]
+            old_norm = await session.get(Normative, old_norm_id)
+            old_request = await session.get(Request, old_request_id)
+            assert old_norm is not None and old_request is not None
+            assert old_norm.expiry_date == date.today()
+            assert old_request.expiry_date == date.today()
+            assert old_norm.deleted_at is None
+    finally:
+        if request_id is not None:
+            await delete_request(request_id)
+        await delete_request(old_request_id)
+
+
+async def test_rejecting_every_line_rejects_the_whole_request(
+    client: AsyncClient,
+    test_user: AuthUser,
+    pp_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    commercial_token = await login_token(client, test_user)
+    pp_token = await login_token(client, pp_user)
+    request_id = await _create_submitted(
+        client, commercial_token, items=_two_items(catalog)
+    )
+    response = await client.post(
+        f"/api/v1/approvals/pp/{request_id}/action",
+        headers=auth_header(pp_token),
+        json={
+            "action": "approve",
+            "comment": "Обе позиции не нужны",
+            "items": [
+                _decision(catalog, product="first", quantity=1000, rejected=True),
+                _decision(catalog, product="second", quantity=400, rejected=True),
+            ],
+        },
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["status"] == "rejected"
+    assert data["pp_action"] == "reject"
+    async with AsyncSessionLocal() as session:
+        normatives = (
+            await session.scalars(
+                select(Normative).where(Normative.request_id == request_id)
+            )
+        ).all()
+        assert normatives == []
+    await delete_request(request_id)
+
+
+async def test_one_time_rejected_line_is_hidden_from_logistics(
+    client: AsyncClient,
+    test_user: AuthUser,
+    pp_user: AuthUser,
+    economist_user: AuthUser,
+    logistics_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    commercial_token = await login_token(client, test_user)
+    pp_token = await login_token(client, pp_user)
+    economist_token = await login_token(client, economist_user)
+    logistics_token = await login_token(client, logistics_user)
+    request_id = await _create_submitted(
+        client,
+        commercial_token,
+        request_type="one_time",
+        expiry_date=None,
+        items=_two_items(catalog),
+        comment="Разовое с отказом строки",
+    )
+    await _pp_approve(client, pp_token, request_id)
+    approved = await client.post(
+        f"/api/v1/approvals/economy/{request_id}/action",
+        headers=auth_header(economist_token),
+        json={
+            "action": "approve",
+            "comment": "Вторую позицию не везём",
+            "items": [
+                _decision(catalog, product="first", quantity=1000, rejected=False),
+                _decision(catalog, product="second", quantity=400, rejected=True),
+            ],
+        },
+    )
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["data"]["status"] == "approved"
+
+    listed = await client.get(
+        "/api/v1/logistics/one-time/list",
+        headers=auth_header(logistics_token),
+        params={"limit": 200},
+    )
+    assert listed.status_code == 200, listed.text
+    row = next(item for item in listed.json()["data"] if item["id"] == request_id)
+    assert [item["product_code"] for item in row["items"]] == [catalog["product_code"]]
     await delete_request(request_id)

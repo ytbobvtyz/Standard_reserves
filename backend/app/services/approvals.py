@@ -83,6 +83,7 @@ def to_pending(
                 warehouse_name=item.warehouse.name,
                 quantity_requested=item.quantity_requested,
                 quantity_approved=item.quantity_approved,
+                rejected=bool(item.rejected),
                 unit=item.unit,
                 category=fields["category"],
                 category_factor=fields["category_factor"],
@@ -225,6 +226,18 @@ async def _apply_edits(
                 comment=comment,
             )
         )
+        if bool(item.rejected) != change.rejected:
+            db.add(
+                RequestItemHistory(
+                    request_item_id=item.id,
+                    field_name="rejected",
+                    old_value=Decimal(1 if item.rejected else 0),
+                    new_value=Decimal(1 if change.rejected else 0),
+                    changed_by=user.id,
+                    comment=comment,
+                )
+            )
+            item.rejected = change.rejected
         await db.flush()
 
 
@@ -309,6 +322,8 @@ async def _ensure_normatives(
     }
 
     for (prod_code, wh_code), item in items_by_key.items():
+        if item.rejected:
+            continue
         qty = _normative_quantity(item)
         category = (
             item.product.category.strip()
@@ -340,7 +355,8 @@ async def _ensure_normatives(
             )
 
     for (prod_code, wh_code), normative in existing_by_key.items():
-        if (prod_code, wh_code) not in items_by_key:
+        item = items_by_key.get((prod_code, wh_code))
+        if item is None or item.rejected:
             normative.deleted_at = now
 
 
@@ -380,32 +396,43 @@ async def apply_action(
         )
 
     now = datetime.now(UTC)
+    action = body.action
     try:
-        if body.action == "approve":
+        if action == "approve":
             if body.items:
                 await _apply_edits(db, request, body, user, comment)
             _fill_missing_approved_quantities(request)
-            comment = _apply_expiry_update(
-                request,
-                body.expiry_date,
-                comment,
-                restrict_decrease=(
-                    stage == "economy" and request.request_type == "normative"
-                ),
-            )
+            if any(item.rejected for item in request.items):
+                if comment is None:
+                    raise APIError(
+                        400,
+                        "VALIDATION_ERROR",
+                        "Комментарий обязателен при отказе позиции",
+                    )
+                if all(item.rejected for item in request.items):
+                    action = "reject"
+            if action == "approve":
+                comment = _apply_expiry_update(
+                    request,
+                    body.expiry_date,
+                    comment,
+                    restrict_decrease=(
+                        stage == "economy" and request.request_type == "normative"
+                    ),
+                )
 
-        request.status = _next_status(stage, body.action, request)
+        request.status = _next_status(stage, action, request)
         if stage == "pp":
-            request.pp_action = body.action
+            request.pp_action = action
             request.pp_approved_at = now
             request.pp_approver = user
             request.comment_pp = comment
         else:
-            request.economy_action = body.action
+            request.economy_action = action
             request.economy_approved_at = now
             request.economy_approver = user
             request.comment_economy = comment
-            if body.action == "approve":
+            if action == "approve":
                 request.approved_at = now
                 await db.flush()
                 approval_day = date.today()

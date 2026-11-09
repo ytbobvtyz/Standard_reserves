@@ -143,9 +143,9 @@ describe('ApprovalsPage', () => {
     expect(screen.getByRole('button', { name: 'Отказать' })).toBeTruthy()
 
     // Normative columns are present
-    expect(screen.getAllByText('Категория').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Удалённость').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Потребность').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Кат.').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Удал.').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Потр.').length).toBeGreaterThan(0)
 
     expect(screen.getAllByText('Покрытие').length).toBeGreaterThan(0)
     expect(screen.getByText('10,0 мес')).toBeTruthy()
@@ -196,13 +196,13 @@ describe('ApprovalsPage', () => {
     expect(screen.getAllByText('Название').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Склад').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Запрос').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Количество').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Кол-во').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Ед').length).toBeGreaterThan(0)
 
     // Coefficient and requirement columns must NOT be present
-    expect(screen.queryByText('Категория')).toBeNull()
-    expect(screen.queryByText('Удалённость')).toBeNull()
-    expect(screen.queryByText('Потребность')).toBeNull()
+    expect(screen.queryByText('Кат.')).toBeNull()
+    expect(screen.queryByText('Удал.')).toBeNull()
+    expect(screen.queryByText('Потр.')).toBeNull()
 
     expect(screen.getAllByText('Покрытие').length).toBeGreaterThan(0)
     expect(screen.getByText('2,0 мес')).toBeTruthy()
@@ -287,6 +287,7 @@ describe('ApprovalsPage', () => {
             product_code: 10001,
             warehouse_code: 2001,
             quantity_approved: 1000,
+            rejected: false,
           },
         ],
         expiry_date: '2026-12-31',
@@ -294,6 +295,42 @@ describe('ApprovalsPage', () => {
     })
     await waitFor(() => {
       expect(getPPPending).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  it('rejects one line and sends that decision with a comment', async () => {
+    render(
+      <MemoryRouter initialEntries={['/approvals/pp']}>
+        <ApprovalsPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByText("ООО 'Ромашка'")).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Отказ' }))
+    expect(screen.getByText('Отказ')).toBeTruthy()
+    expect(screen.getByText('Позиции не требуют разбора')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Утвердить' }))
+    expect(ppAction).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByPlaceholderText('Комментарий'), {
+      target: { value: 'Нет сырья' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Утвердить' }))
+    await waitFor(() => {
+      expect(ppAction).toHaveBeenCalledWith(pendingRequest.id, {
+        action: 'approve',
+        comment: 'Нет сырья',
+        items: [
+          {
+            product_code: 10001,
+            warehouse_code: 2001,
+            quantity_approved: 1000,
+            rejected: true,
+          },
+        ],
+        expiry_date: '2026-12-31',
+      })
     })
   })
 

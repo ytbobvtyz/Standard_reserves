@@ -53,6 +53,7 @@ const TYPE_LABEL: Record<RequestType, string> = {
 
 interface EditableItem extends ApprovalPendingItem {
   quantity_approved_input: number
+  rejected: boolean
 }
 
 interface ApprovalModalProps {
@@ -115,6 +116,7 @@ export function ApprovalModal({
       request.items.map((item) => ({
         ...item,
         quantity_approved_input: item.quantity_approved ?? item.quantity_requested,
+        rejected: Boolean(item.rejected),
       })),
     )
     if (request.request_type !== 'normative' || !request.client_id) {
@@ -200,9 +202,13 @@ export function ApprovalModal({
       return
     }
     if (action === 'approve') {
-      const invalid = editableItems.some((item) => item.quantity_approved_input <= 0)
-      if (invalid) {
+      const kept = editableItems.filter((item) => !item.rejected)
+      if (kept.some((item) => item.quantity_approved_input <= 0)) {
         message.error('Утвержденное количество должно быть больше 0')
+        return
+      }
+      if (editableItems.some((item) => item.rejected) && !comment.trim()) {
+        message.error('Комментарий обязателен при отказе позиции')
         return
       }
       if (isNormative && isExpiryTooSoon(expiryDate, request.created_at)) {
@@ -223,6 +229,7 @@ export function ApprovalModal({
       product_code: item.product_code,
       warehouse_code: item.warehouse_code,
       quantity_approved: item.quantity_approved_input,
+      rejected: item.rejected,
     }))
     const payload: ApprovalActionPayload =
       action === 'reject'
@@ -240,6 +247,7 @@ export function ApprovalModal({
 
   const reviewCount = request
     ? orderedItems.filter((item) =>
+        !item.rejected &&
         needsReview(
           coverageMonths(
             stockAfterApproval({
@@ -264,7 +272,7 @@ export function ApprovalModal({
       }
       open={Boolean(request)}
       onCancel={onCancel}
-      width={1100}
+      width="min(1000px, calc(100vw - 48px))"
       footer={
         <Space>
           <Button danger loading={submitting} onClick={() => void submitAction('reject')}>
@@ -281,7 +289,7 @@ export function ApprovalModal({
       }
     >
       {request ? (
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <Space direction="vertical" size="small" style={{ width: '100%' }}>
           <Typography.Text>
             Клиент: <Typography.Text strong>{request.client_name}</Typography.Text>
             {' · '}
@@ -297,7 +305,7 @@ export function ApprovalModal({
             <div>
               <Typography.Text>Срок действия</Typography.Text>
               <DatePicker
-                style={{ width: '100%', marginTop: 8 }}
+                style={{ width: '100%', marginTop: 4 }}
                 value={expiryDate}
                 disabledDate={(current) => {
                   if (!current) {
@@ -345,21 +353,24 @@ export function ApprovalModal({
             rowKey={(item) => `${item.product_code}-${item.warehouse_code}`}
             pagination={false}
             size="small"
+            tableLayout="fixed"
             dataSource={orderedItems}
-            scroll={{ x: 'max-content' }}
             columns={[
-              { title: 'Артикул', dataIndex: 'product_code', width: 100 },
-              { title: 'Название', dataIndex: 'product_name' },
-              { title: 'Склад', dataIndex: 'warehouse_name', width: 140 },
-              { title: 'Запрос', dataIndex: 'quantity_requested', width: 90 },
+              { title: 'Артикул', dataIndex: 'product_code', width: 72 },
+              { title: 'Название', dataIndex: 'product_name', ellipsis: true },
+              { title: 'Склад', dataIndex: 'warehouse_name', width: 96, ellipsis: true },
+              { title: 'Запрос', dataIndex: 'quantity_requested', width: 68 },
               {
-                title: 'Количество',
+                title: 'Кол-во',
                 dataIndex: 'quantity_approved_input',
-                width: 140,
+                width: 92,
                 render: (_value, record) => (
                   <InputNumber
+                    size="small"
+                    style={{ width: '100%' }}
                     min={record.unit === 'т' ? 0.000001 : 0.01}
                     precision={record.unit === 'т' ? 6 : undefined}
+                    disabled={record.rejected}
                     value={record.quantity_approved_input}
                     onChange={(value) => {
                       setEditableItems((current) =>
@@ -377,24 +388,53 @@ export function ApprovalModal({
                   />
                 ),
               },
-              { title: 'Ед', dataIndex: 'unit', width: 70 },
+              { title: 'Ед', dataIndex: 'unit', width: 36 },
+              {
+                width: 72,
+                render: (_: unknown, record: EditableItem) => (
+                  <Button
+                    type="link"
+                    size="small"
+                    danger={!record.rejected}
+                    style={{ padding: 0 }}
+                    onClick={() => {
+                      setEditableItems((current) =>
+                        current.map((item) =>
+                          item.product_code === record.product_code &&
+                          item.warehouse_code === record.warehouse_code
+                            ? { ...item, rejected: !item.rejected }
+                            : item,
+                        ),
+                      )
+                    }}
+                  >
+                    {record.rejected ? 'Вернуть' : 'Отказ'}
+                  </Button>
+                ),
+              },
               ...(isNormative
                 ? [
                     {
-                      title: 'Категория',
-                      width: 110,
-                      render: (_: unknown, record: EditableItem) =>
-                        categoryLabel(record.category),
+                      title: 'Кат.',
+                      width: 52,
+                      render: (_: unknown, record: EditableItem) => (
+                        <Tooltip title={categoryLabel(record.category)}>
+                          <span>{record.category?.trim() || '—'}</span>
+                        </Tooltip>
+                      ),
                     },
                     {
-                      title: 'Удалённость',
-                      width: 120,
-                      render: (_: unknown, record: EditableItem) =>
-                        distanceLabel(Boolean(record.long_distance)),
+                      title: 'Удал.',
+                      width: 56,
+                      render: (_: unknown, record: EditableItem) => (
+                        <Tooltip title={distanceLabel(Boolean(record.long_distance))}>
+                          <span>{record.long_distance ? 'Да' : 'Нет'}</span>
+                        </Tooltip>
+                      ),
                     },
                     {
-                      title: 'Потребность',
-                      width: 140,
+                      title: 'Потр.',
+                      width: 88,
                       render: (_: unknown, record: EditableItem) => {
                         const qty = record.quantity_approved_input
                         const requirement = calculateRequirement(
@@ -424,10 +464,13 @@ export function ApprovalModal({
                 : []),
               {
                 title: 'Покрытие',
-                width: 150,
+                width: 108,
                 render: (_: unknown, record: EditableItem) => {
                   if (!request) {
                     return null
+                  }
+                  if (record.rejected) {
+                    return <Tag color="error">Отказ</Tag>
                   }
                   const stock = stockAfterApproval({
                     requestType: request.request_type,

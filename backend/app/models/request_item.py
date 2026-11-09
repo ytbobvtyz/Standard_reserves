@@ -3,6 +3,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     ForeignKey,
     Index,
@@ -69,6 +70,11 @@ class RequestItem(TimestampMixin, Base):
     )
     quantity_requested: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
     quantity_approved: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))
+    rejected: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
     unit: Mapped[str] = mapped_column(String(10), nullable=False)
     comment: Mapped[str | None] = mapped_column(Text)
 

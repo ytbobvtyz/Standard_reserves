@@ -215,6 +215,7 @@ export interface RequestItemDetail {
   }
   quantity_requested: number
   quantity_approved: number | null
+  rejected?: boolean
   unit: Unit
   comment: string | null
   category_factor?: number
@@ -276,6 +277,7 @@ export interface ApprovalPendingItem {
   warehouse_name: string
   quantity_requested: number
   quantity_approved: number | null
+  rejected?: boolean
   unit: Unit
   category?: string
   category_factor?: number
@@ -309,6 +311,7 @@ export interface ApprovalActionPayload {
     product_code: number
     warehouse_code: number
     quantity_approved: number
+    rejected: boolean
   }>
   comment?: string
   expiry_date?: string

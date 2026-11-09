@@ -12,6 +12,7 @@ class ApprovalItemChange(BaseModel):
     product_code: int
     warehouse_code: int
     quantity_approved: DecimalNumber = Field(gt=0)
+    rejected: bool = False
 
 
 class ApprovalActionRequest(BaseModel):
@@ -38,6 +39,7 @@ class ApprovalPendingItem(BaseModel):
     warehouse_name: str
     quantity_requested: DecimalNumber
     quantity_approved: DecimalNumber | None = None
+    rejected: bool = False
     unit: str
     category: str
     category_factor: DecimalNumber

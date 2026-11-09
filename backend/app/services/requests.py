@@ -224,6 +224,7 @@ def _item_created(
         warehouse_code=item.warehouse_code,
         quantity_requested=item.quantity_requested,
         quantity_approved=item.quantity_approved,
+        rejected=bool(item.rejected),
         unit=item.unit,
         comment=item.comment,
         category=fields["category"],
@@ -387,6 +388,7 @@ def to_detail(request: Request, coeffs: CoefficientSet | None = None) -> Request
                 ),
                 quantity_requested=item.quantity_requested,
                 quantity_approved=item.quantity_approved,
+                rejected=bool(item.rejected),
                 unit=item.unit,
                 comment=item.comment,
                 category_factor=fields["category_factor"],
@@ -682,7 +684,7 @@ def build_requests_export_xlsx(requests: list[Request]) -> bytes:
         for item in item_rows:
             product = item.product if item is not None else None
             warehouse = item.warehouse if item is not None else None
-            approved = item.quantity_approved if item is not None else None
+            approved = None if item is None or item.rejected else item.quantity_approved
             sheet.append(
                 [
                     str(request.id),

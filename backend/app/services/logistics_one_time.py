@@ -47,6 +47,7 @@ def to_list_item(request: Request) -> OneTimeListItem:
                 unit=item.unit,
             )
             for item in request.items
+            if not item.rejected
         ],
         created_at=request.created_at,
         order_number=request.order_number,
@@ -82,6 +83,7 @@ def build_list_query(
                 select(RequestItem.id).where(
                     RequestItem.request_id == Request.id,
                     RequestItem.warehouse_code == warehouse_code,
+                    RequestItem.rejected.is_(False),
                 )
             )
         )
@@ -233,6 +235,8 @@ async def export_one_time_excel(db: AsyncSession, request_id: UUID) -> bytes:
     )
     initiator_name = request.initiator.full_name if request.initiator else ""
     for item in request.items:
+        if item.rejected:
+            continue
         sheet.append(
             [
                 item.product_code,
