@@ -24,6 +24,12 @@ const pendingRequest: ApprovalPendingRequest = {
       quantity_requested: 1000,
       quantity_approved: null,
       unit: 'шт',
+      coverage: {
+        existing_nz: null,
+        monthly_sales: 100,
+        warehouse_monthly_sales: 2000,
+        product_monthly_sales: 5000,
+      },
     },
   ],
   expiry_date: '2026-12-31',
@@ -34,6 +40,26 @@ const getPPPending = vi.fn()
 const ppAction = vi.fn()
 const getEconomyPending = vi.fn()
 const economyAction = vi.fn()
+
+vi.mock('../api/references', () => ({
+  referencesApi: {
+    getParams: () =>
+      Promise.resolve({
+        data: {
+          status: 'success',
+          data: {
+            category_a: 1,
+            category_b: 1.5,
+            category_c: 2,
+            remote_warehouse: 1.5,
+            pallet_multiple: false,
+            coverage_high_months: 2,
+            coverage_low_months: 4,
+          },
+        },
+      }),
+  },
+}))
 
 vi.mock('../api/approvals', () => ({
   approvalsApi: {
@@ -117,9 +143,13 @@ describe('ApprovalsPage', () => {
     expect(screen.getByRole('button', { name: 'Отказать' })).toBeTruthy()
 
     // Normative columns are present
-    expect(screen.getByText('Категория')).toBeTruthy()
-    expect(screen.getByText('Удалённость')).toBeTruthy()
-    expect(screen.getByText('Потребность')).toBeTruthy()
+    expect(screen.getAllByText('Категория').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Удалённость').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Потребность').length).toBeGreaterThan(0)
+
+    expect(screen.getAllByText('Покрытие').length).toBeGreaterThan(0)
+    expect(screen.getByText('10,0 мес')).toBeTruthy()
+    expect(screen.getByText('1 из 1 позиций требуют разбора')).toBeTruthy()
   })
 
   it('hides category, distance and requirement columns for one-time requests in modal', async () => {
@@ -128,6 +158,18 @@ describe('ApprovalsPage', () => {
       id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
       request_type: 'one_time',
       expiry_date: null,
+      items: [
+        {
+          ...pendingRequest.items[0],
+          unit: 'т',
+          coverage: {
+            existing_nz: 5,
+            monthly_sales: 500,
+            warehouse_monthly_sales: 500,
+            product_monthly_sales: 500,
+          },
+        },
+      ],
     }
     getPPPending.mockResolvedValue({
       data: {
@@ -150,17 +192,21 @@ describe('ApprovalsPage', () => {
     expect(screen.getByText(/Согласование запроса №bbbbbbbb/)).toBeTruthy()
 
     // Base columns must be present
-    expect(screen.getByText('Артикул')).toBeTruthy()
-    expect(screen.getByText('Название')).toBeTruthy()
-    expect(screen.getByText('Склад')).toBeTruthy()
-    expect(screen.getByText('Запрос')).toBeTruthy()
-    expect(screen.getByText('Количество')).toBeTruthy()
-    expect(screen.getByText('Ед')).toBeTruthy()
+    expect(screen.getAllByText('Артикул').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Название').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Склад').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Запрос').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Количество').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Ед').length).toBeGreaterThan(0)
 
     // Coefficient and requirement columns must NOT be present
     expect(screen.queryByText('Категория')).toBeNull()
     expect(screen.queryByText('Удалённость')).toBeNull()
     expect(screen.queryByText('Потребность')).toBeNull()
+
+    expect(screen.getAllByText('Покрытие').length).toBeGreaterThan(0)
+    expect(screen.getByText('2,0 мес')).toBeTruthy()
+    expect(screen.getByText('Позиции не требуют разбора')).toBeTruthy()
   })
 
   it('shows decrease-only expiry hint for economist', async () => {
@@ -194,6 +240,8 @@ describe('ApprovalsPage', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'Открыть' }))
     expect(screen.getByText('Срок действия')).toBeTruthy()
+    expect(screen.getAllByText('Покрытие').length).toBeGreaterThan(0)
+    expect(screen.getByText('1 из 1 позиций требуют разбора')).toBeTruthy()
     expect(
       screen.getByText(
         'Срок можно только уменьшить: не раньше 3 месяцев от даты создания и не позже текущей даты',

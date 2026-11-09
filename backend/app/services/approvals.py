@@ -18,6 +18,7 @@ from app.schemas.approval import (
     ApprovalActionRequest,
     ApprovalActionResult,
     ApprovalActorBrief,
+    ApprovalItemCoverage,
     ApprovalPendingItem,
     ApprovalPendingRequest,
 )
@@ -26,6 +27,7 @@ from app.schemas.request import (
     validate_expiry_date_limit,
 )
 from app.schemas.user import UserBrief
+from app.services.approval_reference import ReferenceKey, load_item_references
 from app.services.coefficients import CoefficientSet, item_coefficient_fields
 from app.services.normative_dates import complete_overlapping_requests
 from app.services.requests import load_request
@@ -49,9 +51,25 @@ def _actor_brief(user: User | None) -> ApprovalActorBrief | None:
     return ApprovalActorBrief(id=user.id, full_name=user.full_name)
 
 
+def _reference_key(request: Request, item: RequestItem) -> ReferenceKey:
+    weight = Decimal("0")
+    if item.product is not None:
+        weight = item.product.weight_kg
+    return ReferenceKey(
+        client_id=request.client_id,
+        product_code=item.product_code,
+        warehouse_code=item.warehouse_code,
+        unit=item.unit,
+        weight_kg=weight,
+    )
+
+
 def to_pending(
-    request: Request, coeffs: CoefficientSet | None = None
+    request: Request,
+    coeffs: CoefficientSet | None = None,
+    references: dict[ReferenceKey, ApprovalItemCoverage] | None = None,
 ) -> ApprovalPendingRequest:
+    loaded = references or {}
     return ApprovalPendingRequest(
         id=request.id,
         request_type=request.request_type,
@@ -71,6 +89,10 @@ def to_pending(
                 long_distance=fields["long_distance"],
                 distance_factor=fields["distance_factor"],
                 requirement=fields["requirement"],
+                coverage=loaded.get(
+                    _reference_key(request, item),
+                    ApprovalItemCoverage(),
+                ),
             )
             for item in request.items
             for fields in [
@@ -91,6 +113,18 @@ def to_pending(
         client_id=request.client_id,
         auto_complete_previous=request.auto_complete_previous,
     )
+
+
+async def pending_views(
+    db: AsyncSession,
+    requests: list[Request],
+    coeffs: CoefficientSet | None = None,
+) -> list[ApprovalPendingRequest]:
+    keys = [
+        _reference_key(request, item) for request in requests for item in request.items
+    ]
+    references = await load_item_references(db, keys)
+    return [to_pending(request, coeffs, references) for request in requests]
 
 
 def to_action_result(request: Request) -> ApprovalActionResult:

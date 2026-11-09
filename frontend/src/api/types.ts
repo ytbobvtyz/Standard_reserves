@@ -262,6 +262,13 @@ export interface RequestStatusData {
 
 export type ApprovalAction = 'approve' | 'reject'
 
+export interface ApprovalItemCoverage {
+  existing_nz: number | null
+  monthly_sales: number | null
+  warehouse_monthly_sales: number | null
+  product_monthly_sales: number | null
+}
+
 export interface ApprovalPendingItem {
   product_code: number
   product_name: string
@@ -275,6 +282,7 @@ export interface ApprovalPendingItem {
   long_distance?: boolean
   distance_factor?: number
   requirement?: number
+  coverage?: ApprovalItemCoverage
 }
 
 export interface OverlappingRequestRef {
@@ -902,6 +910,8 @@ export interface SystemParams {
   category_c: number
   remote_warehouse: number
   pallet_multiple: boolean
+  coverage_high_months: number
+  coverage_low_months: number
   last_modified_by?: {
     id: string
     username: string
@@ -916,6 +926,8 @@ export interface SystemParamsUpdate {
   category_c: number
   remote_warehouse: number
   pallet_multiple: boolean
+  coverage_high_months: number
+  coverage_low_months: number
 }
 
 export type DashboardGroupBy = 'day' | 'week' | 'month'

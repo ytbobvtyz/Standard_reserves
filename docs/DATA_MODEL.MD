@@ -268,6 +268,8 @@ erDiagram
         decimal category_c "коэф. категории C, 1–3 шаг 0,1"
         decimal remote_warehouse "коэф. удалённого склада, 1–3 шаг 0,1"
         boolean pallet_multiple "запросы кратно паллетной норме"
+        decimal coverage_high_months "высокая оборачиваемость, мес., по умолчанию 2"
+        decimal coverage_low_months "требует разбора свыше, мес., по умолчанию 4"
         uuid last_modified_by FK "кто изменил"
         timestamp last_modified_at "когда изменили"
         timestamp created_at
@@ -844,6 +846,9 @@ category	CHAR(1)	✅	A/B/C
 created_at	TIMESTAMP	✅	Дата создания
 updated_at	TIMESTAMP	✅	Дата обновления
 deleted_at	TIMESTAMP	❌	Дата удаления (soft delete)
+
+Список согласования читает действующие строки этой таблицы пакетом, не по одной позиции. Действующая строка: `deleted_at IS NULL`, `expiry_date >= CURRENT_DATE`, коммерческая `valid_from <= CURRENT_DATE` либо партия Excel с `production_requests.valid_from <= CURRENT_DATE` (`status = active`, партия не удалена). В покрытие позиции входит сумма по клиенту, артикулу и складу. Формула — в API, раздел 4.1.
+
 5.2. available_balances — Остатки ERP
 Загружается из двух Excel ERP: «Доступные остатки» и «Перемещения». Все количества пишутся в килограммах, `unit` = `кг`.
 
@@ -959,7 +964,7 @@ updated_at	TIMESTAMP	✅	Дата обновления записи (по умо
 При загрузке двух Excel: для складов из файла «Доступные остатки» старые строки `available_balances` удаляются, затем вставляются строки файла, к ним суммируются «Перемещения», `plan` пересчитывается. Пара из «Перемещений», которой нет в файле остатков, создаётся с нулевыми `full_stock`, `available` и `on_way`. Параллельно за текущую дату UTC перезаписывается снимок `available_balances_history` по складам из файла остатков (`full_stock`, `available`, `plan`). Склад, которого нет в файле остатков, целиком не заменяется: обновляются только позиции из файла перемещений. После этого обновляются `last_balances_sync_at` и `last_balances_sync_by`. Если проверка файлов не пройдена, запись не начинается.
 
 5.3.1. params — Глобальные коэффициенты и настройки
-Singleton-таблица (ровно одна строка, `id = 1`). Хранит коэффициенты потребности и флаг паллетной кратности. Потребность на дашборде считается на лету: `количество × коэф. категории × коэф. удалённости` (для неудалённого склада множитель удалённости = 1).
+Singleton-таблица (ровно одна строка, `id = 1`). Хранит коэффициенты потребности, флаг паллетной кратности и границы покрытия запаса. Потребность на дашборде считается на лету: `количество × коэф. категории × коэф. удалённости` (для неудалённого склада множитель удалённости = 1). Покрытие в окне согласования считается отдельно и коэффициенты не использует.
 
 sql
 CREATE TABLE params (
@@ -969,6 +974,8 @@ CREATE TABLE params (
     category_c DECIMAL(3,1) NOT NULL DEFAULT 2.0 CHECK (category_c >= 1 AND category_c <= 3),
     remote_warehouse DECIMAL(3,1) NOT NULL DEFAULT 1.5 CHECK (remote_warehouse >= 1 AND remote_warehouse <= 3),
     pallet_multiple BOOLEAN NOT NULL DEFAULT false,
+    coverage_high_months DECIMAL(4,1) NOT NULL DEFAULT 2.0 CHECK (coverage_high_months > 0 AND coverage_high_months <= 36),
+    coverage_low_months DECIMAL(4,1) NOT NULL DEFAULT 4.0 CHECK (coverage_low_months > coverage_high_months AND coverage_low_months <= 36),
     last_modified_by UUID REFERENCES users(id),
     last_modified_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -978,7 +985,7 @@ CREATE TABLE params (
 CREATE INDEX idx_params_last_modified_by ON params(last_modified_by);
 INSERT INTO params (id) VALUES (1);
 
-Значения коэффициентов — от 1 до 3 с шагом 0,1. Если `pallet_multiple = true`, при создании и правке черновика запроса коммерсантом/логистом `quantity_requested` округляется вверх до кратного поддонной норме: для `шт` шаг = `pallet_qty` (или 1 шт, если норма не задана); для `т` количество переводится в штуки через `weight_kg` (1 т = 1000 кг), округляется вверх до целых поддонов и переводится обратно в тонны. Согласующие могут менять количество свободно.
+Значения коэффициентов — от 1 до 3 с шагом 0,1. Если `pallet_multiple = true`, при создании и правке черновика запроса коммерсантом/логистом `quantity_requested` округляется вверх до кратного поддонной норме: для `шт` шаг = `pallet_qty` (или 1 шт, если норма не задана); для `т` количество переводится в штуки через `weight_kg` (1 т = 1000 кг), округляется вверх до целых поддонов и переводится обратно в тонны. Согласующие могут менять количество свободно. `coverage_high_months` и `coverage_low_months` задают границы покрытия в месяцах: от 0,1 до 36, шаг 0,1, вторая строго больше первой. По умолчанию 2 и 4. Меняет их логист на странице параметров.
 
 5.4. production_requests — Партии загрузки нормативов (Excel)
 
@@ -1118,6 +1125,8 @@ uploaded_by	UUID	❌	Кто подтвердил загрузку → users.id
 created_at	TIMESTAMP	✅	Дата создания
 updated_at	TIMESTAMP	✅	Дата обновления
 deleted_at	TIMESTAMP	❌	Soft delete (в списке скрыто)
+
+Окно согласования считает по этой таблице среднемесячную реализацию за предыдущие 6 календарных месяцев (текущий месяц не входит), тем же правилом, что расчёт оптимального запаса. Паллетный порог не применяется. Склад берётся из активного неудалённого `objects.loading_point`. В покрытие входят три среза: клиент + артикул + склад, артикул + склад по всем клиентам, артикул по всем таким складам. Формулы и перевод в единицу позиции — в API, раздел 4.1.
 
 5.7. Аналитика запасов — чтение без новой таблицы
 
@@ -1565,6 +1574,9 @@ EXECUTE FUNCTION trigger_create_normative();
 | 27 | `0027_actual_shipments.py` | Фактическая реализация `actual_shipments` |
 | 28 | `0028_actual_shipments_loading_point.py` | `actual_shipments.loading_point` |
 | 29 | `0029_balance_extended_fields.py` | `available_balances`: full_stock, on_way, no_ready, ready, collected, unit `кг`; `available_balances_history.full_stock` |
+| 30 | `0030_auto_complete_previous.py` | `requests.auto_complete_previous` |
+| 31 | `0031_normative_valid_from.py` | `normatives.valid_from` |
+| 32 | `0032_coverage_months.py` | `params.coverage_high_months`, `params.coverage_low_months` |
 
 Начальные пользователи и объекты заполняются скриптом `backend/scripts/seed_data.py`, а не миграцией.
 
@@ -1647,6 +1659,7 @@ GROUP BY warehouse_code, product_code;
 Таблица available_balances_history	✅ Дневной снимок при каждой загрузке остатков
 Таблица actual_shipments	✅ Фактическая реализация, Excel с предпросмотром
 Аналитика запасов	✅ Чтение normatives, available_balances_history и actual_shipments, без новой таблицы (LOG-054)
+Покрытие в согласовании	✅ Два групповых чтения `normatives` и `actual_shipments`; месяцы считаются в интерфейсе, границы — в `params` (LOG-055)
 Таблица events	✅ Создана (задел под агента)
 Таблица request_item_history	✅ История изменений
 Функция expire_normatives()	✅ Нужна с первого дня
@@ -1659,6 +1672,6 @@ mv_normative_daily	✅ Ежедневная агрегация действую�
 
 Полные DDL — в разделах 5.4 и 5.5. Кратко: партия Excel создаёт `production_requests` + `production_request_items` и активные `normatives` с `request_id IS NULL`. Удаление партии каскадно снимает позиции и нормативы. Миграция: `0017_production_requests.py`.
 
-Версия: 2.13
-Дата: 30.10.2026
+Версия: 2.15
+Дата: 09.11.2026
 Статус: Утверждена

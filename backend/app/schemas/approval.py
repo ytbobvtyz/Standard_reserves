@@ -24,6 +24,13 @@ class ApprovalActionRequest(BaseModel):
     )
 
 
+class ApprovalItemCoverage(BaseModel):
+    existing_nz: DecimalNumber | None = None
+    monthly_sales: DecimalNumber | None = None
+    warehouse_monthly_sales: DecimalNumber | None = None
+    product_monthly_sales: DecimalNumber | None = None
+
+
 class ApprovalPendingItem(BaseModel):
     product_code: int
     product_name: str
@@ -37,6 +44,7 @@ class ApprovalPendingItem(BaseModel):
     long_distance: bool = False
     distance_factor: DecimalNumber
     requirement: DecimalNumber
+    coverage: ApprovalItemCoverage = Field(default_factory=ApprovalItemCoverage)
 
 
 class ApprovalPendingRequest(BaseModel):

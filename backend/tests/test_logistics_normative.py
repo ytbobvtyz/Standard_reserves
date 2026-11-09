@@ -281,6 +281,8 @@ async def test_dashboard_requirement_recalculates_after_coeff_change(
             "category_c": 2,
             "remote_warehouse": 1.5,
             "pallet_multiple": False,
+            "coverage_high_months": 2,
+            "coverage_low_months": 4,
         },
     )
     assert updated.status_code == 200, updated.text

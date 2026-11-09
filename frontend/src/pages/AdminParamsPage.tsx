@@ -21,6 +21,8 @@ interface ParamsForm {
   category_c: number
   remote_warehouse: number
   pallet_multiple: boolean
+  coverage_high_months: number
+  coverage_low_months: number
 }
 
 const COEFF_CONFIRM =
@@ -53,6 +55,8 @@ export function AdminParamsPage() {
         category_c: Number(params.category_c),
         remote_warehouse: Number(params.remote_warehouse),
         pallet_multiple: params.pallet_multiple,
+        coverage_high_months: Number(params.coverage_high_months),
+        coverage_low_months: Number(params.coverage_low_months),
       })
     } catch (err) {
       message.error(getApiErrorMessage(err, 'Не удалось загрузить параметры'))
@@ -136,6 +140,40 @@ export function AdminParamsPage() {
             valuePropName="checked"
           >
             <Switch />
+          </Form.Item>
+          <Typography.Title level={5}>Покрытие запаса</Typography.Title>
+          <Typography.Paragraph type="secondary">
+            До первой границы включительно оборачиваемость высокая, разбор не нужен.
+            Между границами запас обычный. Свыше второй границы и при отсутствии
+            реализации строка требует разбора.
+          </Typography.Paragraph>
+          <Form.Item
+            name="coverage_high_months"
+            label="Высокая оборачиваемость, до (мес.)"
+            rules={[{ required: true, message: 'Укажите границу' }]}
+          >
+            <InputNumber min={0.1} max={36} step={0.1} precision={1} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item
+            name="coverage_low_months"
+            label="Требует разбора, свыше (мес.)"
+            dependencies={['coverage_high_months']}
+            rules={[
+              { required: true, message: 'Укажите границу' },
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  const high = Number(getFieldValue('coverage_high_months'))
+                  if (value == null || Number(value) > high) {
+                    return Promise.resolve()
+                  }
+                  return Promise.reject(
+                    new Error('Должно быть больше границы высокой оборачиваемости'),
+                  )
+                },
+              }),
+            ]}
+          >
+            <InputNumber min={0.1} max={36} step={0.1} precision={1} style={{ width: '100%' }} />
           </Form.Item>
           <Typography.Paragraph type="secondary">
             Последнее изменение:{' '}

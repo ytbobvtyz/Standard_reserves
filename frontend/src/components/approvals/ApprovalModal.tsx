@@ -1,7 +1,8 @@
-import { Button, DatePicker, Input, InputNumber, Modal, Space, Table, Tooltip, Typography, message } from 'antd'
+import { Button, DatePicker, Input, InputNumber, Modal, Space, Table, Tag, Tooltip, Typography, message } from 'antd'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { referencesApi } from '../../api/references'
 import { requestsApi } from '../../api/requests'
 import type { OverlappingRequestRef } from '../../api/types'
 import { OverlappingNormativesNotice } from '../requests/OverlappingNormatives'
@@ -24,6 +25,19 @@ import {
   maxExpiryDate,
   minExpiryDate,
 } from '../../utils/expiryDate'
+import { formatQuantity } from '../../utils/quantity'
+import {
+  DEFAULT_COVERAGE_THRESHOLDS,
+  compareCoverageRows,
+  coverageContext,
+  coverageLevel,
+  coverageMonths,
+  coverageSummary,
+  formatCoverage,
+  needsReview,
+  stockAfterApproval,
+  type CoverageThresholds,
+} from '../../utils/coverage'
 import {
   calculateRequirement,
   categoryLabel,
@@ -60,6 +74,32 @@ export function ApprovalModal({
   const [comment, setComment] = useState('')
   const [expiryDate, setExpiryDate] = useState<Dayjs | null>(null)
   const [overlaps, setOverlaps] = useState<OverlappingRequestRef[]>([])
+  const [thresholds, setThresholds] = useState<CoverageThresholds>(
+    DEFAULT_COVERAGE_THRESHOLDS,
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    void referencesApi
+      .getParams()
+      .then(({ data }) => {
+        if (cancelled) {
+          return
+        }
+        setThresholds({
+          highMonths: Number(data.data.coverage_high_months),
+          lowMonths: Number(data.data.coverage_low_months),
+        })
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setThresholds(DEFAULT_COVERAGE_THRESHOLDS)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     if (!request) {
@@ -112,6 +152,45 @@ export function ApprovalModal({
   const minDate = minExpiryDate(request?.created_at)
   const currentExpiry = request?.expiry_date
 
+  const rowOrder = useMemo(() => {
+    if (!request) {
+      return []
+    }
+    const monthsOf = (item: ApprovalPendingItem) =>
+      coverageMonths(
+        stockAfterApproval({
+          requestType: request.request_type,
+          autoComplete: Boolean(request.auto_complete_previous),
+          quantity: item.quantity_approved ?? item.quantity_requested,
+          existingNz: item.coverage?.existing_nz ?? null,
+        }),
+        item.coverage?.monthly_sales ?? null,
+      )
+    return [...request.items]
+      .sort((left, right) =>
+        compareCoverageRows(monthsOf(left), monthsOf(right), thresholds),
+      )
+      .map((item) => `${item.product_code}-${item.warehouse_code}`)
+  }, [request, thresholds])
+
+  const orderedItems = useMemo(() => {
+    const byKey = new Map(
+      editableItems.map((item) => [
+        `${item.product_code}-${item.warehouse_code}`,
+        item,
+      ]),
+    )
+    const seen = new Set(rowOrder)
+    return [
+      ...rowOrder
+        .map((key) => byKey.get(key))
+        .filter((item): item is EditableItem => item != null),
+      ...editableItems.filter(
+        (item) => !seen.has(`${item.product_code}-${item.warehouse_code}`),
+      ),
+    ]
+  }, [editableItems, rowOrder])
+
   const submitAction = async (action: ApprovalAction) => {
     if (!request) {
       return
@@ -158,6 +237,23 @@ export function ApprovalModal({
 
     await onSubmit(payload)
   }
+
+  const reviewCount = request
+    ? orderedItems.filter((item) =>
+        needsReview(
+          coverageMonths(
+            stockAfterApproval({
+              requestType: request.request_type,
+              autoComplete: Boolean(request.auto_complete_previous),
+              quantity: item.quantity_approved_input,
+              existingNz: item.coverage?.existing_nz ?? null,
+            }),
+            item.coverage?.monthly_sales ?? null,
+          ),
+          thresholds,
+        ),
+      ).length
+    : 0
 
   return (
     <Modal
@@ -242,11 +338,15 @@ export function ApprovalModal({
               ) : null}
             </div>
           ) : null}
+          <Typography.Text type={reviewCount > 0 ? 'danger' : 'secondary'}>
+            {coverageSummary(reviewCount, orderedItems.length)}
+          </Typography.Text>
           <Table
             rowKey={(item) => `${item.product_code}-${item.warehouse_code}`}
             pagination={false}
             size="small"
-            dataSource={editableItems}
+            dataSource={orderedItems}
+            scroll={{ x: 'max-content' }}
             columns={[
               { title: 'Артикул', dataIndex: 'product_code', width: 100 },
               { title: 'Название', dataIndex: 'product_name' },
@@ -256,15 +356,16 @@ export function ApprovalModal({
                 title: 'Количество',
                 dataIndex: 'quantity_approved_input',
                 width: 140,
-                render: (_value, record, index) => (
+                render: (_value, record) => (
                   <InputNumber
                     min={record.unit === 'т' ? 0.000001 : 0.01}
                     precision={record.unit === 'т' ? 6 : undefined}
                     value={record.quantity_approved_input}
                     onChange={(value) => {
                       setEditableItems((current) =>
-                        current.map((item, itemIndex) =>
-                          itemIndex === index
+                        current.map((item) =>
+                          item.product_code === record.product_code &&
+                          item.warehouse_code === record.warehouse_code
                             ? {
                                 ...item,
                                 quantity_approved_input: Number(value ?? 0),
@@ -321,6 +422,65 @@ export function ApprovalModal({
                     },
                   ]
                 : []),
+              {
+                title: 'Покрытие',
+                width: 150,
+                render: (_: unknown, record: EditableItem) => {
+                  if (!request) {
+                    return null
+                  }
+                  const stock = stockAfterApproval({
+                    requestType: request.request_type,
+                    autoComplete: Boolean(request.auto_complete_previous),
+                    quantity: record.quantity_approved_input,
+                    existingNz: record.coverage?.existing_nz ?? null,
+                  })
+                  const sales = record.coverage?.monthly_sales ?? null
+                  const months = coverageMonths(stock, sales)
+                  const level = coverageLevel(months, thresholds)
+                  const lines = [
+                    sales == null
+                      ? 'Реализации клиента по этому артикулу со склада нет.'
+                      : `Реализация ${formatQuantity(sales, record.unit)} ${record.unit}/мес.`,
+                  ]
+                  if (request.request_type === 'one_time') {
+                    lines.push(
+                      `Перемещение ${formatQuantity(record.quantity_approved_input, record.unit)} ${record.unit}.`,
+                    )
+                  } else if (!request.auto_complete_previous) {
+                    lines.push(
+                      `Действующий норматив ${formatQuantity(record.coverage?.existing_nz, record.unit)} ${record.unit}. После утверждения ${formatQuantity(stock, record.unit)} ${record.unit}.`,
+                    )
+                  } else {
+                    lines.push(
+                      `После утверждения ${formatQuantity(stock, record.unit)} ${record.unit}.`,
+                    )
+                  }
+                  const extra = coverageContext({
+                    stock,
+                    monthlySales: sales,
+                    warehouseMonthlySales:
+                      record.coverage?.warehouse_monthly_sales ?? null,
+                    productMonthlySales:
+                      record.coverage?.product_monthly_sales ?? null,
+                    thresholds,
+                  })
+                  if (extra) {
+                    lines.push(extra)
+                  }
+                  const label = formatCoverage(months)
+                  const marked = level === 'high' || level === 'low' || level === 'none'
+                  return (
+                    <Tooltip title={lines.join(' ')}>
+                      {marked ? (
+                        <Tag color={level === 'high' ? 'success' : 'error'}>{label}</Tag>
+                      ) : (
+                        <span>{label}</span>
+                      )}
+                    </Tooltip>
+                  )
+                },
+              },
             ]}
           />
           <Input.TextArea

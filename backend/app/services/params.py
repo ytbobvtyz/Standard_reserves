@@ -8,7 +8,13 @@ from sqlalchemy.orm import selectinload
 
 from app.models.params import Params
 from app.models.user import User
-from app.schemas.params import ParamsLastModifiedBy, ParamsResponse, ParamsUpdate
+from app.schemas.params import (
+    DEFAULT_COVERAGE_HIGH_MONTHS,
+    DEFAULT_COVERAGE_LOW_MONTHS,
+    ParamsLastModifiedBy,
+    ParamsResponse,
+    ParamsUpdate,
+)
 from app.services.coefficients import DEFAULT_COEFFICIENTS, CoefficientSet
 
 
@@ -20,6 +26,8 @@ def _defaults_row() -> Params:
         category_c=DEFAULT_COEFFICIENTS.category_c,
         remote_warehouse=DEFAULT_COEFFICIENTS.remote_warehouse,
         pallet_multiple=False,
+        coverage_high_months=DEFAULT_COVERAGE_HIGH_MONTHS,
+        coverage_low_months=DEFAULT_COVERAGE_LOW_MONTHS,
     )
 
 
@@ -64,6 +72,8 @@ def to_response(row: Params) -> ParamsResponse:
         category_c=row.category_c,
         remote_warehouse=row.remote_warehouse,
         pallet_multiple=bool(row.pallet_multiple),
+        coverage_high_months=row.coverage_high_months,
+        coverage_low_months=row.coverage_low_months,
         last_modified_by=(
             None if user is None else ParamsLastModifiedBy.model_validate(user)
         ),
@@ -99,6 +109,8 @@ async def update_params(
     row.category_c = body.category_c
     row.remote_warehouse = body.remote_warehouse
     row.pallet_multiple = body.pallet_multiple
+    row.coverage_high_months = body.coverage_high_months
+    row.coverage_low_months = body.coverage_low_months
     row.last_modified_by = user_id
     row.last_modified_at = datetime.now(UTC)
     row.updated_at = datetime.now(UTC)
@@ -110,6 +122,8 @@ async def update_params(
         category_c=row.category_c,
         remote_warehouse=row.remote_warehouse,
         pallet_multiple=bool(row.pallet_multiple),
+        coverage_high_months=row.coverage_high_months,
+        coverage_low_months=row.coverage_low_months,
         last_modified_by=(
             None if user is None else ParamsLastModifiedBy.model_validate(user)
         ),

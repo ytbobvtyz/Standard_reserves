@@ -559,17 +559,33 @@ async def db_ready() -> AsyncGenerator[None, None]:
         await connection.execute(text("""
                 DO $$
                 BEGIN
+                    ALTER TABLE params
+                        ADD COLUMN IF NOT EXISTS coverage_high_months
+                        NUMERIC(4,1) NOT NULL DEFAULT 2.0;
+                    ALTER TABLE params
+                        ADD COLUMN IF NOT EXISTS coverage_low_months
+                        NUMERIC(4,1) NOT NULL DEFAULT 4.0;
+                EXCEPTION
+                    WHEN undefined_table THEN NULL;
+                END $$;
+                """))
+        await connection.execute(text("""
+                DO $$
+                BEGIN
                     UPDATE params
                     SET category_a = 1.0,
                         category_b = 1.5,
                         category_c = 2.0,
                         remote_warehouse = 1.5,
                         pallet_multiple = false,
+                        coverage_high_months = 2.0,
+                        coverage_low_months = 4.0,
                         last_modified_by = NULL,
                         last_modified_at = NULL
                     WHERE id = 1;
                 EXCEPTION
                     WHEN undefined_table THEN NULL;
+                    WHEN undefined_column THEN NULL;
                 END $$;
                 """))
     yield

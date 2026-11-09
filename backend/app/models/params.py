@@ -44,6 +44,15 @@ class Params(Base):
             "remote_warehouse >= 1 AND remote_warehouse <= 3",
             name="ck_params_remote_warehouse_range",
         ),
+        CheckConstraint(
+            "coverage_high_months > 0 AND coverage_high_months <= 36",
+            name="ck_params_coverage_high",
+        ),
+        CheckConstraint(
+            "coverage_low_months > coverage_high_months "
+            "AND coverage_low_months <= 36",
+            name="ck_params_coverage_low",
+        ),
         Index("idx_params_last_modified_by", "last_modified_by"),
     )
 
@@ -77,6 +86,16 @@ class Params(Base):
         Boolean,
         nullable=False,
         server_default=text("false"),
+    )
+    coverage_high_months: Mapped[Decimal] = mapped_column(
+        Numeric(4, 1),
+        nullable=False,
+        server_default=text("2.0"),
+    )
+    coverage_low_months: Mapped[Decimal] = mapped_column(
+        Numeric(4, 1),
+        nullable=False,
+        server_default=text("4.0"),
     )
     last_modified_by: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),

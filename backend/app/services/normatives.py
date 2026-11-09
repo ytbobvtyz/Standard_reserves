@@ -8,7 +8,7 @@ from uuid import UUID
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
-from sqlalchemy import String, cast, exists, func, or_, select
+from sqlalchemy import String, and_, cast, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -108,6 +108,15 @@ def _valid_on_condition(on_date: date):
     return or_(
         commercial_active_on(on_date),
         _production_valid_from_condition(on_date),
+    )
+
+
+def normative_active_on(on_date: date):
+    """Commercial and Excel rows that are in force on on_date."""
+    return and_(
+        Normative.deleted_at.is_(None),
+        Normative.expiry_date >= on_date,
+        _valid_on_condition(on_date),
     )
 
 

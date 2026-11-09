@@ -10,6 +10,8 @@ const params: SystemParams = {
   category_c: 2,
   remote_warehouse: 1.5,
   pallet_multiple: false,
+  coverage_high_months: 2,
+  coverage_low_months: 4,
   last_modified_by: {
     id: '44444444-4444-4444-4444-444444444444',
     username: 'logistics',
@@ -54,6 +56,8 @@ describe('AdminParamsPage', () => {
     expect(screen.getByText('Категория C')).toBeTruthy()
     expect(screen.getByText('Удалённые склады')).toBeTruthy()
     expect(screen.getByText('Запросы кратно паллетной норме')).toBeTruthy()
+    expect(screen.getByText('Высокая оборачиваемость, до (мес.)')).toBeTruthy()
+    expect(screen.getByText('Требует разбора, свыше (мес.)')).toBeTruthy()
     expect(screen.getByText(/logistics/)).toBeTruthy()
     expect(getParams).toHaveBeenCalled()
   })

@@ -3,6 +3,20 @@ from httpx import AsyncClient
 from tests.conftest import AuthUser, auth_header, login_token
 
 
+def _params_body(**overrides: object) -> dict:
+    body: dict = {
+        "category_a": 1,
+        "category_b": 1.5,
+        "category_c": 2,
+        "remote_warehouse": 1.5,
+        "pallet_multiple": False,
+        "coverage_high_months": 2,
+        "coverage_low_months": 4,
+    }
+    body.update(overrides)
+    return body
+
+
 async def test_get_params_authenticated(
     client: AsyncClient, test_user: AuthUser
 ) -> None:
@@ -15,6 +29,8 @@ async def test_get_params_authenticated(
     assert data["category_c"] == 2
     assert data["remote_warehouse"] == 1.5
     assert data["pallet_multiple"] is False
+    assert data["coverage_high_months"] == 2
+    assert data["coverage_low_months"] == 4
 
 
 async def test_admin_params_forbidden_for_commercial(
@@ -24,13 +40,7 @@ async def test_admin_params_forbidden_for_commercial(
     response = await client.put(
         "/api/v1/admin/params",
         headers=auth_header(token),
-        json={
-            "category_a": 1,
-            "category_b": 1.5,
-            "category_c": 2,
-            "remote_warehouse": 1.5,
-            "pallet_multiple": True,
-        },
+        json=_params_body(pallet_multiple=True),
     )
     assert response.status_code == 403
 
@@ -42,28 +52,30 @@ async def test_update_params_validation(
     too_high = await client.put(
         "/api/v1/admin/params",
         headers=auth_header(token),
-        json={
-            "category_a": 3.1,
-            "category_b": 1.5,
-            "category_c": 2,
-            "remote_warehouse": 1.5,
-            "pallet_multiple": False,
-        },
+        json=_params_body(category_a=3.1),
     )
     assert too_high.status_code == 422
 
     bad_step = await client.put(
         "/api/v1/admin/params",
         headers=auth_header(token),
-        json={
-            "category_a": 1.15,
-            "category_b": 1.5,
-            "category_c": 2,
-            "remote_warehouse": 1.5,
-            "pallet_multiple": False,
-        },
+        json=_params_body(category_a=1.15),
     )
     assert bad_step.status_code == 422
+
+    inverted = await client.put(
+        "/api/v1/admin/params",
+        headers=auth_header(token),
+        json=_params_body(coverage_high_months=4, coverage_low_months=2),
+    )
+    assert inverted.status_code == 422
+
+    equal_bounds = await client.put(
+        "/api/v1/admin/params",
+        headers=auth_header(token),
+        json=_params_body(coverage_high_months=4, coverage_low_months=4),
+    )
+    assert equal_bounds.status_code == 422
 
 
 async def test_update_params_saves_user_and_timestamp(
@@ -73,13 +85,15 @@ async def test_update_params_saves_user_and_timestamp(
     response = await client.put(
         "/api/v1/admin/params",
         headers=auth_header(token),
-        json={
-            "category_a": 1.2,
-            "category_b": 1.6,
-            "category_c": 2.1,
-            "remote_warehouse": 1.8,
-            "pallet_multiple": True,
-        },
+        json=_params_body(
+            category_a=1.2,
+            category_b=1.6,
+            category_c=2.1,
+            remote_warehouse=1.8,
+            pallet_multiple=True,
+            coverage_high_months=1.5,
+            coverage_low_months=6,
+        ),
     )
     assert response.status_code == 200, response.text
     data = response.json()["data"]
@@ -88,6 +102,8 @@ async def test_update_params_saves_user_and_timestamp(
     assert data["category_c"] == 2.1
     assert data["remote_warehouse"] == 1.8
     assert data["pallet_multiple"] is True
+    assert data["coverage_high_months"] == 1.5
+    assert data["coverage_low_months"] == 6
     assert data["last_modified_by"]["id"] == str(logistics_user.id)
     assert data["last_modified_by"]["username"] == logistics_user.username
     assert data["last_modified_at"] is not None
