@@ -24,15 +24,15 @@ from app.schemas.common import (
 from app.services import admin_users as admin_users_service
 
 router = APIRouter(prefix="/admin", tags=["Администрирование"])
-LOGISTICS_ONLY = require_roles("logistics")
+LOGISTICS_ONLY = require_roles("logistics", "admin")
 
 
 @router.get("/users", response_model=PaginatedResponse[list[UserResponse]])
 async def list_users(
     search: str | None = Query(default=None),
-    role: Literal["commercial", "pp", "economist", "logistics", "guest"] | None = Query(
-        default=None
-    ),
+    role: (
+        Literal["commercial", "pp", "economist", "logistics", "admin", "guest"] | None
+    ) = Query(default=None),
     department_id: UUID | None = Query(default=None),
     is_active: bool | None = Query(default=None),
     deleted: bool | None = Query(default=None),

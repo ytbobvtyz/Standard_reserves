@@ -16,6 +16,7 @@ import { getApiErrorMessage } from '../api/client'
 import type { RequestListItem, RequestStatus, RequestType } from '../api/types'
 import { RequestCard } from '../components/requests/RequestCard'
 import { useAuthStore } from '../stores/auth'
+import { hasLogisticsAccess } from '../utils/roles'
 import { downloadBlob, filenameFromContentDisposition } from '../utils/download'
 import { canDeleteByStatus } from '../utils/requestActions'
 
@@ -33,9 +34,9 @@ const STATUS_OPTIONS: Array<{ value: RequestStatus; label: string }> = [
 export function MyRequestsPage() {
   const navigate = useNavigate()
   const user = useAuthStore((state) => state.user)
-  const canCreate = user?.role === 'commercial' || user?.role === 'logistics'
+  const canCreate = user?.role === 'commercial' || hasLogisticsAccess(user?.role)
   const title =
-    user?.role === 'pp' || user?.role === 'economist' || user?.role === 'logistics'
+    user?.role === 'pp' || user?.role === 'economist' || hasLogisticsAccess(user?.role)
       ? 'Запросы'
       : 'Мои запросы'
 
@@ -51,7 +52,7 @@ export function MyRequestsPage() {
   const [selectingAll, setSelectingAll] = useState(false)
   const selectionRequest = useRef(0)
   const limit = 10
-  const canExport = user?.role === 'commercial' || user?.role === 'logistics'
+  const canExport = user?.role === 'commercial' || hasLogisticsAccess(user?.role)
   const allSelected = total > 0 && selectedIds.length >= total
   const someSelected = selectedIds.length > 0 && !allSelected
 

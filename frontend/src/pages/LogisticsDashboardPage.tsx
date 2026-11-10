@@ -37,6 +37,7 @@ import { FilterToggle } from '../components/logistics/FilterToggle'
 import { OrderPreviewModal } from '../components/logistics/OrderPreviewModal'
 import { UnitToggle } from '../components/logistics/UnitToggle'
 import { useAuthStore } from '../stores/auth'
+import { hasLogisticsAccess } from '../utils/roles'
 import { downloadBlob, filenameFromContentDisposition } from '../utils/download'
 import { formatShortName } from '../utils/format'
 import { categoryFactor, formatFactor, type CoefficientParams } from '../utils/requirement'
@@ -326,7 +327,7 @@ function formatSyncAt(value: string): string {
 export function LogisticsDashboardPage() {
   const navigate = useNavigate()
   const user = useAuthStore((state) => state.user)
-  const canManage = user?.role === 'logistics'
+  const canManage = hasLogisticsAccess(user?.role)
   const [unit, setUnit] = useState<Unit>('т')
   const [filterMode, setFilterMode] = useState<FilterMode>('all')
   const [warehouseCode, setWarehouseCode] = useState<number | undefined>()

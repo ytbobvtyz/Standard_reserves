@@ -6,6 +6,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.core.database import AsyncSessionLocal
+from app.models.event import Event
 from app.models.normative import Normative
 from app.models.request import Request
 from app.models.request_item import RequestItem
@@ -1056,6 +1057,17 @@ async def test_active_expiry_can_be_reduced(
             )
         ).one()
         assert normative.expiry_date.isoformat() == new_expiry
+        event = (
+            await session.scalars(
+                select(Event).where(
+                    Event.request_id == request_id,
+                    Event.event_type == "request_expiry_changed",
+                )
+            )
+        ).one()
+        assert event.details["old_expiry_date"] == valid_expiry_date(3)
+        assert event.details["expiry_date"] == new_expiry
+        assert event.details["label"] == "Запрос (ООО Ромашка)"
     await delete_request(request_id)
 
 

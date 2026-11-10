@@ -7,6 +7,8 @@ import type {
   ApiSuccess,
   DepartmentListItem,
   PasswordResetData,
+  AuditEvent,
+  AuditQuery,
   SystemParams,
   SystemParamsUpdate,
 } from './types'
@@ -44,4 +46,7 @@ export const adminApi = {
 
   updateParams: (data: SystemParamsUpdate) =>
     api.put<ApiSuccess<SystemParams>>('/admin/params', data),
+
+  getAudit: (params: AuditQuery) =>
+    api.get<ApiSuccess<AuditEvent[]>>('/admin/audit', { params }),
 }

@@ -29,6 +29,7 @@ from app.schemas.production_request import (
     ProductionRequestUploadResult,
 )
 from app.schemas.user import UserBrief
+from app.services.activity import record_activity
 from app.services.clients import resolve_production_client, system_client
 
 HEADERS = (
@@ -531,6 +532,20 @@ async def upload_batch(
             )
         )
 
+    record_activity(
+        db,
+        event_type="production_request_uploaded",
+        user=user,
+        entity_type="upload",
+        entity_id=batch.id,
+        label=filename,
+        details={
+            "filename": filename,
+            "imported": len(valid_rows),
+            "valid_from": options.valid_from.isoformat(),
+            "valid_to": options.valid_to.isoformat(),
+        },
+    )
     await db.commit()
     loaded = await _load_batch(db, batch.id)
     message = f"Загружено {len(valid_rows)} строк из {parsed_file.total_rows}"

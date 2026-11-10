@@ -37,7 +37,7 @@ import { useAuthStore } from '../stores/auth'
 import { downloadBlob, filenameFromContentDisposition } from '../utils/download'
 import { formatDateTime } from '../utils/format'
 
-const PRODUCT_MANAGERS = new Set(['pp', 'economist', 'logistics'])
+const PRODUCT_MANAGERS = new Set(['pp', 'economist', 'logistics', 'admin'])
 
 export function ProductsPage() {
   const navigate = useNavigate()

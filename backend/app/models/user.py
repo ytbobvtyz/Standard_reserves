@@ -17,6 +17,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, SoftDeleteMixin, TimestampMixin
 
+USER_ROLES = ("commercial", "pp", "economist", "logistics", "admin", "guest")
+_ROLE_SQL = "role IN (" + ", ".join(f"'{role}'" for role in USER_ROLES) + ")"
+
 if TYPE_CHECKING:
     from app.models.audit_log import AuditLog
     from app.models.department import Department
@@ -33,10 +36,7 @@ if TYPE_CHECKING:
 class User(TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "users"
     __table_args__ = (
-        CheckConstraint(
-            "role IN ('commercial', 'pp', 'economist', 'logistics', 'guest')",
-            name="ck_users_role",
-        ),
+        CheckConstraint(_ROLE_SQL, name="ck_users_role"),
         Index("idx_users_username", "username"),
         Index("idx_users_email", "email"),
         Index("idx_users_role", "role"),

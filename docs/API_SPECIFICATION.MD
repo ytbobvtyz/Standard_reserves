@@ -591,7 +591,7 @@ Headers:
 
 text
 Authorization: Bearer <token>
-Условия: только нормативный запрос в статусе `active`. Гость (`guest`) не может изменять срок. Новое значение: ≥ `CURRENT_DATE` и ≤ текущей `expiry_date` (только уменьшение). Связанные записи `normatives` обновляются тем же сроком.
+Условия: только нормативный запрос в статусе `active`. Гость (`guest`) не может изменять срок. Новое значение: ≥ `CURRENT_DATE` и ≤ текущей `expiry_date` (только уменьшение). Связанные записи `normatives` обновляются тем же сроком. Если дата изменилась, в журнал пишется `request_expiry_changed` (`details.old_expiry_date`, `details.expiry_date`).
 
 Request:
 
@@ -2631,23 +2631,24 @@ json
 }
 9. АДМИНИСТРИРОВАНИЕ ПОЛЬЗОВАТЕЛЕЙ
 
-Управление учётными записями и подразделениями — роль `logistics`. Все эндпоинты защищены `require_roles("logistics")`.
+Управление учётными записями и подразделениями — роли `logistics` и `admin`. `admin` добавляется в те же `require_roles`, где уже есть `logistics`: отдельной матрицы прав нет, согласование ПП и экономиста администратору не передаётся. Журнал действий — только `admin`.
 
 | Метод | Эндпоинт | Описание | Права |
 |-------|----------|----------|-------|
-| GET | `/admin/users` | Список пользователей (с фильтрами) | `logistics` |
-| POST | `/admin/users` | Создать пользователя | `logistics` |
-| GET | `/admin/users/{id}` | Получить пользователя для редактирования | `logistics` |
-| PUT | `/admin/users/{id}` | Обновить пользователя | `logistics` |
-| DELETE | `/admin/users/{id}` | Удалить пользователя (soft delete) | `logistics` |
-| POST | `/admin/users/{id}/reset-password` | Сбросить пароль | `logistics` |
-| GET | `/admin/departments` | Список подразделений | `logistics` |
-| POST | `/admin/departments` | Создать подразделение | `logistics` |
-| PUT | `/admin/departments/{id}` | Переименовать подразделение | `logistics` |
-| DELETE | `/admin/departments/{id}` | Удалить подразделение (soft delete) | `logistics` |
+| GET | `/admin/users` | Список пользователей (с фильтрами) | `logistics`, `admin` |
+| POST | `/admin/users` | Создать пользователя | `logistics`, `admin` |
+| GET | `/admin/users/{id}` | Получить пользователя для редактирования | `logistics`, `admin` |
+| PUT | `/admin/users/{id}` | Обновить пользователя | `logistics`, `admin` |
+| DELETE | `/admin/users/{id}` | Удалить пользователя (soft delete) | `logistics`, `admin` |
+| POST | `/admin/users/{id}/reset-password` | Сбросить пароль | `logistics`, `admin` |
+| GET | `/admin/departments` | Список подразделений | `logistics`, `admin` |
+| POST | `/admin/departments` | Создать подразделение | `logistics`, `admin` |
+| PUT | `/admin/departments/{id}` | Переименовать подразделение | `logistics`, `admin` |
+| DELETE | `/admin/departments/{id}` | Удалить подразделение (soft delete) | `logistics`, `admin` |
+| GET | `/admin/audit` | Журнал действий | `admin` |
 | GET | `/params` | Текущие коэффициенты и настройки | все авторизованные |
-| GET | `/admin/params` | Текущие коэффициенты (админ) | `logistics` |
-| PUT | `/admin/params` | Обновить коэффициенты и настройки | `logistics` |
+| GET | `/admin/params` | Текущие коэффициенты (админ) | `logistics`, `admin` |
+| PUT | `/admin/params` | Обновить коэффициенты и настройки | `logistics`, `admin` |
 
 9.1. Список пользователей
 text
@@ -2863,7 +2864,7 @@ json
 text
 GET /params
 GET /admin/params
-Права: GET `/params` — все авторизованные; GET/PUT `/admin/params` — только logistics.
+Права: GET `/params` — все авторизованные; GET/PUT `/admin/params` — `logistics` и `admin`.
 
 Response (200):
 
@@ -2888,6 +2889,41 @@ json
 }
 
 PUT /admin/params — тело: `category_a`, `category_b`, `category_c`, `remote_warehouse` (1–3, шаг 0,1), `pallet_multiple` (boolean), `coverage_high_months` и `coverage_low_months` (0,1–36, шаг 0,1, вторая граница строго больше первой). При сохранении обновляются `last_modified_by` и `last_modified_at`. Невалидный шаг, диапазон или порядок границ — 422. Потребность на дашборде пересчитывается сразу из новых коэффициентов. При `pallet_multiple = true` новые запросы коммерсанта/логиста принимаются только кратно поддонной норме (округление вверх на создании/правке черновика). Границы покрытия читает окно согласования через `GET /params`.
+
+9.12. Журнал действий
+text
+GET /admin/audit
+Права: только `admin`. Остальные роли, включая `logistics`, — 403 FORBIDDEN.
+
+Query (обязательные `date_from`, `date_to`, формат `YYYY-MM-DD`, границы включительно, UTC):
+
+`user_id`, `event_type`, `entity_type` — необязательные точные фильтры. `request_number` — необязательный номер запроса: первые символы UUID (как на карточке, обычно 8), с `№` или без. События без этого запроса в выборку не входят. `page` (с 1), `limit` (по умолчанию 50, максимум 200).
+
+`entity_label` приходит с бэкенда из `details.label`. Для продукта и объекта `entity_id` пустой, код — в `details.code`.
+
+Response (200):
+
+json
+{
+    "status": "success",
+    "data": [
+        {
+            "id": "uuid",
+            "created_at": "2026-11-10T14:32:05Z",
+            "user": {
+                "id": "uuid",
+                "full_name": "Иванов И.",
+                "role": "commercial"
+            },
+            "event_type": "request_created",
+            "entity_type": "request",
+            "entity_id": "uuid",
+            "entity_label": "Запрос (ООО Ромашка)",
+            "details": {}
+        }
+    ],
+    "meta": { "page": 1, "limit": 50, "total": 1234 }
+}
 
 10. УПРАВЛЕНИЕ ОСТАТКАМИ
 На MVP загрузка остатков выполняется двумя Excel через `POST /logistics/normative/preview` и `POST /logistics/normative/upload` (доступные остатки и перемещения). Эндпоинты `/inventory/*` **не реализованы**.
@@ -2942,11 +2978,11 @@ json
 Справочники объекты	list, create, get, edit, put, delete	6
 Справочники пользователи	/references/users	1
 Справочники подразделения	/references/departments	1
-Администрирование	/admin/users, /admin/users/{id}, reset-password, /admin/departments	10
+Администрирование	/admin/users, /admin/users/{id}, reset-password, /admin/departments, /admin/audit	11
 Партии нормативов	/production-requests, template, upload, dates, delete	5
 Дашборд нормативов	/dashboard/summary, normative-trend, exceptions, warehouse-coverage, expiry-calendar	5
 Аналитика запасов	/analytics/stock-dynamics, /analytics/stock-dynamics/bounds, /analytics/stock-summary, /analytics/filters	4
-ИТОГО реализовано		77
+ИТОГО реализовано		78
 Не реализовано (задел)	/inventory/*, /tariffs/*, /agent/*, /auth/register	—
 14.2. Ролевой доступ
 Роль	Доступные эндпоинты
@@ -2954,7 +2990,8 @@ guest	Просмотр справочников, нормативов, дашб�
 commercial	Создание запросов (нормативные + разовые), просмотр своих запросов, дашборд нормативов, аналитика запасов, просмотр логистики, снимков остатков и фактической реализации (только чтение)
 pp	Согласование (ПП), просмотр всех запросов, CRUD продуктов, Excel-загрузка, просмотр логистики, управление партиями нормативов, дашборд нормативов, аналитика запасов, загрузка фактической реализации
 economist	Согласование (экономист), просмотр всех запросов, CRUD продуктов, Excel-загрузка, просмотр логистики, управление партиями нормативов, дашборд нормативов, аналитика запасов, загрузка фактической реализации
-logistics	Дашборд нормативов, аналитика запасов, дашборд логиста, формирование заказов, исполнение разовых, выгрузка Excel, выгрузка разнарядок B2B (ZIP), загрузка остатков, CRUD продуктов и объектов, управление партиями нормативов, администрирование пользователей и подразделений (`/admin/*`), загрузка фактической реализации
+logistics	Дашборд нормативов, аналитика запасов, дашборд логиста, формирование заказов, исполнение разовых, выгрузка Excel, выгрузка разнарядок B2B (ZIP), загрузка остатков, CRUD продуктов и объектов, управление партиями нормативов, администрирование пользователей и подразделений (`/admin/*` кроме `/admin/audit`), загрузка фактической реализации
+admin	Все эндпоинты роли `logistics`, плюс `GET /admin/audit`. Согласование ПП и экономиста недоступно
 15. ПРИМЕР ПОЛНОГО FLOW
 15.1. Нормативный запас — полный цикл
 text

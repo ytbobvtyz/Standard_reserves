@@ -21,7 +21,7 @@ from app.schemas.production_request import (
 from app.services import production_requests as service
 
 router = APIRouter(prefix="/production-requests", tags=["Производственные запросы"])
-MANAGE_PRODUCTION_REQUESTS = require_roles("logistics", "economist", "pp")
+MANAGE_PRODUCTION_REQUESTS = require_roles("logistics", "economist", "pp", "admin")
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024
 
 

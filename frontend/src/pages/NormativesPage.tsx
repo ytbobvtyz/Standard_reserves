@@ -22,6 +22,7 @@ import { referencesApi } from '../api/references'
 import type { DepartmentListItem, NormativeOnDateItem, ObjectListItem, Unit } from '../api/types'
 import { ProductionRequestsTab } from '../components/normatives/ProductionRequestsTab'
 import { useAuthStore } from '../stores/auth'
+import { hasLogisticsAccess } from '../utils/roles'
 import { downloadBlob, filenameFromContentDisposition } from '../utils/download'
 
 interface NormativeRow {
@@ -202,7 +203,7 @@ export function NormativesPage() {
   ]
 
   const canManageBatches =
-    user?.role === 'logistics' || user?.role === 'economist' || user?.role === 'pp'
+    hasLogisticsAccess(user?.role) || user?.role === 'economist' || user?.role === 'pp'
 
   const exportExcel = async () => {
     setExporting(true)

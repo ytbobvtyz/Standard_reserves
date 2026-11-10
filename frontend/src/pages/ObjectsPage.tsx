@@ -25,6 +25,7 @@ import type {
   ObjectUpdatePayload,
 } from '../api/types'
 import { useAuthStore } from '../stores/auth'
+import { hasLogisticsAccess } from '../utils/roles'
 import { formatDateTime } from '../utils/format'
 
 const TYPE_LABEL: Record<ObjectType, string> = {
@@ -121,7 +122,7 @@ function erpFields(type?: ObjectType) {
 
 export function ObjectsPage() {
   const user = useAuthStore((state) => state.user)
-  const canManage = user?.role === 'logistics'
+  const canManage = hasLogisticsAccess(user?.role)
 
   const [items, setItems] = useState<ObjectListItem[]>([])
   const [total, setTotal] = useState(0)

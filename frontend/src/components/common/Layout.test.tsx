@@ -4,12 +4,17 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { AppLayout } from './Layout'
 import { useAuthStore } from '../../stores/auth'
 
-function renderLayout(role: 'logistics' | 'commercial') {
+function renderLayout(role: 'logistics' | 'commercial' | 'admin') {
   useAuthStore.setState({
     user: {
-      id: role === 'logistics' ? '4444' : '1111',
+      id: role === 'logistics' ? '4444' : role === 'admin' ? '6666' : '1111',
       username: role,
-      full_name: role === 'logistics' ? 'Кузнецов Кузьма' : 'Иванов Иван',
+      full_name:
+        role === 'logistics'
+          ? 'Кузнецов Кузьма'
+          : role === 'admin'
+            ? 'Администратор'
+            : 'Иванов Иван',
       role,
     },
     token: 'token',
@@ -44,6 +49,14 @@ describe('AppLayout admin menu', () => {
     expect(screen.getByText('Подразделения')).toBeTruthy()
     expect(screen.getByText('Клиенты')).toBeTruthy()
     expect(screen.getByText('История доступных остатков')).toBeTruthy()
+    expect(screen.queryByText('Журнал действий')).toBeNull()
+  })
+
+  it('shows the audit journal only for admin', () => {
+    renderLayout('admin')
+    expect(screen.getByText('Администрирование')).toBeTruthy()
+    expect(screen.getByText('Журнал действий')).toBeTruthy()
+    expect(screen.getByText('Создать запрос')).toBeTruthy()
   })
 
   it('hides administration item for commercial', () => {

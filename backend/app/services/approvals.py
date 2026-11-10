@@ -27,6 +27,7 @@ from app.schemas.request import (
     validate_expiry_date_limit,
 )
 from app.schemas.user import UserBrief
+from app.services.activity import record_request_activity
 from app.services.approval_reference import ReferenceKey, load_item_references
 from app.services.coefficients import CoefficientSet, item_coefficient_fields
 from app.services.normative_dates import complete_overlapping_requests
@@ -445,6 +446,13 @@ async def apply_action(
                         db, request, on_date=approval_day
                     )
 
+        record_request_activity(
+            db,
+            event_type="request_rejected" if action == "reject" else "request_approved",
+            user=user,
+            request=request,
+            details={"stage": stage, "action": action},
+        )
         await db.commit()
     except APIError:
         await db.rollback()

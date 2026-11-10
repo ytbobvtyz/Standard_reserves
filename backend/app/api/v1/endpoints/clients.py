@@ -16,10 +16,11 @@ from app.schemas.client import (
 )
 from app.schemas.common import MessageResponse, PaginatedResponse, SuccessResponse
 from app.services import clients as service
+from app.services.activity import commit_activity
 
 router = APIRouter(prefix="/references/clients", tags=["Справочники"])
-CLIENT_EDITORS = require_roles("commercial", "logistics", "pp", "economist")
-LOGISTICS = require_roles("logistics")
+CLIENT_EDITORS = require_roles("commercial", "logistics", "pp", "economist", "admin")
+LOGISTICS = require_roles("logistics", "admin")
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024
 
 
@@ -62,10 +63,18 @@ async def download_template(
 
 @router.get("/export")
 async def export_clients(
-    _user: User = Depends(LOGISTICS),
+    user: User = Depends(LOGISTICS),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     content = await service.export_clients_xlsx(db)
+    await commit_activity(
+        db,
+        event_type="export_generated",
+        user=user,
+        entity_type="client",
+        label="Экспорт клиентов",
+        details={"kind": "clients"},
+    )
     return Response(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -97,14 +106,14 @@ async def preview_clients(
 )
 async def upload_clients(
     file: UploadFile = File(...),
-    _user: User = Depends(LOGISTICS),
+    user: User = Depends(LOGISTICS),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[ClientUploadResult]:
     content = await file.read()
     if len(content) > MAX_UPLOAD_SIZE:
         raise APIError(400, "INVALID_FILE", "Размер файла не должен превышать 10 МБ")
     data = await service.upload_clients_xlsx(
-        db, content, file.filename or "clients.xlsx"
+        db, content, file.filename or "clients.xlsx", user
     )
     return SuccessResponse(data=data)
 
@@ -136,17 +145,17 @@ async def create_client(
 async def update_client(
     client_id: UUID,
     body: ClientUpdate,
-    _user: User = Depends(LOGISTICS),
+    user: User = Depends(LOGISTICS),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[ClientListItem]:
-    return SuccessResponse(data=await service.update_client(db, client_id, body))
+    return SuccessResponse(data=await service.update_client(db, client_id, body, user))
 
 
 @router.delete("/{client_id}", response_model=MessageResponse)
 async def delete_client(
     client_id: UUID,
-    _user: User = Depends(LOGISTICS),
+    user: User = Depends(LOGISTICS),
     db: AsyncSession = Depends(get_db),
 ) -> MessageResponse:
-    await service.delete_client(db, client_id)
+    await service.delete_client(db, client_id, user)
     return MessageResponse(message="Клиент удалён")

@@ -24,6 +24,7 @@ from app.schemas.actual_shipments import (
     ActualShipmentPreviewRow,
     ActualShipmentUploadResult,
 )
+from app.services.activity import record_activity
 
 PREVIEW_LIMIT = 50
 WEIGHT_UNIT = "кг"
@@ -535,6 +536,14 @@ async def upload_shipments(
                     uploaded_by=user_id,
                 )
             )
+        record_activity(
+            db,
+            event_type="actual_shipments_uploaded",
+            user_id=user_id,
+            entity_type="upload",
+            label="Загрузка реализации",
+            details={"filename": filename, "inserted": len(valid)},
+        )
         await db.commit()
         inserted = len(valid)
 

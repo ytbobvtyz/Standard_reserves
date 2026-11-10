@@ -1,4 +1,10 @@
-export type UserRole = 'commercial' | 'pp' | 'economist' | 'logistics' | 'guest'
+export type UserRole =
+  | 'commercial'
+  | 'pp'
+  | 'economist'
+  | 'logistics'
+  | 'admin'
+  | 'guest'
 
 export type RequestType = 'normative' | 'one_time'
 export type RequestStatus =
@@ -905,6 +911,34 @@ export interface AdminUserUpdatePayload {
 
 export interface PasswordResetData {
   new_password: string
+}
+
+export interface AuditEventUser {
+  id: string
+  full_name: string
+  role: UserRole
+}
+
+export interface AuditEvent {
+  id: string
+  created_at: string
+  user: AuditEventUser | null
+  event_type: string
+  entity_type: string | null
+  entity_id: string | null
+  entity_label: string | null
+  details: Record<string, unknown>
+}
+
+export interface AuditQuery {
+  date_from: string
+  date_to: string
+  user_id?: string
+  event_type?: string
+  entity_type?: string
+  request_number?: string
+  page?: number
+  limit?: number
 }
 
 export interface SystemParams {

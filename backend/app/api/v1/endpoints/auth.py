@@ -27,6 +27,7 @@ from app.schemas.auth import (
 )
 from app.schemas.common import MessageResponse, SuccessResponse
 from app.schemas.user import ChangePasswordRequest, UserBrief, UserProfile
+from app.services.activity import record_activity
 
 router = APIRouter(prefix="/auth", tags=["Аутентификация"])
 
@@ -169,6 +170,15 @@ async def change_password(
         )
 
     current_user.password_hash = hash_password(body.new_password)
+    record_activity(
+        db,
+        event_type="password_changed",
+        user=current_user,
+        entity_type="user",
+        entity_id=current_user.id,
+        label=f"{current_user.full_name} ({current_user.username})",
+        details={"username": current_user.username, "source": "self"},
+    )
     await db.execute(
         update(Session)
         .where(Session.user_id == current_user.id, Session.revoked_at.is_(None))

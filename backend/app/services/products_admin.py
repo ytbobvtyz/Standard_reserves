@@ -27,6 +27,7 @@ from app.schemas.reference import (
     ProductUploadError,
     ProductUploadResult,
 )
+from app.services.activity import record_activity
 from app.services.audit import add_audit_log
 from app.services.references import to_product_detail
 
@@ -336,6 +337,14 @@ async def update_product(
         entity_id=str(code),
         payload={"before": before},
     )
+    record_activity(
+        db,
+        event_type="product_updated",
+        user=user,
+        entity_type="product",
+        label=f"{product.name} ({code})",
+        details={"code": code, "name": product.name},
+    )
     await db.commit()
     db.expire_all()
     updated = await _load_product(db, code)
@@ -378,6 +387,14 @@ async def delete_product(db: AsyncSession, code: int, user: User) -> None:
         action="delete",
         entity_id=str(code),
         payload={"name": product.name},
+    )
+    record_activity(
+        db,
+        event_type="product_deleted",
+        user=user,
+        entity_type="product",
+        label=f"{product.name} ({code})",
+        details={"code": code, "name": product.name},
     )
     await db.commit()
 
@@ -573,6 +590,30 @@ async def upload_products(
             "filename": filename,
         },
     )
+    upload_details = {
+        "filename": filename,
+        "created": created,
+        "updated": updated,
+        "source": "excel",
+    }
+    if created:
+        record_activity(
+            db,
+            event_type="product_created",
+            user=user,
+            entity_type="product",
+            label="Загрузка продуктов",
+            details=upload_details,
+        )
+    if updated:
+        record_activity(
+            db,
+            event_type="product_updated",
+            user=user,
+            entity_type="product",
+            label="Загрузка продуктов",
+            details=dict(upload_details),
+        )
     await db.commit()
     loaded = created + updated
     return ProductUploadResult(
@@ -729,6 +770,19 @@ async def upload_pallet_norms(
             "filename": filename,
         },
     )
+    if parsed.updates:
+        record_activity(
+            db,
+            event_type="product_updated",
+            user=user,
+            entity_type="product",
+            label="Поддонные нормы",
+            details={
+                "filename": filename,
+                "updated": len(parsed.updates),
+                "source": "pallet_norms",
+            },
+        )
     await db.commit()
     return PalletNormsUploadResult(
         updated=len(parsed.updates),

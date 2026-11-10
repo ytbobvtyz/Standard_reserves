@@ -5,6 +5,7 @@ export const ROLE_OPTIONS: Array<{ value: UserRole; label: string }> = [
   { value: 'pp', label: 'ПП' },
   { value: 'economist', label: 'Экономист' },
   { value: 'logistics', label: 'Логист' },
+  { value: 'admin', label: 'Администратор' },
   { value: 'guest', label: 'Наблюдатель' },
 ]
 
@@ -13,5 +14,6 @@ export const ROLE_LABEL: Record<UserRole, string> = {
   pp: 'ПП',
   economist: 'Экономист',
   logistics: 'Логист',
+  admin: 'Администратор',
   guest: 'Наблюдатель',
 }

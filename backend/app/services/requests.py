@@ -42,13 +42,14 @@ from app.schemas.request import (
     validate_expiry_date_limit,
 )
 from app.schemas.user import UserBrief
+from app.services.activity import record_request_activity
 from app.services.clients import require_client
 from app.services.coefficients import CoefficientSet, item_coefficient_fields
 from app.services.pallet import ceil_to_pallet
 from app.services.params import is_pallet_multiple_enabled, load_coefficient_set
 
-VIEW_ALL_ROLES = {"pp", "economist", "logistics"}
-EXPORT_ROLES = {"commercial", "logistics"}
+VIEW_ALL_ROLES = {"pp", "economist", "logistics", "admin"}
+EXPORT_ROLES = {"commercial", "logistics", "admin"}
 REQUEST_EXPORT_HEADERS = [
     "ID запроса",
     "Статус",
@@ -89,7 +90,7 @@ def can_view_request(user: User, request: Request) -> bool:
 def can_create_request(user: User, request_type: str) -> bool:
     if user.role == "commercial":
         return True
-    return user.role == "logistics" and request_type == "one_time"
+    return user.role in {"logistics", "admin"} and request_type == "one_time"
 
 
 def apply_own_requests_scope(user: User) -> UUID | None:
@@ -551,6 +552,12 @@ async def create_request(
         items=_build_items(items),
     )
     db.add(request)
+    record_request_activity(
+        db,
+        event_type="request_created",
+        user=user,
+        request=request,
+    )
     await db.commit()
     request = await load_request(db, request.id)
     coeffs = await load_coefficient_set(db)
@@ -604,6 +611,12 @@ async def soft_delete_request(db: AsyncSession, request: Request, user: User) ->
     now = datetime.now(UTC)
     request.deleted_at = now
     await _soft_delete_related_normatives(db, request, now)
+    record_request_activity(
+        db,
+        event_type="request_deleted",
+        user=user,
+        request=request,
+    )
     await db.commit()
 
 
@@ -618,7 +631,8 @@ async def update_active_expiry(
             "INVALID_STATUS",
             "Изменение даты доступно только для активного норматива",
         )
-    validate_expiry_date_decrease(expiry_date, request.expiry_date)
+    previous = request.expiry_date
+    validate_expiry_date_decrease(expiry_date, previous)
     request.expiry_date = expiry_date
     result = await db.execute(
         select(Normative).where(
@@ -628,6 +642,17 @@ async def update_active_expiry(
     )
     for normative in result.scalars().all():
         normative.expiry_date = expiry_date
+    if previous != expiry_date:
+        record_request_activity(
+            db,
+            event_type="request_expiry_changed",
+            user=user,
+            request=request,
+            details={
+                "old_expiry_date": previous.isoformat() if previous else None,
+                "expiry_date": expiry_date.isoformat(),
+            },
+        )
     await db.commit()
     return await load_request(db, request.id, for_detail=False)
 
@@ -752,6 +777,7 @@ async def export_requests_xlsx(
 async def submit_draft(
     db: AsyncSession,
     request: Request,
+    user: User,
     *,
     auto_complete_previous: bool = False,
 ) -> Request:
@@ -760,5 +786,11 @@ async def submit_draft(
     else:
         request.auto_complete_previous = False
     request.status = "pp_approved"
+    record_request_activity(
+        db,
+        event_type="request_submitted",
+        user=user,
+        request=request,
+    )
     await db.commit()
     return await load_request(db, request.id, for_detail=False)

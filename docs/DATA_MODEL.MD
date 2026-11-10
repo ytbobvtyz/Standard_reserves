@@ -100,7 +100,7 @@ erDiagram
         varchar email "email (уникальный)"
         text password_hash "хэш пароля"
         text full_name "ФИО"
-        varchar role "commercial/pp/economist/logistics/guest"
+        varchar role "commercial/pp/economist/logistics/admin/guest"
         text department "название отдела (денормализация)"
         uuid department_id FK "подразделение"
         boolean is_active "активный"
@@ -283,12 +283,16 @@ erDiagram
 
     events {
         uuid id PK "идентификатор"
-        varchar event_type "request_created/approved/rejected/normative_active/expired/deficit_detected"
+        varchar event_type "тип события, см. CHECK"
         uuid request_id FK "запрос"
         jsonb payload "данные события"
         boolean processed "обработано"
         timestamp processed_at "дата обработки"
         timestamp created_at "дата создания"
+        uuid user_id FK "кто выполнил действие"
+        varchar entity_type "request/product/client/object/user/normative/upload"
+        uuid entity_id "id сущности, если он UUID"
+        jsonb details "подпись и доп. поля журнала"
     }
 
     %% ============================================
@@ -551,7 +555,7 @@ CREATE TABLE users (
     password_hash TEXT NOT NULL,
     full_name TEXT NOT NULL,
     role VARCHAR(30) NOT NULL CHECK (role IN (
-        'commercial', 'pp', 'economist', 'logistics', 'guest'
+        'commercial', 'pp', 'economist', 'logistics', 'admin', 'guest'
     )),
     department TEXT,
     department_id UUID REFERENCES departments(id),
@@ -575,7 +579,7 @@ username	VARCHAR(100)	✅	Логин (уникальный)
 email	VARCHAR(255)	✅	Email (уникальный)
 password_hash	TEXT	✅	Хэш пароля (bcrypt/argon2)
 full_name	TEXT	✅	ФИО
-role	VARCHAR(30)	✅	commercial / pp / economist / logistics / guest
+role	VARCHAR(30)	✅	commercial / pp / economist / logistics / admin / guest
 department	TEXT	❌	Название отдела (денормализация для API; синхронизируется с `departments.name`)
 department_id	UUID	❌	Подразделение → departments.id
 is_active	BOOLEAN	✅	Активный (по умолчанию true)
@@ -1147,29 +1151,58 @@ deleted_at	TIMESTAMP	❌	Soft delete (в списке скрыто)
 Единица графика — тонны (`products.weight_kg`). Подробности агрегации по дню, неделе и месяцу — в API, раздел 6.11.
 
 6. ТАБЛИЦА ДЛЯ БУДУЩЕГО АГЕНТА
-6.1. events — События для агента логиста
+6.1. events — События агента и журнал действий
+Та же таблица обслуживает будущего агента логиста и `GET /admin/audit`. Чтения (GET) и вход/выход не пишутся. Смена срока активного норматива (`PATCH /requests/{id}/expiry-date`, все роли кроме `guest`) пишется как `request_expiry_changed`: в `details` лежат `old_expiry_date` и `expiry_date`. Подпись объекта (`entity_label`) собирается на бэкенде в момент действия и кладётся в `details.label`, чтобы карточка оставалась читаемой после удаления. У запросов нет порядкового номера: подпись имеет вид `Запрос (ООО Ромашка)`. У продукта и объекта первичный ключ — целочисленный `code`, поэтому `entity_id` для них пустой, а код лежит в `details.code`.
+
 sql
 CREATE TABLE events (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     event_type VARCHAR(50) NOT NULL CHECK (event_type IN (
         'request_created',
+        'request_submitted',
         'request_approved',
         'request_rejected',
+        'request_deleted',
+        'request_expiry_changed',
         'normative_active',
         'normative_expired',
         'deficit_detected',
-        'deficit_resolved'
+        'deficit_resolved',
+        'normative_replaced_by_name',
+        'user_registered',
+        'user_updated',
+        'user_deleted',
+        'password_changed',
+        'product_created',
+        'product_updated',
+        'product_deleted',
+        'client_created',
+        'client_updated',
+        'client_deleted',
+        'object_created',
+        'object_updated',
+        'object_deleted',
+        'balances_uploaded',
+        'actual_shipments_uploaded',
+        'production_request_uploaded',
+        'export_generated'
     )),
     request_id UUID REFERENCES requests(id),
     payload JSONB NOT NULL,
     processed BOOLEAN DEFAULT false,
     processed_at TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    entity_type VARCHAR(50),
+    entity_id UUID,
+    details JSONB
 );
 
 CREATE INDEX idx_events_processed ON events(processed) WHERE processed = false;
 CREATE INDEX idx_events_request_id ON events(request_id);
 CREATE INDEX idx_events_created_at ON events(created_at);
+CREATE INDEX idx_events_user_id ON events(user_id);
+CREATE INDEX idx_events_entity ON events(entity_type, entity_id);
 Поля:
 
 Поле	Тип	Обязательное	Описание
@@ -1180,6 +1213,10 @@ payload	JSONB	✅	Данные события (гибкая структура)
 processed	BOOLEAN	✅	Обработано (по умолчанию false)
 processed_at	TIMESTAMP	❌	Дата обработки
 created_at	TIMESTAMP	✅	Дата создания
+user_id	UUID	❌	Автор действия → users.id
+entity_type	VARCHAR(50)	❌	request / product / client / object / user / normative / upload
+entity_id	UUID	❌	Идентификатор сущности, если он UUID
+details	JSONB	❌	Подпись `label` и дополнительные поля журнала
 7. ФУНКЦИИ
 7.1. Пересчет единиц (шт ↔ т)
 sql
@@ -1583,6 +1620,8 @@ EXECUTE FUNCTION trigger_create_normative();
 | 31 | `0031_normative_valid_from.py` | `normatives.valid_from` |
 | 32 | `0032_coverage_months.py` | `params.coverage_high_months`, `params.coverage_low_months` |
 | 33 | `0033_item_rejected.py` | `request_items.rejected`; история позиции принимает поле `rejected` |
+| 34 | `0034_admin_role_and_activity.py` | Роль `admin`, пользователь `admin` / `password`, колонки журнала в `events` |
+| 35 | `0035_request_expiry_changed.py` | Тип события `request_expiry_changed` в журнале |
 
 Начальные пользователи и объекты заполняются скриптом `backend/scripts/seed_data.py`, а не миграцией.
 
@@ -1605,7 +1644,8 @@ INSERT INTO users (id, username, email, full_name, role, department, department_
 ('22222222-2222-2222-2222-222222222222', 'pp', 'pp@company.ru', 'Петров Петр', 'pp', 'Планирование производства', '66222222-2222-2222-2222-222222222222'),
 ('33333333-3333-3333-3333-333333333333', 'economist', 'economist@company.ru', 'Сидоров Сидор', 'economist', 'Экономический отдел', '66333333-3333-3333-3333-333333333333'),
 ('44444444-4444-4444-4444-444444444444', 'logistics', 'logistics@company.ru', 'Кузнецов Кузьма', 'logistics', 'Логистика', '66444444-4444-4444-4444-444444444444'),
-('55555555-5555-5555-5555-555555555555', 'guest', 'guest@company.ru', 'Смирнов Гость', 'guest', NULL, NULL);
+('55555555-5555-5555-5555-555555555555', 'guest', 'guest@company.ru', 'Смирнов Гость', 'guest', NULL, NULL),
+('66666666-6666-6666-6666-666666666666', 'admin', 'admin@company.ru', 'Администратор', 'admin', 'Логистика', '66444444-4444-4444-4444-444444444444');
 
 -- Заводы
 INSERT INTO objects (code, name, city, region, type, erp_plant_code, erp_warehouse_code, loading_point) VALUES
@@ -1666,7 +1706,7 @@ GROUP BY warehouse_code, product_code;
 Таблица actual_shipments	✅ Фактическая реализация, Excel с предпросмотром
 Аналитика запасов	✅ Чтение normatives, available_balances_history и actual_shipments, без новой таблицы (LOG-054, чекбоксы LOG-061)
 Покрытие в согласовании	✅ Два групповых чтения `normatives` и `actual_shipments`; месяцы считаются в интерфейсе, границы — в `params` (LOG-055)
-Таблица events	✅ Создана (задел под агента)
+Таблица events	✅ Агент логиста и журнал действий `GET /admin/audit` (роль `admin`)
 Таблица request_item_history	✅ История изменений
 Функция expire_normatives()	✅ Нужна с первого дня
 Функция get_related_products()	✅ Для расчета по цепочке артикулов

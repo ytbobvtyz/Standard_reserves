@@ -23,6 +23,7 @@ from app.schemas.admin import (
     UserResponse,
     UserUpdate,
 )
+from app.services.activity import record_activity
 from app.services.audit import add_audit_log
 
 PASSWORD_LENGTH = 8
@@ -218,6 +219,15 @@ async def create_user(db: AsyncSession, data: UserCreate, actor: User) -> UserRe
         is_active=True,
     )
     db.add(user)
+    record_activity(
+        db,
+        event_type="user_registered",
+        user=actor,
+        entity_type="user",
+        entity_id=user.id,
+        label=f"{user.full_name} ({user.username})",
+        details={"username": user.username, "role": user.role},
+    )
     add_audit_log(
         db,
         entity_type="user",
@@ -273,6 +283,15 @@ async def update_user(
     user.is_active = data.is_active
     if not data.is_active:
         await _revoke_sessions(db, user.id)
+    record_activity(
+        db,
+        event_type="user_updated",
+        user=actor,
+        entity_type="user",
+        entity_id=user.id,
+        label=f"{user.full_name} ({user.username})",
+        details={"before": before, "role": user.role, "is_active": user.is_active},
+    )
     add_audit_log(
         db,
         entity_type="user",
@@ -304,6 +323,15 @@ async def delete_user(db: AsyncSession, user_id: UUID, current_user: User) -> No
 
     user.deleted_at = datetime.now(UTC)
     await _revoke_sessions(db, user.id)
+    record_activity(
+        db,
+        event_type="user_deleted",
+        user=current_user,
+        entity_type="user",
+        entity_id=user.id,
+        label=f"{user.full_name} ({user.username})",
+        details={"username": user.username, "role": user.role},
+    )
     add_audit_log(
         db,
         entity_type="user",
@@ -320,6 +348,15 @@ async def reset_password(db: AsyncSession, user_id: UUID, actor: User) -> str:
     new_password = generate_password()
     user.password_hash = hash_password(new_password)
     await _revoke_sessions(db, user.id)
+    record_activity(
+        db,
+        event_type="password_changed",
+        user=actor,
+        entity_type="user",
+        entity_id=user.id,
+        label=f"{user.full_name} ({user.username})",
+        details={"username": user.username, "source": "reset"},
+    )
     add_audit_log(
         db,
         entity_type="user",

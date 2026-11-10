@@ -6,6 +6,7 @@ import uuid
 
 SEED_PASSWORD = "password"
 SEED_LOGISTICS_ID = uuid.UUID("44444444-4444-4444-4444-444444444444")
+SEED_ADMIN_ID = uuid.UUID("66666666-6666-6666-6666-666666666666")
 
 DEPARTMENTS = [
     {
@@ -73,6 +74,17 @@ USERS = [
         "department_id": None,
     },
 ]
+
+# Not part of USERS: migration 0013 inserts USERS before role `admin` exists.
+ADMIN_USER = {
+    "id": SEED_ADMIN_ID,
+    "username": "admin",
+    "email": "admin@company.ru",
+    "full_name": "Администратор",
+    "role": "admin",
+    "department": "Логистика",
+    "department_id": uuid.UUID("66444444-4444-4444-4444-444444444444"),
+}
 
 OBJECTS = [
     {

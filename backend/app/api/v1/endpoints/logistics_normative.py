@@ -23,9 +23,10 @@ from app.schemas.logistics import (
 )
 from app.services import b2b_export, balance_excel
 from app.services import logistics_normative as service
+from app.services.activity import commit_activity
 
 router = APIRouter(prefix="/logistics/normative", tags=["Логистика — нормативы"])
-LOGISTICS_ONLY = require_roles("logistics")
+LOGISTICS_ONLY = require_roles("logistics", "admin")
 
 FilterMode = Literal["all", "with_normatives", "deficit_only"]
 Unit = Literal["шт", "т"]
@@ -156,6 +157,13 @@ async def export_orders(
         product_codes=_parse_product_codes(product_codes),
         unit=unit,
     )
+    await commit_activity(
+        db,
+        event_type="export_generated",
+        user=_current_user,
+        label="Экспорт заказов",
+        details={"kind": "orders", "warehouse_code": warehouse_code},
+    )
     return Response(
         content=content,
         media_type=(
@@ -178,6 +186,13 @@ async def export_b2b(
         for filename, content in exports.items():
             archive.writestr(filename, content)
     stamp = datetime.now().strftime("%Y%m%d")
+    await commit_activity(
+        db,
+        event_type="export_generated",
+        user=_current_user,
+        label="Экспорт B2B",
+        details={"kind": "b2b", "routes": len(body.routes)},
+    )
     return Response(
         content=zip_buffer.getvalue(),
         media_type="application/zip",

@@ -14,6 +14,7 @@ import {
 import { useEffect, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../stores/auth'
+import { hasLogisticsAccess } from '../../utils/roles'
 import { ChangePasswordModal } from './ChangePasswordModal'
 import { approvalsApi } from '../../api/approvals'
 
@@ -46,10 +47,11 @@ export function AppLayout() {
                   ? path
                   : path
 
-  const canCreate = user?.role === 'commercial' || user?.role === 'logistics'
+  const canCreate = user?.role === 'commercial' || hasLogisticsAccess(user?.role)
   const showPP = user?.role === 'pp'
   const showEconomy = user?.role === 'economist'
-  const showAdmin = user?.role === 'logistics'
+  const showAdmin = hasLogisticsAccess(user?.role)
+  const showAudit = user?.role === 'admin'
 
   useEffect(() => {
     let cancelled = false
@@ -157,6 +159,9 @@ export function AppLayout() {
               { key: '/admin/clients', label: 'Клиенты' },
               { key: '/admin/params', label: 'Параметры' },
               { key: '/admin/balance-history', label: 'История доступных остатков' },
+              ...(showAudit
+                ? [{ key: '/admin/audit', label: 'Журнал действий' }]
+                : []),
             ],
           },
         ]

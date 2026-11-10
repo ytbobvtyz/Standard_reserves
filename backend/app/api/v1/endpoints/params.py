@@ -8,7 +8,7 @@ from app.schemas.params import ParamsResponse, ParamsUpdate
 from app.services import params as params_service
 
 router = APIRouter(tags=["Параметры"])
-LOGISTICS_ONLY = require_roles("logistics")
+LOGISTICS_ONLY = require_roles("logistics", "admin")
 
 
 @router.get("/params", response_model=SuccessResponse[ParamsResponse])

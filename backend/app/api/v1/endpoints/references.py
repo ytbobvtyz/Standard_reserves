@@ -37,6 +37,7 @@ from app.schemas.reference import (
     UserReference,
 )
 from app.services import objects_admin, products_admin
+from app.services.activity import commit_activity
 from app.services.products_admin import product_list_conditions
 from app.services.references import (
     expand_with_analogs,
@@ -46,8 +47,8 @@ from app.services.references import (
 )
 
 router = APIRouter(prefix="/references", tags=["Справочники"])
-PRODUCT_MANAGERS = require_roles("pp", "economist", "logistics")
-OBJECT_MANAGERS = require_roles("logistics")
+PRODUCT_MANAGERS = require_roles("pp", "economist", "logistics", "admin")
+OBJECT_MANAGERS = require_roles("logistics", "admin")
 
 
 @router.get("/products", response_model=PaginatedResponse[list[ProductListItem]])
@@ -128,6 +129,14 @@ async def export_products(
     )
     result = await db.execute(select(Product).where(*conditions).order_by(Product.code))
     content = products_admin.build_export_xlsx(list(result.scalars().all()))
+    await commit_activity(
+        db,
+        event_type="export_generated",
+        user=_user,
+        entity_type="product",
+        label="Экспорт продуктов",
+        details={"kind": "products"},
+    )
     filename = f"products_export_{date.today().isoformat()}.xlsx"
     return Response(
         content=content,

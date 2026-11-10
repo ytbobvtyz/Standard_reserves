@@ -35,6 +35,7 @@ from app.schemas.request import (
     RequestSubmit,
     RequestUpdate,
 )
+from app.services.activity import commit_activity
 from app.services.normative_dates import find_overlapping_requests
 from app.services.optimal_stock import calculate_optimal
 from app.services.params import load_coefficient_set
@@ -56,7 +57,7 @@ from app.services.requests import (
     update_draft,
 )
 
-EXPORT_REQUESTS = require_roles("commercial", "logistics")
+EXPORT_REQUESTS = require_roles("commercial", "logistics", "admin")
 
 router = APIRouter(tags=["Запросы"])
 
@@ -124,6 +125,13 @@ async def export_requests(
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     content = await export_requests_xlsx(db, current_user, body.request_ids)
+    await commit_activity(
+        db,
+        event_type="export_generated",
+        user=current_user,
+        label="Экспорт запросов",
+        details={"kind": "requests", "count": len(body.request_ids)},
+    )
     filename = f"requests_export_{date.today().isoformat()}.xlsx"
     return Response(
         content=content,
@@ -289,7 +297,9 @@ async def submit_request(
     request = await load_request(db, request_id)
     ensure_draft_owner(request, current_user)
     flag = False if body is None else body.auto_complete_previous
-    submitted = await submit_draft(db, request, auto_complete_previous=flag)
+    submitted = await submit_draft(
+        db, request, current_user, auto_complete_previous=flag
+    )
     return SuccessResponse(
         data=RequestStatusData(
             id=submitted.id,

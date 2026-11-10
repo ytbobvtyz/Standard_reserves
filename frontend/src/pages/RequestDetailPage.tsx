@@ -34,6 +34,7 @@ import {
 } from '../components/requests/OverlappingNormatives'
 import { StatusBadge } from '../components/common/StatusBadge'
 import { useAuthStore } from '../stores/auth'
+import { hasLogisticsAccess } from '../utils/roles'
 import {
   ACTIVE_EXPIRY_HINT,
   EXPIRY_HINT,
@@ -163,7 +164,7 @@ export function RequestDetailPage() {
     }
   }, [request])
 
-  const canExport = user?.role === 'commercial' || user?.role === 'logistics'
+  const canExport = user?.role === 'commercial' || hasLogisticsAccess(user?.role)
 
   const exportExcel = async () => {
     if (!id) {

@@ -16,9 +16,10 @@ from app.schemas.logistics import (
     OneTimeListItem,
 )
 from app.services import logistics_one_time as service
+from app.services.activity import commit_activity
 
 router = APIRouter(prefix="/logistics/one-time", tags=["Логистика — разовые"])
-LOGISTICS_ONLY = require_roles("logistics")
+LOGISTICS_ONLY = require_roles("logistics", "admin")
 
 OneTimeStatus = Literal["approved", "executed", "rejected"]
 
@@ -76,6 +77,15 @@ async def export_one_time(
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     content = await service.export_one_time_excel(db, request_id)
+    await commit_activity(
+        db,
+        event_type="export_generated",
+        user=_current_user,
+        entity_type="request",
+        entity_id=request_id,
+        label="Экспорт разового перемещения",
+        details={"kind": "one_time"},
+    )
     return Response(
         content=content,
         media_type=(

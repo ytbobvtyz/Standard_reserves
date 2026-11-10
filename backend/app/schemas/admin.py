@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.security import require_strong_password
 
-UserRole = Literal["commercial", "pp", "economist", "logistics", "guest"]
+UserRole = Literal["commercial", "pp", "economist", "logistics", "admin", "guest"]
 EMAIL_RE = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 
 

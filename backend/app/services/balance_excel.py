@@ -28,6 +28,7 @@ from app.schemas.logistics import (
     BalanceUploadResult,
     MovingPreviewRow,
 )
+from app.services.activity import record_activity
 from app.services.logistics_normative import (
     _is_blank,
     _parse_int_cell,
@@ -792,6 +793,18 @@ async def upload_balances(
             created += 1
 
     await _touch_sync_metadata(db, user_id=user_id, synced_at=now)
+    record_activity(
+        db,
+        event_type="balances_uploaded",
+        user_id=user_id,
+        entity_type="upload",
+        label="Загрузка остатков",
+        details={
+            "created": created,
+            "updated": updated,
+            "warehouses": len(warehouse_codes),
+        },
+    )
     await db.commit()
     from app.services.dashboard import refresh_mv_normative_daily
 

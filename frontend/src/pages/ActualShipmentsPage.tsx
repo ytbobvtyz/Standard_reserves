@@ -17,7 +17,7 @@ import { ActualShipmentUploadModal } from '../components/shipments/ActualShipmen
 import { useAuthStore } from '../stores/auth'
 import { downloadBlob } from '../utils/download'
 
-const UPLOAD_ROLES: UserRole[] = ['logistics', 'economist', 'pp']
+const UPLOAD_ROLES: UserRole[] = ['logistics', 'admin', 'economist', 'pp']
 
 interface FilterState {
   client_id?: string

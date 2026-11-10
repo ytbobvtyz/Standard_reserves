@@ -31,6 +31,7 @@ from app.schemas.client import (
     ClientUploadResult,
 )
 from app.schemas.common import PaginationMeta
+from app.services.activity import record_activity
 
 INN_RE = re.compile(r"^\d{10}$|^\d{12}$")
 KPP_RE = re.compile(r"^\d{9}$")
@@ -235,11 +236,11 @@ async def create_client(
     name = _validate_name(body.name)
     kpp = _validate_kpp(body.kpp)
     if body.department_id_set:
-        if user.role != "logistics":
+        if user.role not in {"logistics", "admin"}:
             raise APIError(
                 403,
                 "FORBIDDEN",
-                "Подразделение может задать только логист",
+                "Подразделение может задать только логист или администратор",
             )
         department_id = body.department_id
         if department_id is not None:
@@ -263,6 +264,15 @@ async def create_client(
         is_system=False,
     )
     db.add(client)
+    record_activity(
+        db,
+        event_type="client_created",
+        user=user,
+        entity_type="client",
+        entity_id=client.id,
+        label=f"{client.name} ({client.client_code})",
+        details={"client_code": client.client_code, "name": client.name},
+    )
     try:
         await db.commit()
     except IntegrityError as exc:
@@ -276,7 +286,7 @@ async def create_client(
 
 
 async def update_client(
-    db: AsyncSession, client_id: UUID, body: ClientUpdate
+    db: AsyncSession, client_id: UUID, body: ClientUpdate, user: User
 ) -> ClientListItem:
     client = await get_client(db, client_id)
     if client.is_system or client.id == SYSTEM_CLIENT_ID:
@@ -288,17 +298,35 @@ async def update_client(
     client.is_active = body.is_active
     client.department_id = body.department_id
     client.updated_at = datetime.now(UTC)
+    record_activity(
+        db,
+        event_type="client_updated",
+        user=user,
+        entity_type="client",
+        entity_id=client.id,
+        label=f"{client.name} ({client.client_code})",
+        details={"client_code": client.client_code, "name": client.name},
+    )
     await db.commit()
     return to_list_item(await get_client(db, client.id))
 
 
-async def delete_client(db: AsyncSession, client_id: UUID) -> None:
+async def delete_client(db: AsyncSession, client_id: UUID, user: User) -> None:
     client = await get_client(db, client_id)
     if client.is_system or client.id == SYSTEM_CLIENT_ID:
         raise APIError(400, "VALIDATION_ERROR", "Служебного клиента нельзя удалить")
     client.deleted_at = datetime.now(UTC)
     client.is_active = False
     client.updated_at = datetime.now(UTC)
+    record_activity(
+        db,
+        event_type="client_deleted",
+        user=user,
+        entity_type="client",
+        entity_id=client.id,
+        label=f"{client.name} ({client.client_code})",
+        details={"client_code": client.client_code, "name": client.name},
+    )
     await db.commit()
 
 
@@ -597,12 +625,24 @@ async def preview_clients_xlsx(
 
 
 async def upload_clients_xlsx(
-    db: AsyncSession, content: bytes, filename: str
+    db: AsyncSession, content: bytes, filename: str, user: User
 ) -> ClientUploadResult:
     plan = await _plan_clients_xlsx(db, content, filename)
     for item in plan.pending:
         db.add(item.client)
     if plan.pending:
+        record_activity(
+            db,
+            event_type="client_created",
+            user=user,
+            entity_type="client",
+            label="Загрузка клиентов",
+            details={
+                "filename": filename,
+                "created": len(plan.pending),
+                "source": "excel",
+            },
+        )
         await db.commit()
     message = f"Загружено {len(plan.pending)} из {plan.total}"
     return ClientUploadResult(

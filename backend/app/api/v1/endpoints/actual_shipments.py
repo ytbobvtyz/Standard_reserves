@@ -18,7 +18,7 @@ from app.services import actual_shipments as service
 router = APIRouter(
     prefix="/logistics/actual-shipments", tags=["Логистика — реализация"]
 )
-SHIPMENT_EDITORS = require_roles("logistics", "economist", "pp")
+SHIPMENT_EDITORS = require_roles("logistics", "economist", "pp", "admin")
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024
 
 

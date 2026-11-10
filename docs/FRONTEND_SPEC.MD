@@ -27,6 +27,7 @@
 | **PP** | Согласование (ПП), Все запросы, Карточка запроса, Нормативы (вкладка «Партии загрузки»), Продажи (чтение и загрузка Excel) |
 | **Economist** | Согласование (экономист), Все запросы, Карточка запроса, Нормативы (вкладка «Партии загрузки»), Продажи (чтение и загрузка Excel) |
 | **Logistics** | Дашборд логиста (нормативы + разовые), Управление остатками, Администрирование пользователей, подразделений и истории остатков, Нормативы (вкладка «Партии загрузки»), Продажи (чтение и загрузка Excel) |
+| **Admin** | Всё, что видит Logistics, плюс «Журнал действий» (`/admin/audit`) |
 
 ---
 
@@ -56,11 +57,12 @@
 │ │ ├── Продукты │
 │ │ ├── Склады/Заводы │
 │ │ └── Пользователи (админ) │
-│ ├── 👤 Администрирование (только Logistics) │
+│ ├── 👤 Администрирование (Logistics и Admin) │
 │ │ ├── Пользователи │
 │ │ ├── Подразделения │
 │ │ ├── Параметры │
-│ │ └── История доступных остатков │
+│ │ ├── История доступных остатков │
+│ │ └── Журнал действий (только Admin) │
 │ └── 📈 Отчеты (в будущем) │
 └─────────────────────────────────────────────────────────────────────┘
 
@@ -886,7 +888,7 @@ text
 
 **Назначение:** Управление учётными записями: создание, редактирование, мягкое удаление, назначение ролей и подразделений, сброс пароля.
 
-**Доступ:** только `logistics`. Остальные роли перенаправляются на `/dashboard`. Пункт меню «Администрирование» (подменю: Пользователи, Подразделения, Клиенты, Параметры, История доступных остатков) виден только логистам.
+**Доступ:** `logistics` и `admin`. Остальные роли перенаправляются на `/dashboard`. Пункт меню «Администрирование» (подменю: Пользователи, Подразделения, Клиенты, Параметры, История доступных остатков) виден логистам и администратору. «Журнал действий» — только администратору.
 
 **Макет (текстовый):**
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -993,6 +995,26 @@ text
 - Таблица: склад, артикул, фактический остаток (`full_stock`), доступно, доступно + запланировано (`plan`), единица, момент загрузки. Других количественных полей в `available_balances_history` нет
 
 Данные: `GET /logistics/normative/history` и `GET /logistics/normative/history/dates`.
+
+---
+
+### 3.15. Журнал действий
+
+**URL:** `/admin/audit`
+
+**Назначение:** Просмотр мутирующих действий: пользователи, пароли, продукты, клиенты, объекты, запросы, смена срока активного норматива, загрузки остатков, реализации и партий нормативов, экспорт Excel. Чтения и вход/выход в журнал не попадают.
+
+**Доступ:** только `admin`. Логист и остальные роли перенаправляются на `/dashboard`. Пункт меню «Администрирование» → «Журнал действий».
+
+**Компоненты:**
+- Пресеты «Сегодня», «Неделя» (с понедельника), «Месяц» (с первого числа), «Всё время» (с 2020-01-01)
+- Range picker, даты обязательны
+- Фильтр пользователя (`GET /admin/users`), типа активности и номера запроса (первые символы UUID, как `№` на карточке)
+- Таблица: дата, время, пользователь (ФИО и роль), тип активности, объект, раскрываемые детали
+- Объект — ссылка на карточку, если она есть: запрос → `/requests/{id}`, в тексте ссылки номер `№` и первые 8 символов UUID. Продукт → `/references/products/{code}` из `details.code`. У клиента, пользователя и склада отдельной карточки нет, поэтому текст без ссылки
+- Пагинация, 50 строк
+
+Данные: `GET /admin/audit`. `entity_label` приходит с сервера.
 
 ---
 
@@ -1124,22 +1146,24 @@ tsx
 /dashboard	DashboardPage	Все авторизованные
 /analytics	AnalyticsPage	Все авторизованные
 /requests/my	MyRequestsPage	Все авторизованные
-/requests/create	CreateRequestPage	Commercial, Logistics
+/requests/create	CreateRequestPage	Commercial, Logistics, Admin
 /requests/:id	RequestDetailPage	Все авторизованные
 /approvals/pp	ApprovalsPage	PP (пункт меню только у pp)
 /approvals/economy	ApprovalsPage	Economist (пункт меню только у economist)
-/logistics/dashboard	LogisticsDashboardPage	Все авторизованные (кнопки управления — только logistics)
-/logistics/one-time	OneTimeRequestsPage	Все авторизованные (кнопки управления — только logistics)
+/logistics/dashboard	LogisticsDashboardPage	Все авторизованные (кнопки управления — logistics и admin)
+/logistics/one-time	OneTimeRequestsPage	Все авторизованные (кнопки управления — logistics и admin)
 /actual-shipments	ActualShipmentsPage	Все авторизованные (шаблон и загрузка Excel — logistics, economist, pp)
 /normatives	NormativesPage	Все авторизованные; вкладка «Партии загрузки» — PP / Economist / Logistics
 /references/products	ProductsPage	Все авторизованные
 /references/products/:code	ProductDetailPage	Все авторизованные
 /references/objects	ObjectsPage	Все авторизованные
 /references/users	ReferencesPage	Заглушка (заголовок); API GET /references/users есть
-/admin/users	AdminUsersPage	Logistics
-/admin/departments	AdminDepartmentsPage	Logistics
-/admin/params	AdminParamsPage	Logistics
-/admin/balance-history	BalanceHistoryPage	Logistics
+/admin/users	AdminUsersPage	Logistics, Admin
+/admin/departments	AdminDepartmentsPage	Logistics, Admin
+/admin/clients	AdminClientsPage	Logistics, Admin
+/admin/params	AdminParamsPage	Logistics, Admin
+/admin/balance-history	BalanceHistoryPage	Logistics, Admin
+/admin/audit	AdminAuditPage	Admin
 6. СОСТОЯНИЯ (STORES)
 6.1. AuthStore (Zustand)
 

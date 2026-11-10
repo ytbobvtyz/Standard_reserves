@@ -11,7 +11,14 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.bootstrap import DEPARTMENTS, OBJECTS, SEED_LOGISTICS_ID, SEED_PASSWORD, USERS
+from app.bootstrap import (
+    ADMIN_USER,
+    DEPARTMENTS,
+    OBJECTS,
+    SEED_LOGISTICS_ID,
+    SEED_PASSWORD,
+    USERS,
+)
 from app.core.config import settings
 from app.core.security import hash_password
 from app.models import Department, Object, User
@@ -98,7 +105,7 @@ async def seed() -> None:
             await _upsert_department(session, item)
         await session.flush()
 
-        for item in USERS:
+        for item in (*USERS, ADMIN_USER):
             await _upsert_user(session, item)
         await session.flush()
 

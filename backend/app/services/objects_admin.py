@@ -17,6 +17,7 @@ from app.models.product import Product
 from app.models.request_item import RequestItem
 from app.models.user import User
 from app.schemas.reference import ObjectCreate, ObjectDetail, ObjectUpdate
+from app.services.activity import record_activity
 from app.services.audit import add_audit_log
 from app.services.references import to_object_detail
 
@@ -177,6 +178,14 @@ async def create_object(
             "erp_warehouse_code": obj.erp_warehouse_code,
         },
     )
+    record_activity(
+        db,
+        event_type="object_created",
+        user=user,
+        entity_type="object",
+        label=f"{obj.name} ({obj.code})",
+        details={"code": obj.code, "name": obj.name, "type": obj.type},
+    )
     try:
         await db.commit()
     except IntegrityError as exc:
@@ -222,6 +231,14 @@ async def update_object(
         action="update",
         entity_id=str(code),
         payload={"before": before},
+    )
+    record_activity(
+        db,
+        event_type="object_updated",
+        user=user,
+        entity_type="object",
+        label=f"{obj.name} ({code})",
+        details={"code": code, "name": obj.name, "type": obj.type},
     )
     try:
         await db.commit()
@@ -281,5 +298,13 @@ async def delete_object(db: AsyncSession, code: int, user: User) -> None:
         action="delete",
         entity_id=str(code),
         payload={"name": obj.name, "type": obj.type},
+    )
+    record_activity(
+        db,
+        event_type="object_deleted",
+        user=user,
+        entity_type="object",
+        label=f"{obj.name} ({code})",
+        details={"code": code, "name": obj.name, "type": obj.type},
     )
     await db.commit()

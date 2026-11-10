@@ -39,6 +39,7 @@ import { OptimalStockModal } from '../components/requests/OptimalStockModal'
 import { SendNormativeModal } from '../components/requests/OverlappingNormatives'
 import { ProductAutocomplete } from '../components/requests/ProductAutocomplete'
 import { useAuthStore } from '../stores/auth'
+import { hasLogisticsAccess } from '../utils/roles'
 import {
   DEFAULT_EXPIRY_HINT,
   EXPIRY_ERROR,
@@ -276,7 +277,7 @@ export function CreateRequestPage() {
   const requestType = Form.useWatch('request_type', form)
   const watchedItems = Form.useWatch('items', form)
   const isOneTime = requestType === 'one_time'
-  const isLogistics = user?.role === 'logistics'
+  const isLogistics = hasLogisticsAccess(user?.role)
   const overwriteLabels = (optimalResult?.items ?? [])
     .filter((row) =>
       watchedItems?.some(

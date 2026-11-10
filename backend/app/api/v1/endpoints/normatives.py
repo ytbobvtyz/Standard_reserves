@@ -15,6 +15,7 @@ from app.schemas.normative import (
     NormativeOnDateItem,
 )
 from app.services import normatives as service
+from app.services.activity import commit_activity
 
 router = APIRouter(tags=["Нормативы"])
 
@@ -91,6 +92,14 @@ async def export_normatives(
         department_id=department_id,
         category=category,
         client_name=client_name,
+    )
+    await commit_activity(
+        db,
+        event_type="export_generated",
+        user=_user,
+        entity_type="normative",
+        label="Экспорт нормативов",
+        details={"kind": "normatives", "date": date.isoformat()},
     )
     filename = f"normatives_export_{date.isoformat()}.xlsx"
     return Response(

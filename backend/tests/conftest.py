@@ -30,6 +30,8 @@ from app.models import (
     SyncMetadata,
     User,
 )
+from app.models.event import EVENT_TYPES
+from app.models.user import USER_ROLES
 
 DEFAULT_PASSWORD = "password"
 
@@ -604,6 +606,91 @@ async def db_ready() -> AsyncGenerator[None, None]:
                     WHEN undefined_column THEN NULL;
                 END $$;
                 """))
+        roles_sql = ", ".join(f"'{role}'" for role in USER_ROLES)
+        events_sql = ", ".join(f"'{item}'" for item in EVENT_TYPES)
+        await connection.execute(text("""
+                DO $$
+                BEGIN
+                    ALTER TABLE events ADD COLUMN IF NOT EXISTS user_id UUID;
+                    ALTER TABLE events ADD COLUMN IF NOT EXISTS entity_type VARCHAR(50);
+                    ALTER TABLE events ADD COLUMN IF NOT EXISTS entity_id UUID;
+                    ALTER TABLE events ADD COLUMN IF NOT EXISTS details JSONB;
+                EXCEPTION
+                    WHEN undefined_table THEN NULL;
+                END $$;
+                """))
+        await connection.execute(text("""
+                DO $$
+                BEGIN
+                    ALTER TABLE events DROP CONSTRAINT IF EXISTS fk_events_user_id;
+                    ALTER TABLE events
+                        ADD CONSTRAINT fk_events_user_id
+                        FOREIGN KEY (user_id) REFERENCES users(id)
+                        ON DELETE SET NULL;
+                EXCEPTION
+                    WHEN undefined_table THEN NULL;
+                    WHEN undefined_column THEN NULL;
+                END $$;
+                """))
+        await connection.execute(
+            text("CREATE INDEX IF NOT EXISTS idx_events_user_id ON events(user_id)")
+        )
+        await connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_events_entity "
+                "ON events(entity_type, entity_id)"
+            )
+        )
+        await connection.execute(text(f"""
+                DO $$
+                DECLARE
+                    constraint_name text;
+                BEGIN
+                    FOR constraint_name IN
+                        SELECT con.conname
+                        FROM pg_constraint con
+                        JOIN pg_class rel ON rel.oid = con.conrelid
+                        WHERE rel.relname = 'users'
+                          AND con.contype = 'c'
+                          AND pg_get_constraintdef(con.oid) ILIKE '%role%'
+                    LOOP
+                        EXECUTE format(
+                            'ALTER TABLE users DROP CONSTRAINT %I',
+                            constraint_name
+                        );
+                    END LOOP;
+                    ALTER TABLE users ADD CONSTRAINT ck_users_role
+                        CHECK (role IN ({roles_sql}));
+                EXCEPTION
+                    WHEN undefined_table THEN NULL;
+                    WHEN duplicate_object THEN NULL;
+                END $$;
+                """))
+        await connection.execute(text(f"""
+                DO $$
+                DECLARE
+                    constraint_name text;
+                BEGIN
+                    FOR constraint_name IN
+                        SELECT con.conname
+                        FROM pg_constraint con
+                        JOIN pg_class rel ON rel.oid = con.conrelid
+                        WHERE rel.relname = 'events'
+                          AND con.contype = 'c'
+                          AND pg_get_constraintdef(con.oid) ILIKE '%event_type%'
+                    LOOP
+                        EXECUTE format(
+                            'ALTER TABLE events DROP CONSTRAINT %I',
+                            constraint_name
+                        );
+                    END LOOP;
+                    ALTER TABLE events ADD CONSTRAINT ck_events_event_type
+                        CHECK (event_type IN ({events_sql}));
+                EXCEPTION
+                    WHEN undefined_table THEN NULL;
+                    WHEN duplicate_object THEN NULL;
+                END $$;
+                """))
     yield
 
 
@@ -700,6 +787,8 @@ async def _delete_user(user_id: uuid.UUID) -> None:
             delete(RequestItemHistory).where(RequestItemHistory.changed_by == user_id)
         )
         await session.execute(delete(AuditLog).where(AuditLog.changed_by == user_id))
+        await session.execute(delete(Event).where(Event.user_id == user_id))
+        await session.execute(delete(Event).where(Event.entity_id == user_id))
         await session.execute(
             update(SyncMetadata)
             .where(SyncMetadata.last_balances_sync_by == user_id)
@@ -763,6 +852,13 @@ async def economist_user(db_ready: None) -> AsyncGenerator[AuthUser, None]:
 @pytest.fixture
 async def logistics_user(db_ready: None) -> AsyncGenerator[AuthUser, None]:
     user = await _create_user(role="logistics")
+    yield user
+    await _delete_user(user.id)
+
+
+@pytest.fixture
+async def admin_user(db_ready: None) -> AsyncGenerator[AuthUser, None]:
+    user = await _create_user(role="admin")
     yield user
     await _delete_user(user.id)
 

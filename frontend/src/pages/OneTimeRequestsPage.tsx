@@ -28,6 +28,7 @@ import type {
 } from '../api/types'
 import { StatusBadge } from '../components/common/StatusBadge'
 import { useAuthStore } from '../stores/auth'
+import { hasLogisticsAccess } from '../utils/roles'
 import { downloadBlob } from '../utils/download'
 import { formatDateTime } from '../utils/format'
 
@@ -71,7 +72,7 @@ function warehouseLabel(items: OneTimeListItem['items']): string {
 export function OneTimeRequestsPage() {
   const navigate = useNavigate()
   const user = useAuthStore((state) => state.user)
-  const canManage = user?.role === 'logistics'
+  const canManage = hasLogisticsAccess(user?.role)
   const [draft, setDraft] = useState<FilterState>({})
   const [applied, setApplied] = useState<FilterState>({})
   const [items, setItems] = useState<OneTimeListItem[]>([])

@@ -21,6 +21,7 @@ import { AdminDepartmentsPage } from '../pages/AdminDepartmentsPage'
 import { AdminClientsPage } from '../pages/AdminClientsPage'
 import { AdminParamsPage } from '../pages/AdminParamsPage'
 import { BalanceHistoryPage } from '../pages/BalanceHistoryPage'
+import { AdminAuditPage } from '../pages/AdminAuditPage'
 import { NotFoundPage } from '../pages/NotFoundPage'
 
 export function AppRouter() {
@@ -36,7 +37,7 @@ export function AppRouter() {
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/requests/my" element={<MyRequestsPage />} />
-            <Route element={<ProtectedRoute roles={['commercial', 'logistics']} />}>
+            <Route element={<ProtectedRoute roles={['commercial', 'logistics', 'admin']} />}>
               <Route path="/requests/create" element={<CreateRequestPage />} />
             </Route>
             <Route path="/requests/:id" element={<RequestDetailPage />} />
@@ -54,12 +55,15 @@ export function AppRouter() {
             <Route path="/references/products" element={<ProductsPage />} />
             <Route path="/references/objects" element={<ObjectsPage />} />
             <Route path="/references/users" element={<ReferencesPage />} />
-            <Route element={<ProtectedRoute roles={['logistics']} />}>
+            <Route element={<ProtectedRoute roles={['logistics', 'admin']} />}>
               <Route path="/admin/users" element={<AdminUsersPage />} />
               <Route path="/admin/departments" element={<AdminDepartmentsPage />} />
               <Route path="/admin/clients" element={<AdminClientsPage />} />
               <Route path="/admin/params" element={<AdminParamsPage />} />
               <Route path="/admin/balance-history" element={<BalanceHistoryPage />} />
+            </Route>
+            <Route element={<ProtectedRoute roles={['admin']} />}>
+              <Route path="/admin/audit" element={<AdminAuditPage />} />
             </Route>
           </Route>
         </Route>
