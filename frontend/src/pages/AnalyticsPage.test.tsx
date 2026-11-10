@@ -7,6 +7,7 @@ import { AnalyticsPage } from './AnalyticsPage'
 const getStockDynamics = vi.fn()
 const getStockBounds = vi.fn()
 const getStockSummary = vi.fn()
+const getFilters = vi.fn()
 const getProducts = vi.fn()
 const getProduct = vi.fn()
 const getObjects = vi.fn()
@@ -19,6 +20,7 @@ vi.mock('../api/analytics', () => ({
     getStockDynamics: (...args: unknown[]) => getStockDynamics(...args),
     getStockBounds: (...args: unknown[]) => getStockBounds(...args),
     getStockSummary: (...args: unknown[]) => getStockSummary(...args),
+    getFilters: (...args: unknown[]) => getFilters(...args),
   },
 }))
 
@@ -98,6 +100,10 @@ describe('AnalyticsPage', () => {
     getStockDynamics.mockReset()
     getStockBounds.mockReset()
     getStockSummary.mockReset()
+    getFilters.mockReset()
+    getFilters.mockResolvedValue({
+      data: { status: 'success', data: { clients: [], warehouses: [], unit: 'кг' } },
+    })
     getProducts.mockResolvedValue({
       data: {
         status: 'success',
@@ -275,5 +281,75 @@ describe('AnalyticsPage', () => {
     fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Продукт' }))
     fireEvent.click(await screen.findByText('10001 — Масло'))
     expect(await screen.findByText('Нет данных за период')).toBeTruthy()
+  })
+
+  it('filters the chart with client and warehouse checkboxes', async () => {
+    getFilters.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: {
+          unit: 'кг',
+          clients: [
+            { id: 'client-a', name: 'Ромашка', shipment_kg: 6000 },
+            { id: 'client-b', name: 'Тюльпан', shipment_kg: 2000 },
+          ],
+          warehouses: [
+            { code: 2001, name: 'Ростов', shipment_kg: 7000 },
+            { code: 2002, name: 'Казань', shipment_kg: 1000 },
+          ],
+        },
+      },
+    })
+    render(<AnalyticsPage />)
+    expect(screen.queryByRole('combobox', { name: 'Склад' })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'Клиент' })).toBeNull()
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Продукт' }))
+    fireEvent.click(await screen.findByText('10001 — Масло'))
+
+    expect((await screen.findByTestId('selection-counter')).textContent).toContain(
+      'Выбрано: 2 из 2 клиентов, 2 из 2 складов',
+    )
+    expect(
+      (screen.getByRole('checkbox', { name: 'Клиент Ромашка' }) as HTMLInputElement).checked,
+    ).toBe(true)
+    expect(
+      (screen.getByRole('checkbox', { name: 'Склад Казань' }) as HTMLInputElement).checked,
+    ).toBe(true)
+    await waitFor(() => expect(getStockDynamics).toHaveBeenCalled())
+    expect(getStockDynamics.mock.calls.at(-1)?.[0]).not.toHaveProperty('client_ids')
+    expect(getStockDynamics.mock.calls.at(-1)?.[0]).not.toHaveProperty('warehouse_codes')
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Клиент Тюльпан' }))
+    await waitFor(() => {
+      expect(getStockDynamics).toHaveBeenCalledWith(
+        expect.objectContaining({ client_ids: ['client-a'] }),
+      )
+    })
+    expect(getStockDynamics.mock.calls.at(-1)?.[0]).not.toHaveProperty('warehouse_codes')
+    expect(screen.getByTestId('selection-counter').textContent).toContain(
+      'Выбрано: 1 из 2 клиентов, 2 из 2 складов',
+    )
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Склад Казань' }))
+    await waitFor(() => {
+      expect(getStockDynamics).toHaveBeenCalledWith(
+        expect.objectContaining({
+          client_ids: ['client-a'],
+          warehouse_codes: [2001],
+        }),
+      )
+    })
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Клиент Ромашка' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Склад Ростов' }))
+    expect(await screen.findByText('Выберите хотя бы один склад или клиента')).toBeTruthy()
+    expect(screen.getByTestId('selection-counter').textContent).toContain(
+      'Выбрано: 0 из 2 клиентов, 0 из 2 складов',
+    )
+    const callsAtEmpty = getStockDynamics.mock.calls.length
+    await waitFor(() => {
+      expect(screen.getByText('Выберите хотя бы один склад или клиента')).toBeTruthy()
+    })
+    expect(getStockDynamics.mock.calls.length).toBe(callsAtEmpty)
   })
 })

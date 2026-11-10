@@ -11,6 +11,11 @@
 Тонны округляются до трёх знаков. Подразделение — clients.department_id.
 Остаток не режется по клиенту и подразделению: снимок общий на склад и артикул.
 Отгрузки склада отбираются по objects.loading_point.
+
+Списки чекбоксов (`client_ids`, `warehouse_codes`) необязательны.
+Нет параметра — в расчёт входят все, как раньше. Пустой список — никого.
+`client_ids` режет только реализацию. `warehouse_codes` режет норматив,
+остаток, фактический остаток и отгрузки этих складов.
 """
 
 from datetime import UTC, date, datetime, timedelta
@@ -29,6 +34,9 @@ from app.models.object import Object
 from app.models.product import Product
 from app.models.production_request import ProductionRequest, ProductionRequestItem
 from app.schemas.analytics import (
+    AnalyticsFilterClient,
+    AnalyticsFiltersData,
+    AnalyticsFilterWarehouse,
     Granularity,
     StockDynamicsBounds,
     StockDynamicsData,
@@ -39,6 +47,7 @@ from app.services.dashboard import to_mass
 
 ZERO = Decimal("0")
 TONS = Decimal("0.001")
+KILOGRAMS = Decimal("0.01")
 WEEK_NORMATIVE_DIVISOR = Decimal(4)
 DAY_NORMATIVE_DIVISOR = Decimal(28)
 
@@ -100,6 +109,23 @@ def _bucket_bounds(
     return start, end
 
 
+def _merge_codes(single: int | None, many: list[int] | None) -> list[int] | None:
+    """Список складов важнее одного кода. None — ограничение не задано."""
+    if many is not None:
+        return many
+    if single is not None:
+        return [single]
+    return None
+
+
+def _merge_clients(single: UUID | None, many: list[UUID] | None) -> list[UUID] | None:
+    if many is not None:
+        return many
+    if single is not None:
+        return [single]
+    return None
+
+
 def _check_period(date_from: date, date_to: date) -> None:
     if date_from > date_to:
         raise APIError(
@@ -155,15 +181,19 @@ async def _normative_rows(
     client_id: UUID | None,
     date_from: date | None,
     date_to: date | None,
+    warehouse_codes: list[int] | None = None,
 ):
+    codes = _merge_codes(warehouse_code, warehouse_codes)
+    if codes is not None and not codes:
+        return []
     conditions = [
         Normative.deleted_at.is_(None),
         Normative.product_code == product_code,
     ]
     if date_from is not None:
         conditions.append(Normative.expiry_date >= date_from)
-    if warehouse_code is not None:
-        conditions.append(Normative.warehouse_code == warehouse_code)
+    if codes is not None:
+        conditions.append(Normative.warehouse_code.in_(codes))
     if department_id is not None:
         conditions.append(Client.department_id == department_id)
     if client_id is not None:
@@ -244,14 +274,18 @@ async def _history_rows(
     warehouse_code: int | None,
     date_from: date,
     date_to: date,
+    warehouse_codes: list[int] | None = None,
 ):
+    codes = _merge_codes(warehouse_code, warehouse_codes)
+    if codes is not None and not codes:
+        return []
     conditions = [
         AvailableBalanceHistory.product_code == product_code,
         AvailableBalanceHistory.snapshot_date >= date_from,
         AvailableBalanceHistory.snapshot_date <= date_to,
     ]
-    if warehouse_code is not None:
-        conditions.append(AvailableBalanceHistory.warehouse_code == warehouse_code)
+    if codes is not None:
+        conditions.append(AvailableBalanceHistory.warehouse_code.in_(codes))
     return (
         await db.execute(
             select(
@@ -363,11 +397,13 @@ async def _available_series(
     granularity: Granularity,
     date_from: date,
     date_to: date,
+    warehouse_codes: list[int] | None = None,
 ) -> tuple[list[Decimal | None], list[Decimal | None], list[Decimal | None]]:
     rows = await _history_rows(
         db,
         product_code=product_code,
         warehouse_code=warehouse_code,
+        warehouse_codes=warehouse_codes,
         date_from=date_from,
         date_to=date_to,
     )
@@ -380,13 +416,22 @@ async def _available_series(
     )
 
 
-async def _loading_point(db: AsyncSession, warehouse_code: int) -> str | None:
-    return await db.scalar(
+async def _loading_points(
+    db: AsyncSession, warehouse_codes: list[int] | None
+) -> list[str] | None:
+    """None — склады не фильтруют отгрузки. Пустой список — ни одного пункта."""
+    if warehouse_codes is None:
+        return None
+    if not warehouse_codes:
+        return []
+    rows = await db.scalars(
         select(Object.loading_point).where(
-            Object.code == warehouse_code,
+            Object.code.in_(warehouse_codes),
             Object.deleted_at.is_(None),
+            Object.loading_point.is_not(None),
         )
     )
+    return [point for point in rows.all() if point]
 
 
 async def _actual_series(
@@ -400,25 +445,27 @@ async def _actual_series(
     granularity: Granularity,
     date_from: date,
     date_to: date,
+    warehouse_codes: list[int] | None = None,
+    client_ids: list[UUID] | None = None,
 ) -> list[Decimal | None]:
-    if warehouse_code is not None:
-        loading_point = await _loading_point(db, warehouse_code)
-        if not loading_point:
-            return [None for _ in periods]
-    else:
-        loading_point = None
+    points = await _loading_points(db, _merge_codes(warehouse_code, warehouse_codes))
+    if points is not None and not points:
+        return [None for _ in periods]
+    clients = _merge_clients(client_id, client_ids)
+    if clients is not None and not clients:
+        return [None for _ in periods]
     conditions = [
         ActualShipment.deleted_at.is_(None),
         ActualShipment.product_code == product_code,
         ActualShipment.shipment_date >= date_from,
         ActualShipment.shipment_date <= date_to,
     ]
-    if client_id is not None:
-        conditions.append(ActualShipment.client_id == client_id)
+    if clients is not None:
+        conditions.append(ActualShipment.client_id.in_(clients))
     if department_id is not None:
         conditions.append(Client.department_id == department_id)
-    if loading_point is not None:
-        conditions.append(ActualShipment.loading_point == loading_point)
+    if points is not None:
+        conditions.append(ActualShipment.loading_point.in_(points))
     stmt = select(
         ActualShipment.shipment_date,
         ActualShipment.quantity,
@@ -446,11 +493,13 @@ async def _earliest_normative(
     warehouse_code: int | None,
     department_id: UUID | None,
     client_id: UUID | None,
+    warehouse_codes: list[int] | None = None,
 ) -> date | None:
     rows = await _normative_rows(
         db,
         product_code=product_code,
         warehouse_code=warehouse_code,
+        warehouse_codes=warehouse_codes,
         department_id=department_id,
         client_id=client_id,
         date_from=None,
@@ -479,10 +528,14 @@ async def _earliest_available(
     *,
     product_code: int,
     warehouse_code: int | None,
+    warehouse_codes: list[int] | None = None,
 ) -> date | None:
+    codes = _merge_codes(warehouse_code, warehouse_codes)
+    if codes is not None and not codes:
+        return None
     conditions = [AvailableBalanceHistory.product_code == product_code]
-    if warehouse_code is not None:
-        conditions.append(AvailableBalanceHistory.warehouse_code == warehouse_code)
+    if codes is not None:
+        conditions.append(AvailableBalanceHistory.warehouse_code.in_(codes))
     value = await db.scalar(
         select(func.min(AvailableBalanceHistory.snapshot_date)).where(*conditions)
     )
@@ -496,23 +549,25 @@ async def _earliest_shipment(
     warehouse_code: int | None,
     department_id: UUID | None,
     client_id: UUID | None,
+    warehouse_codes: list[int] | None = None,
+    client_ids: list[UUID] | None = None,
 ) -> date | None:
-    if warehouse_code is not None:
-        loading_point = await _loading_point(db, warehouse_code)
-        if not loading_point:
-            return None
-    else:
-        loading_point = None
+    points = await _loading_points(db, _merge_codes(warehouse_code, warehouse_codes))
+    if points is not None and not points:
+        return None
+    clients = _merge_clients(client_id, client_ids)
+    if clients is not None and not clients:
+        return None
     conditions = [
         ActualShipment.deleted_at.is_(None),
         ActualShipment.product_code == product_code,
     ]
-    if client_id is not None:
-        conditions.append(ActualShipment.client_id == client_id)
+    if clients is not None:
+        conditions.append(ActualShipment.client_id.in_(clients))
     if department_id is not None:
         conditions.append(Client.department_id == department_id)
-    if loading_point is not None:
-        conditions.append(ActualShipment.loading_point == loading_point)
+    if points is not None:
+        conditions.append(ActualShipment.loading_point.in_(points))
     stmt = select(func.min(ActualShipment.shipment_date))
     if department_id is not None:
         stmt = stmt.join(Client, Client.id == ActualShipment.client_id)
@@ -526,12 +581,15 @@ async def get_stock_bounds(
     warehouse_code: int | None,
     department_id: UUID | None,
     client_id: UUID | None,
+    warehouse_codes: list[int] | None = None,
+    client_ids: list[UUID] | None = None,
 ) -> StockDynamicsBounds:
     candidates = [
         await _earliest_normative(
             db,
             product_code=product_code,
             warehouse_code=warehouse_code,
+            warehouse_codes=warehouse_codes,
             department_id=department_id,
             client_id=client_id,
         ),
@@ -539,13 +597,16 @@ async def get_stock_bounds(
             db,
             product_code=product_code,
             warehouse_code=warehouse_code,
+            warehouse_codes=warehouse_codes,
         ),
         await _earliest_shipment(
             db,
             product_code=product_code,
             warehouse_code=warehouse_code,
+            warehouse_codes=warehouse_codes,
             department_id=department_id,
             client_id=client_id,
+            client_ids=client_ids,
         ),
     ]
     present = [item for item in candidates if item is not None]
@@ -562,6 +623,8 @@ async def get_stock_dynamics(
     date_from: date,
     date_to: date,
     granularity: Granularity,
+    warehouse_codes: list[int] | None = None,
+    client_ids: list[UUID] | None = None,
 ) -> StockDynamicsData:
     _check_period(date_from, date_to)
     periods = _iter_periods(date_from, date_to, granularity)
@@ -569,6 +632,7 @@ async def get_stock_dynamics(
         db,
         product_code=product_code,
         warehouse_code=warehouse_code,
+        warehouse_codes=warehouse_codes,
         department_id=department_id,
         client_id=client_id,
         date_from=date_from,
@@ -579,6 +643,7 @@ async def get_stock_dynamics(
         db,
         product_code=product_code,
         warehouse_code=warehouse_code,
+        warehouse_codes=warehouse_codes,
         date_from=date_from,
         date_to=date_to,
     )
@@ -603,8 +668,10 @@ async def get_stock_dynamics(
         db,
         product_code=product_code,
         warehouse_code=warehouse_code,
+        warehouse_codes=warehouse_codes,
         department_id=department_id,
         client_id=client_id,
+        client_ids=client_ids,
         periods=periods,
         granularity=granularity,
         date_from=date_from,
@@ -687,6 +754,8 @@ async def get_stock_summary(
     department_id: UUID | None,
     client_id: UUID | None,
     today: date,
+    warehouse_codes: list[int] | None = None,
+    client_ids: list[UUID] | None = None,
 ) -> StockSummaryData:
     """Шесть последних месяцев, включая текущий, по тем же фильтрам, что график."""
     periods = _month_starts(today)
@@ -695,6 +764,7 @@ async def get_stock_summary(
         db,
         product_code=product_code,
         warehouse_code=warehouse_code,
+        warehouse_codes=warehouse_codes,
         periods=periods,
         granularity="month",
         date_from=date_from,
@@ -704,8 +774,10 @@ async def get_stock_summary(
         db,
         product_code=product_code,
         warehouse_code=warehouse_code,
+        warehouse_codes=warehouse_codes,
         department_id=department_id,
         client_id=client_id,
+        client_ids=client_ids,
         periods=periods,
         granularity="month",
         date_from=date_from,
@@ -715,6 +787,7 @@ async def get_stock_summary(
         db,
         product_code=product_code,
         warehouse_code=warehouse_code,
+        warehouse_codes=warehouse_codes,
         department_id=department_id,
         client_id=client_id,
         date_from=date_from,
@@ -735,3 +808,101 @@ async def get_stock_summary(
         for index, period in enumerate(periods)
     ]
     return StockSummaryData(months=months, unit="т")
+
+
+def _shipment_kg(quantity: Decimal, unit: str, weight_kg: Decimal | None) -> Decimal:
+    return to_mass(quantity, unit, weight_kg or ZERO, "кг")
+
+
+def _sum_kg(rows) -> dict:
+    totals: dict = {}
+    for row in rows:
+        key = row.key
+        totals[key] = totals.get(key, ZERO) + _shipment_kg(
+            row.quantity, row.unit, row.weight_kg
+        )
+    return totals
+
+
+async def get_analytics_filters(
+    db: AsyncSession,
+    *,
+    product_code: int | None,
+    today: date,
+) -> AnalyticsFiltersData:
+    """Клиенты и склады с отгрузкой за 6 календарных месяцев, включая текущий.
+
+    Сумма в килограммах, два знака. Удалённые отгрузки не входят.
+    Склад — активный неудалённый объект с тем же пунктом отгрузки.
+    Клиент без такого склада в список складов не попадает, но в клиентах остаётся.
+    """
+    start = _month_starts(today)[0]
+    shipment_window = [
+        ActualShipment.deleted_at.is_(None),
+        ActualShipment.shipment_date >= start,
+        ActualShipment.shipment_date <= today,
+    ]
+    if product_code is not None:
+        shipment_window.append(ActualShipment.product_code == product_code)
+
+    client_rows = (
+        await db.execute(
+            select(
+                Client.id.label("key"),
+                Client.name,
+                ActualShipment.quantity,
+                ActualShipment.unit,
+                Product.weight_kg,
+            )
+            .join(Client, Client.id == ActualShipment.client_id)
+            .join(Product, Product.code == ActualShipment.product_code)
+            .where(*shipment_window, Client.deleted_at.is_(None))
+        )
+    ).all()
+    client_names = {row.key: row.name for row in client_rows}
+    client_totals = _sum_kg(client_rows)
+    clients = [
+        AnalyticsFilterClient(
+            id=client_id,
+            name=client_names[client_id],
+            shipment_kg=_round_kg(client_totals[client_id]),
+        )
+        for client_id in client_totals
+    ]
+    clients.sort(key=lambda item: (-item.shipment_kg, item.name))
+
+    warehouse_rows = (
+        await db.execute(
+            select(
+                Object.code.label("key"),
+                Object.name,
+                ActualShipment.quantity,
+                ActualShipment.unit,
+                Product.weight_kg,
+            )
+            .join(Object, Object.loading_point == ActualShipment.loading_point)
+            .join(Product, Product.code == ActualShipment.product_code)
+            .where(
+                *shipment_window,
+                Object.deleted_at.is_(None),
+                Object.is_active.is_(True),
+                Object.type == "warehouse",
+            )
+        )
+    ).all()
+    warehouse_names = {row.key: row.name for row in warehouse_rows}
+    warehouse_totals = _sum_kg(warehouse_rows)
+    warehouses = [
+        AnalyticsFilterWarehouse(
+            code=code,
+            name=warehouse_names[code],
+            shipment_kg=_round_kg(warehouse_totals[code]),
+        )
+        for code in warehouse_totals
+    ]
+    warehouses.sort(key=lambda item: (-item.shipment_kg, item.name))
+    return AnalyticsFiltersData(clients=clients, warehouses=warehouses, unit="кг")
+
+
+def _round_kg(value: Decimal) -> Decimal:
+    return value.quantize(KILOGRAMS, rounding=ROUND_HALF_UP)

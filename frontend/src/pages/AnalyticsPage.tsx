@@ -12,19 +12,20 @@ import {
 } from 'antd'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { analyticsApi } from '../api/analytics'
 import { getApiErrorMessage } from '../api/client'
 import { referencesApi } from '../api/references'
 import type {
+  AnalyticsFilterClient,
+  AnalyticsFilterWarehouse,
   DepartmentListItem,
-  ObjectListItem,
   StockDynamicsData,
   StockSummaryData,
 } from '../api/types'
-import { ClientAutocomplete } from '../components/clients/ClientAutocomplete'
 import { StockDynamicsChart } from '../components/analytics/StockDynamicsChart'
 import { StockSummaryTable } from '../components/analytics/StockSummaryTable'
+import { ShipmentSelectionTables } from '../components/analytics/ShipmentSelectionTables'
 import {
   defaultStockRange,
   type StockGranularity,
@@ -33,36 +34,48 @@ import { ProductAutocomplete } from '../components/requests/ProductAutocomplete'
 
 const { RangePicker } = DatePicker
 
+function selectionQuery(
+  clientIds: string[] | null,
+  warehouseCodes: number[] | null,
+): { client_ids?: string[]; warehouse_codes?: number[] } {
+  return {
+    ...(clientIds !== null ? { client_ids: clientIds } : {}),
+    ...(warehouseCodes !== null ? { warehouse_codes: warehouseCodes } : {}),
+  }
+}
+
 export function AnalyticsPage() {
   const [productCode, setProductCode] = useState<number | undefined>()
-  const [warehouseCode, setWarehouseCode] = useState<number | undefined>()
   const [departmentId, setDepartmentId] = useState<string | undefined>()
-  const [clientId, setClientId] = useState<string | undefined>()
   const [granularity, setGranularity] = useState<StockGranularity>('month')
   const [showFullStock, setShowFullStock] = useState(false)
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [rangeMode, setRangeMode] = useState<'auto' | 'manual'>('auto')
-  const [warehouses, setWarehouses] = useState<ObjectListItem[]>([])
   const [departments, setDepartments] = useState<DepartmentListItem[]>([])
+  const [filterClients, setFilterClients] = useState<AnalyticsFilterClient[]>([])
+  const [filterWarehouses, setFilterWarehouses] = useState<AnalyticsFilterWarehouse[]>([])
+  const [selectedClientIds, setSelectedClientIds] = useState<string[] | null>(null)
+  const [selectedWarehouseCodes, setSelectedWarehouseCodes] = useState<number[] | null>(null)
   const [series, setSeries] = useState<StockDynamicsData | null>(null)
   const [summary, setSummary] = useState<StockSummaryData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const selectionEmpty =
+    selectedClientIds !== null &&
+    selectedClientIds.length === 0 &&
+    selectedWarehouseCodes !== null &&
+    selectedWarehouseCodes.length === 0
+
   useEffect(() => {
     let cancelled = false
     void (async () => {
       try {
-        const [objectsResp, departmentsResp] = await Promise.all([
-          referencesApi.getObjects({ type: 'warehouse', is_active: true, limit: 200 }),
-          referencesApi.getDepartments({ has_normatives: true }),
-        ])
-        if (cancelled) {
-          return
+        const departmentsResp = await referencesApi.getDepartments({ has_normatives: true })
+        if (!cancelled) {
+          setDepartments(departmentsResp.data.data)
         }
-        setWarehouses(objectsResp.data.data)
-        setDepartments(departmentsResp.data.data)
       } catch (loadError) {
         if (!cancelled) {
           message.error(getApiErrorMessage(loadError, 'Не удалось загрузить фильтры'))
@@ -75,7 +88,37 @@ export function AnalyticsPage() {
   }, [])
 
   useEffect(() => {
-    if (granularity !== 'month' || rangeMode !== 'auto') {
+    setSelectedClientIds(null)
+    setSelectedWarehouseCodes(null)
+    if (!productCode) {
+      setFilterClients([])
+      setFilterWarehouses([])
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const response = await analyticsApi.getFilters({ product_code: productCode })
+        if (cancelled) {
+          return
+        }
+        setFilterClients(response.data.data.clients)
+        setFilterWarehouses(response.data.data.warehouses)
+      } catch (loadError) {
+        if (!cancelled) {
+          setFilterClients([])
+          setFilterWarehouses([])
+          message.error(getApiErrorMessage(loadError, 'Не удалось загрузить клиентов и склады'))
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [productCode])
+
+  useEffect(() => {
+    if (granularity !== 'month' || rangeMode !== 'auto' || selectionEmpty) {
       return
     }
     let cancelled = false
@@ -89,9 +132,8 @@ export function AnalyticsPage() {
       try {
         const response = await analyticsApi.getStockBounds({
           product_code: productCode,
-          ...(warehouseCode ? { warehouse_code: warehouseCode } : {}),
           ...(departmentId ? { department_id: departmentId } : {}),
-          ...(clientId ? { client_id: clientId } : {}),
+          ...selectionQuery(selectedClientIds, selectedWarehouseCodes),
         })
         if (cancelled) {
           return
@@ -112,10 +154,18 @@ export function AnalyticsPage() {
     return () => {
       cancelled = true
     }
-  }, [granularity, rangeMode, productCode, warehouseCode, departmentId, clientId])
+  }, [
+    granularity,
+    rangeMode,
+    productCode,
+    departmentId,
+    selectedClientIds,
+    selectedWarehouseCodes,
+    selectionEmpty,
+  ])
 
   useEffect(() => {
-    if (!productCode) {
+    if (!productCode || selectionEmpty) {
       setSummary(null)
       return
     }
@@ -124,9 +174,8 @@ export function AnalyticsPage() {
       try {
         const response = await analyticsApi.getStockSummary({
           product_code: productCode,
-          ...(warehouseCode ? { warehouse_code: warehouseCode } : {}),
           ...(departmentId ? { department_id: departmentId } : {}),
-          ...(clientId ? { client_id: clientId } : {}),
+          ...selectionQuery(selectedClientIds, selectedWarehouseCodes),
         })
         if (!cancelled) {
           setSummary(response.data.data)
@@ -141,48 +190,56 @@ export function AnalyticsPage() {
     return () => {
       cancelled = true
     }
-  }, [productCode, warehouseCode, departmentId, clientId])
+  }, [productCode, departmentId, selectedClientIds, selectedWarehouseCodes, selectionEmpty])
 
-  const loadSeries = useCallback(async () => {
-    if (!productCode || !dateFrom || !dateTo) {
+  useEffect(() => {
+    if (!productCode || !dateFrom || !dateTo || selectionEmpty) {
       setSeries(null)
       setLoading(false)
       return
     }
+    let cancelled = false
     setLoading(true)
     setError(null)
-    try {
-      const response = await analyticsApi.getStockDynamics({
-        product_code: productCode,
-        date_from: dateFrom,
-        date_to: dateTo,
-        granularity,
-        ...(warehouseCode ? { warehouse_code: warehouseCode } : {}),
-        ...(departmentId ? { department_id: departmentId } : {}),
-        ...(clientId ? { client_id: clientId } : {}),
-      })
-      setSeries(response.data.data)
-    } catch (loadError) {
-      const text = getApiErrorMessage(loadError, 'Не удалось загрузить график')
-      setError(text)
-      setSeries(null)
-      message.error(text)
-    } finally {
-      setLoading(false)
+    void (async () => {
+      try {
+        const response = await analyticsApi.getStockDynamics({
+          product_code: productCode,
+          date_from: dateFrom,
+          date_to: dateTo,
+          granularity,
+          ...(departmentId ? { department_id: departmentId } : {}),
+          ...selectionQuery(selectedClientIds, selectedWarehouseCodes),
+        })
+        if (!cancelled) {
+          setSeries(response.data.data)
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          const text = getApiErrorMessage(loadError, 'Не удалось загрузить график')
+          setError(text)
+          setSeries(null)
+          message.error(text)
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
     }
   }, [
     productCode,
-    warehouseCode,
     departmentId,
-    clientId,
+    selectedClientIds,
+    selectedWarehouseCodes,
+    selectionEmpty,
     dateFrom,
     dateTo,
     granularity,
   ])
-
-  useEffect(() => {
-    void loadSeries()
-  }, [loadSeries])
 
   const onGranularity = (value: StockGranularity) => {
     setRangeMode('auto')
@@ -197,6 +254,12 @@ export function AnalyticsPage() {
     setDateTo(range.to)
   }
 
+  const onProduct = (code: number | undefined) => {
+    setProductCode(code)
+    setSelectedClientIds(null)
+    setSelectedWarehouseCodes(null)
+  }
+
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
       <Typography.Title level={3} style={{ margin: 0 }}>
@@ -209,24 +272,7 @@ export function AnalyticsPage() {
             <ProductAutocomplete
               ariaLabel="Продукт"
               value={productCode}
-              onChange={(code) => setProductCode(code)}
-            />
-          </div>
-          <div style={{ minWidth: 220 }}>
-            <Typography.Text type="secondary">Склад</Typography.Text>
-            <Select
-              allowClear
-              showSearch
-              aria-label="Склад"
-              optionFilterProp="label"
-              placeholder="Все склады"
-              style={{ width: '100%' }}
-              value={warehouseCode}
-              onChange={(value) => setWarehouseCode(value)}
-              options={warehouses.map((item) => ({
-                value: item.code,
-                label: `${item.code} · ${item.name}`,
-              }))}
+              onChange={onProduct}
             />
           </div>
           <div style={{ minWidth: 240 }}>
@@ -244,14 +290,6 @@ export function AnalyticsPage() {
                 value: item.id,
                 label: item.name,
               }))}
-            />
-          </div>
-          <div style={{ minWidth: 260 }}>
-            <Typography.Text type="secondary">Клиент</Typography.Text>
-            <ClientAutocomplete
-              ariaLabel="Клиент"
-              value={clientId}
-              onChange={(id) => setClientId(id)}
             />
           </div>
           <div>
@@ -301,6 +339,8 @@ export function AnalyticsPage() {
       <Card>
         {!productCode ? (
           <Empty description="Выберите продукт" />
+        ) : selectionEmpty ? (
+          <Empty description="Выберите хотя бы один склад или клиента" />
         ) : (
           <Spin spinning={loading}>
             <StockDynamicsChart
@@ -312,6 +352,18 @@ export function AnalyticsPage() {
         )}
       </Card>
       {productCode ? (
+        <Card>
+          <ShipmentSelectionTables
+            clients={filterClients}
+            warehouses={filterWarehouses}
+            selectedClientIds={selectedClientIds}
+            selectedWarehouseCodes={selectedWarehouseCodes}
+            onClientsChange={setSelectedClientIds}
+            onWarehousesChange={setSelectedWarehouseCodes}
+          />
+        </Card>
+      ) : null}
+      {productCode && !selectionEmpty ? (
         <Card title="Сводка за последние 6 месяцев">
           <StockSummaryTable data={summary} />
         </Card>

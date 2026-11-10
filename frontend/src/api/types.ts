@@ -1019,11 +1019,31 @@ export interface StockSummaryData {
   unit: 'т'
 }
 
+export interface AnalyticsFilterClient {
+  id: string
+  name: string
+  shipment_kg: number
+}
+
+export interface AnalyticsFilterWarehouse {
+  code: number
+  name: string
+  shipment_kg: number
+}
+
+export interface AnalyticsFiltersData {
+  clients: AnalyticsFilterClient[]
+  warehouses: AnalyticsFilterWarehouse[]
+  unit: 'кг'
+}
+
 export interface StockDynamicsParams {
   product_code: number
   warehouse_code?: number
+  warehouse_codes?: number[]
   department_id?: string
   client_id?: string
+  client_ids?: string[]
   date_from: string
   date_to: string
   granularity?: StockGranularity

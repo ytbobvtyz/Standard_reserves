@@ -1140,6 +1140,8 @@ deleted_at	TIMESTAMP	❌	Soft delete (в списке скрыто)
 - фактический остаток — `available_balances_history.full_stock` на `snapshot_date`, с теми же полосами, что у доступного остатка: на неделе минимум и максимум, на месяце ещё медиана, на дне итог дня. День без слепка в минимум и максимум не входит. Дата, где `full_stock` во всех строках равен нулю, тоже пропускается. По умолчанию линии скрыты;
 - фактическая реализация — сумма `actual_shipments.quantity` за месяц, неделю или день, без накопления. Склад отгрузки определяется по `objects.loading_point`. Доступный остаток на графике: на месяце — минимум, медиана и максимум дневных остатков, на неделе — только минимум и максимум, на дне — запас этого дня. Отрицательный остаток снимка перед этим считается как ноль. Под графиком — сводка шести последних месяцев: медианный остаток, сумма реализации и средний дневной норматив. На неделе норматив делится на 4, на дне — на 28.
 
+Чекбоксы страницы (LOG-061) не добавляют таблиц. `GET /analytics/filters` читает `actual_shipments` за шесть календарных месяцев, включая текущий, и соединяет их с `clients` (неудалённые) и `objects` (активный неудалённый склад с тем же `loading_point`). Сумма строки — килограммы. `client_ids` в динамике ограничивает только `actual_shipments`. `warehouse_codes` ограничивает `normatives.warehouse_code`, `available_balances_history.warehouse_code` и отгрузки по `loading_point` выбранных складов. Нет параметра — фильтр не применяется.
+
 `GET /dashboard/summary` дополнительно отдаёт `total_full_stock` и `total_available`: суммы `available_balances.full_stock` и `available_balances.available` по всем складам, в тоннах, без фильтров страницы.
 
 Единица графика — тонны (`products.weight_kg`). Подробности агрегации по дню, неделе и месяцу — в API, раздел 6.11.
@@ -1662,7 +1664,7 @@ GROUP BY warehouse_code, product_code;
 Таблица available_balances	✅ Два Excel: доступные остатки и перемещения (`full_stock`, `on_way`, `no_ready`, `ready`, `collected`, `plan`)
 Таблица available_balances_history	✅ Дневной снимок при каждой загрузке остатков
 Таблица actual_shipments	✅ Фактическая реализация, Excel с предпросмотром
-Аналитика запасов	✅ Чтение normatives, available_balances_history и actual_shipments, без новой таблицы (LOG-054)
+Аналитика запасов	✅ Чтение normatives, available_balances_history и actual_shipments, без новой таблицы (LOG-054, чекбоксы LOG-061)
 Покрытие в согласовании	✅ Два групповых чтения `normatives` и `actual_shipments`; месяцы считаются в интерфейсе, границы — в `params` (LOG-055)
 Таблица events	✅ Создана (задел под агента)
 Таблица request_item_history	✅ История изменений

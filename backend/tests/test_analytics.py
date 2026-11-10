@@ -1,5 +1,6 @@
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from unittest.mock import patch
 from uuid import UUID, uuid4
 
 import pytest
@@ -811,3 +812,133 @@ async def test_stock_summary_last_three_months(
     )
     assert response.status_code == 200
     assert len(response.json()["data"]["months"]) == 6
+
+
+def _kg(value: object) -> Decimal:
+    return Decimal(str(value)).quantize(Decimal("0.01"))
+
+
+@pytest.mark.asyncio
+async def test_analytics_filters_requires_auth(client: AsyncClient) -> None:
+    response = await client.get("/api/v1/analytics/filters")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_analytics_filters_and_checkbox_selection(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    stock_dataset: dict,
+) -> None:
+    token = await login_token(client, logistics_user)
+    frozen = datetime(2026, 11, 9, tzinfo=UTC)
+    with patch("app.api.v1.endpoints.analytics.datetime") as clock:
+        clock.now.return_value = frozen
+        response = await client.get(
+            "/api/v1/analytics/filters",
+            headers=auth_header(token),
+            params={"product_code": PRODUCT},
+        )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["unit"] == "кг"
+    assert data["clients"][0]["name"].startswith("Клиент А ")
+    assert data["clients"][1]["name"].startswith("Клиент Б ")
+    assert [item["id"] for item in data["clients"]] == [
+        stock_dataset["client_a"],
+        stock_dataset["client_b"],
+    ]
+    assert [_kg(item["shipment_kg"]) for item in data["clients"]] == [
+        Decimal("6000.00"),
+        Decimal("2000.00"),
+    ]
+    assert [item["code"] for item in data["warehouses"]] == [WAREHOUSE, OTHER_WAREHOUSE]
+    assert [_kg(item["shipment_kg"]) for item in data["warehouses"]] == [
+        Decimal("7000.00"),
+        Decimal("1000.00"),
+    ]
+
+    day = {"granularity": "day", "date_from": DAY_FROM, "date_to": DAY_TO}
+    both = await _get(
+        client,
+        token,
+        {
+            "product_code": PRODUCT,
+            "client_ids": [stock_dataset["client_a"], stock_dataset["client_b"]],
+            "warehouse_codes": [WAREHOUSE, OTHER_WAREHOUSE],
+            **day,
+        },
+    )
+    untouched = await _get(client, token, {"product_code": PRODUCT, **day})
+    assert _tons(both["normative"]) == _tons(untouched["normative"])
+    assert _tons(both["available_median"]) == _tons(untouched["available_median"])
+    assert _tons(both["actual"]) == _tons(untouched["actual"])
+
+    client_only = await _get(
+        client,
+        token,
+        {
+            "product_code": PRODUCT,
+            "client_ids": [stock_dataset["client_a"]],
+            **day,
+        },
+    )
+    assert _tons(client_only["normative"]) == _tons(untouched["normative"])
+    assert _tons(client_only["actual"]) == [
+        None,
+        None,
+        Decimal("1.500"),
+        Decimal("0.500"),
+        None,
+        None,
+    ]
+
+    other_warehouse = await _get(
+        client,
+        token,
+        {
+            "product_code": PRODUCT,
+            "client_ids": [stock_dataset["client_a"]],
+            "warehouse_codes": [OTHER_WAREHOUSE],
+            **day,
+        },
+    )
+    assert other_warehouse["actual"] == [None] * 6
+    assert _tons(other_warehouse["available_median"]) == [
+        None,
+        None,
+        None,
+        Decimal("1.000"),
+        None,
+        None,
+    ]
+
+    no_clients = await _get(
+        client,
+        token,
+        [
+            ("product_code", str(PRODUCT)),
+            ("date_from", DAY_FROM),
+            ("date_to", DAY_TO),
+            ("granularity", "day"),
+            ("client_ids", ""),
+        ],
+    )
+    assert _tons(no_clients["normative"]) == _tons(untouched["normative"])
+    assert no_clients["actual"] == [None] * 6
+
+    no_warehouses = await _get(
+        client,
+        token,
+        [
+            ("product_code", str(PRODUCT)),
+            ("date_from", DAY_FROM),
+            ("date_to", DAY_TO),
+            ("granularity", "day"),
+            ("warehouse_codes", ""),
+            ("client_ids", stock_dataset["client_a"]),
+        ],
+    )
+    assert no_warehouses["normative"] == [None] * 6
+    assert no_warehouses["available_median"] == [None] * 6
+    assert no_warehouses["actual"] == [None] * 6

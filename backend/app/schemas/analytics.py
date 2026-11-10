@@ -1,5 +1,6 @@
 from datetime import date
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel
 
@@ -35,3 +36,21 @@ class StockMonthSummary(BaseModel):
 class StockSummaryData(BaseModel):
     months: list[StockMonthSummary]
     unit: Literal["т"] = "т"
+
+
+class AnalyticsFilterClient(BaseModel):
+    id: UUID
+    name: str
+    shipment_kg: DecimalNumber
+
+
+class AnalyticsFilterWarehouse(BaseModel):
+    code: int
+    name: str
+    shipment_kg: DecimalNumber
+
+
+class AnalyticsFiltersData(BaseModel):
+    clients: list[AnalyticsFilterClient]
+    warehouses: list[AnalyticsFilterWarehouse]
+    unit: Literal["кг"] = "кг"
