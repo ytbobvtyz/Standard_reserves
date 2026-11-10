@@ -162,4 +162,42 @@ describe('AdminUsersPage', () => {
     const loginInput = screen.getByDisplayValue('commercial')
     expect(loginInput).toHaveProperty('disabled', true)
   })
+
+  it('hides admin actions and the admin role from logistics', async () => {
+    getUsers.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: [
+          {
+            ...user,
+            id: '66666666-6666-6666-6666-666666666666',
+            username: 'admin',
+            full_name: 'Главный Админ',
+            role: 'admin',
+          },
+        ],
+        meta: { page: 1, limit: 10, total: 1 },
+      },
+    })
+    render(
+      <MemoryRouter>
+        <AdminUsersPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByText('Главный Админ')).toBeTruthy()
+    })
+    expect(screen.queryByRole('button', { name: 'Редактировать' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Сбросить пароль' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Удалить' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: /Создать пользователя/ }))
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Роль' }))
+    expect(
+      screen.queryByText('Администратор', {
+        selector: '.ant-select-item-option-content',
+      }),
+    ).toBeNull()
+    expect(screen.getByText('Коммерция')).toBeTruthy()
+  })
 })

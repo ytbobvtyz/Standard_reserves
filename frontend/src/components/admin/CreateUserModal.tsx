@@ -1,8 +1,6 @@
 import { Form, Input, Modal, Select } from 'antd'
 import type { DepartmentListItem, UserRole } from '../../api/types'
 import { PasswordStrengthField } from '../common/PasswordStrengthField'
-import { ROLE_OPTIONS } from './roles'
-
 export interface CreateUserFormValues {
   username: string
   email: string
@@ -16,6 +14,7 @@ interface CreateUserModalProps {
   open: boolean
   loading: boolean
   departments: DepartmentListItem[]
+  roles: Array<{ value: UserRole; label: string }>
   onCancel: () => void
   onSubmit: (values: CreateUserFormValues) => Promise<void>
 }
@@ -24,6 +23,7 @@ export function CreateUserModal({
   open,
   loading,
   departments,
+  roles,
   onCancel,
   onSubmit,
 }: CreateUserModalProps) {
@@ -74,7 +74,7 @@ export function CreateUserModal({
           label="Роль"
           rules={[{ required: true, message: 'Выберите роль' }]}
         >
-          <Select options={ROLE_OPTIONS} />
+          <Select options={roles} />
         </Form.Item>
         <Form.Item name="department_id" label="Подразделение">
           <Select

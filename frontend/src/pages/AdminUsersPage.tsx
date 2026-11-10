@@ -50,6 +50,10 @@ function userStatus(user: AdminUser): { label: string; color: string } {
 
 export function AdminUsersPage() {
   const currentUser = useAuthStore((state) => state.user)
+  const canManageAdmins = currentUser?.role === 'admin'
+  const assignableRoles = canManageAdmins
+    ? ROLE_OPTIONS
+    : ROLE_OPTIONS.filter((item) => item.value !== 'admin')
 
   const [items, setItems] = useState<AdminUser[]>([])
   const [total, setTotal] = useState(0)
@@ -218,6 +222,9 @@ export function AdminUsersPage() {
       render: (_value, record) => {
         const isSelf = record.id === currentUser?.id
         const isDeleted = Boolean(record.deleted_at)
+        if (record.role === 'admin' && !canManageAdmins) {
+          return null
+        }
         return (
           <Space>
             <Button
@@ -342,6 +349,7 @@ export function AdminUsersPage() {
         open={createOpen}
         loading={creating}
         departments={departments}
+        roles={assignableRoles}
         onCancel={() => setCreateOpen(false)}
         onSubmit={createUser}
       />
@@ -351,6 +359,7 @@ export function AdminUsersPage() {
         saving={saving}
         user={editing}
         departments={departments}
+        roles={assignableRoles}
         onCancel={() => setEditOpen(false)}
         onSubmit={saveUser}
       />

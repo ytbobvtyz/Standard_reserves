@@ -322,6 +322,146 @@ async def test_reset_password(client: AsyncClient, logistics_user: AuthUser) -> 
         await _delete_user(target.id)
 
 
+def _user_body(user: AuthUser, **overrides: object) -> dict[str, object]:
+    data: dict[str, object] = {
+        "email": user.email,
+        "full_name": user.full_name,
+        "role": user.role,
+        "department_id": None,
+        "is_active": True,
+    }
+    data.update(overrides)
+    return data
+
+
+async def test_logistics_cannot_manage_admins(
+    client: AsyncClient, logistics_user: AuthUser, admin_user: AuthUser
+) -> None:
+    token = await login_token(client, logistics_user)
+    created = await client.post(
+        "/api/v1/admin/users",
+        headers=auth_header(token),
+        json=_payload(
+            username="would_be_admin",
+            email="would_be_admin@company.ru",
+            role="admin",
+        ),
+    )
+    assert created.status_code == 403, created.text
+    assert created.json()["error"]["code"] == "FORBIDDEN"
+
+    target = await _create_user(role="commercial")
+    try:
+        promoted = await client.put(
+            f"/api/v1/admin/users/{target.id}",
+            headers=auth_header(token),
+            json=_user_body(target, role="admin"),
+        )
+        assert promoted.status_code == 403, promoted.text
+
+        edited = await client.put(
+            f"/api/v1/admin/users/{admin_user.id}",
+            headers=auth_header(token),
+            json=_user_body(admin_user, full_name="Чужое имя"),
+        )
+        assert edited.status_code == 403, edited.text
+
+        deleted = await client.delete(
+            f"/api/v1/admin/users/{admin_user.id}",
+            headers=auth_header(token),
+        )
+        assert deleted.status_code == 403, deleted.text
+
+        reset = await client.post(
+            f"/api/v1/admin/users/{admin_user.id}/reset-password",
+            headers=auth_header(token),
+        )
+        assert reset.status_code == 403, reset.text
+    finally:
+        await _delete_user(target.id)
+
+
+async def test_admin_manages_admins_and_keeps_the_last_one(
+    client: AsyncClient, admin_user: AuthUser
+) -> None:
+    token = await login_token(client, admin_user)
+    created_id: str | None = None
+    deactivated_ids: list[uuid.UUID] = []
+    try:
+        created = await client.post(
+            "/api/v1/admin/users",
+            headers=auth_header(token),
+            json=_payload(
+                username=f"second_admin_{uuid.uuid4().hex[:8]}",
+                email=f"second_admin_{uuid.uuid4().hex[:8]}@company.ru",
+                role="admin",
+            ),
+        )
+        assert created.status_code == 201, created.text
+        created_id = created.json()["data"]["id"]
+        assert created.json()["data"]["role"] == "admin"
+
+        renamed = await client.put(
+            f"/api/v1/admin/users/{created_id}",
+            headers=auth_header(token),
+            json={
+                "email": created.json()["data"]["email"],
+                "full_name": "Второй Администратор",
+                "role": "admin",
+                "department_id": None,
+                "is_active": True,
+            },
+        )
+        assert renamed.status_code == 200, renamed.text
+
+        async with AsyncSessionLocal() as session:
+            others = (
+                await session.scalars(
+                    select(User).where(
+                        User.role == "admin",
+                        User.deleted_at.is_(None),
+                        User.is_active.is_(True),
+                        User.id != admin_user.id,
+                    )
+                )
+            ).all()
+            deactivated_ids = [item.id for item in others]
+            for item in others:
+                item.is_active = False
+            await session.commit()
+
+        demoted = await client.put(
+            f"/api/v1/admin/users/{admin_user.id}",
+            headers=auth_header(token),
+            json=_user_body(admin_user, role="guest"),
+        )
+        assert demoted.status_code == 400, demoted.text
+        assert demoted.json()["error"]["code"] == "LAST_ADMIN"
+
+        deactivated = await client.put(
+            f"/api/v1/admin/users/{admin_user.id}",
+            headers=auth_header(token),
+            json=_user_body(admin_user, is_active=False),
+        )
+        assert deactivated.status_code == 400, deactivated.text
+        assert deactivated.json()["error"]["code"] == "LAST_ADMIN"
+
+        removed = await client.delete(
+            f"/api/v1/admin/users/{admin_user.id}",
+            headers=auth_header(token),
+        )
+        assert removed.status_code == 400, removed.text
+        assert removed.json()["error"]["code"] == "CANNOT_DELETE_SELF"
+    finally:
+        async with AsyncSessionLocal() as session:
+            for user_id in deactivated_ids:
+                other = await session.get(User, user_id)
+                if other is not None:
+                    other.is_active = True
+            await session.commit()
+        await _cleanup_user(created_id)
+
+
 async def test_list_admin_departments(
     client: AsyncClient, logistics_user: AuthUser, guest_user: AuthUser
 ) -> None:

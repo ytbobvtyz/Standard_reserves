@@ -1,7 +1,6 @@
 import { Checkbox, Form, Input, Modal, Select } from 'antd'
 import { useEffect } from 'react'
-import type { AdminUser, DepartmentListItem } from '../../api/types'
-import { ROLE_OPTIONS } from './roles'
+import type { AdminUser, DepartmentListItem, UserRole } from '../../api/types'
 
 export interface EditUserFormValues {
   email: string
@@ -17,6 +16,7 @@ interface EditUserModalProps {
   saving: boolean
   user: AdminUser | null
   departments: DepartmentListItem[]
+  roles: Array<{ value: UserRole; label: string }>
   onCancel: () => void
   onSubmit: (values: EditUserFormValues) => Promise<void>
 }
@@ -27,6 +27,7 @@ export function EditUserModal({
   saving,
   user,
   departments,
+  roles,
   onCancel,
   onSubmit,
 }: EditUserModalProps) {
@@ -83,7 +84,7 @@ export function EditUserModal({
           label="Роль"
           rules={[{ required: true, message: 'Выберите роль' }]}
         >
-          <Select options={ROLE_OPTIONS} />
+          <Select options={roles} />
         </Form.Item>
         <Form.Item name="department_id" label="Подразделение">
           <Select

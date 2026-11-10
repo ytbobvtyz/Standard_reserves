@@ -137,6 +137,39 @@ def _ensure_not_last_logistics(remaining: int) -> None:
         )
 
 
+async def _active_admin_count(
+    db: AsyncSession, *, exclude_id: UUID | None = None
+) -> int:
+    conditions = [
+        User.role == "admin",
+        User.deleted_at.is_(None),
+        User.is_active.is_(True),
+    ]
+    if exclude_id is not None:
+        conditions.append(User.id != exclude_id)
+    count = await db.scalar(select(func.count()).select_from(User).where(*conditions))
+    return int(count or 0)
+
+
+def _ensure_not_last_admin(remaining: int) -> None:
+    if remaining <= 0:
+        raise APIError(
+            400,
+            "LAST_ADMIN",
+            "Нельзя удалить или изменить роль последнего администратора",
+        )
+
+
+def _ensure_admin_manager(actor: User, *roles: str) -> None:
+    if actor.role == "admin" or "admin" not in roles:
+        return
+    raise APIError(
+        403,
+        "FORBIDDEN",
+        "Управлять администраторами может только администратор",
+    )
+
+
 async def _revoke_sessions(db: AsyncSession, user_id: UUID) -> None:
     await db.execute(
         update(Session)
@@ -198,6 +231,7 @@ async def get_user(db: AsyncSession, user_id: UUID) -> UserResponse:
 
 
 async def create_user(db: AsyncSession, data: UserCreate, actor: User) -> UserResponse:
+    _ensure_admin_manager(actor, data.role)
     if await _username_taken(db, data.username):
         raise APIError(
             409, "ALREADY_EXISTS", "Пользователь с таким логином уже существует"
@@ -253,6 +287,7 @@ async def update_user(
     db: AsyncSession, user_id: UUID, data: UserUpdate, actor: User
 ) -> UserResponse:
     user = await _require_user(db, user_id)
+    _ensure_admin_manager(actor, user.role, data.role)
     if await _email_taken(db, data.email, exclude_id=user.id):
         raise APIError(
             409, "ALREADY_EXISTS", "Пользователь с таким email уже существует"
@@ -266,6 +301,14 @@ async def update_user(
     if losing_logistics:
         remaining = await _active_logistics_count(db, exclude_id=user.id)
         _ensure_not_last_logistics(remaining)
+    losing_admin = (
+        user.role == "admin"
+        and user.is_active
+        and (data.role != "admin" or not data.is_active)
+    )
+    if losing_admin:
+        remaining = await _active_admin_count(db, exclude_id=user.id)
+        _ensure_not_last_admin(remaining)
 
     department = await _resolve_department(db, data.department_id)
     before = {
@@ -317,9 +360,13 @@ async def delete_user(db: AsyncSession, user_id: UUID, current_user: User) -> No
         raise APIError(
             400, "CANNOT_DELETE_SELF", "Нельзя удалить собственную учётную запись"
         )
+    _ensure_admin_manager(current_user, user.role)
     if user.role == "logistics" and user.is_active:
         remaining = await _active_logistics_count(db, exclude_id=user.id)
         _ensure_not_last_logistics(remaining)
+    if user.role == "admin" and user.is_active:
+        remaining = await _active_admin_count(db, exclude_id=user.id)
+        _ensure_not_last_admin(remaining)
 
     user.deleted_at = datetime.now(UTC)
     await _revoke_sessions(db, user.id)
@@ -345,6 +392,7 @@ async def delete_user(db: AsyncSession, user_id: UUID, current_user: User) -> No
 
 async def reset_password(db: AsyncSession, user_id: UUID, actor: User) -> str:
     user = await _require_user(db, user_id)
+    _ensure_admin_manager(actor, user.role)
     new_password = generate_password()
     user.password_hash = hash_password(new_password)
     await _revoke_sessions(db, user.id)
