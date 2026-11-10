@@ -141,7 +141,8 @@ async def db_ready() -> AsyncGenerator[None, None]:
                     ALTER TABLE request_item_history
                         ALTER COLUMN old_value TYPE NUMERIC(12, 6);
                     ALTER TABLE request_items
-                        ADD COLUMN IF NOT EXISTS rejected BOOLEAN NOT NULL DEFAULT false;
+                        ADD COLUMN IF NOT EXISTS rejected
+                        BOOLEAN NOT NULL DEFAULT false;
                     ALTER TABLE request_item_history
                         DROP CONSTRAINT IF EXISTS ck_request_item_history_field_name;
                     ALTER TABLE request_item_history
