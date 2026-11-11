@@ -379,3 +379,57 @@ async def test_approval_keeps_system_client_normative(
         assert events == []
     await delete_request(request_id)
     await delete_request(second_id)
+
+
+async def test_update_allowed_for_commercial_forbidden_for_guest(
+    client: AsyncClient,
+    test_user: AuthUser,
+    guest_user: AuthUser,
+) -> None:
+    commercial_token = await login_token(client, test_user)
+    created = await client.post(
+        "/api/v1/references/clients",
+        headers=auth_header(commercial_token),
+        json={
+            "client_code": 7704000004,
+            "inn": "7704000004",
+            "name": "Клиент для правки",
+        },
+    )
+    assert created.status_code == 201, created.text
+    client_id = created.json()["data"]["id"]
+    updated = await client.put(
+        f"/api/v1/references/clients/{client_id}",
+        headers=auth_header(commercial_token),
+        json={"name": "Клиент обновлён", "is_active": True, "department_id": None},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["data"]["name"] == "Клиент обновлён"
+
+    guest_token = await login_token(client, guest_user)
+    denied = await client.put(
+        f"/api/v1/references/clients/{client_id}",
+        headers=auth_header(guest_token),
+        json={"name": "Гость", "is_active": True, "department_id": None},
+    )
+    assert denied.status_code == 403
+
+
+async def test_excel_template_roles(
+    client: AsyncClient,
+    economist_user: AuthUser,
+    test_user: AuthUser,
+) -> None:
+    economist_token = await login_token(client, economist_user)
+    allowed = await client.get(
+        "/api/v1/references/clients/template",
+        headers=auth_header(economist_token),
+    )
+    assert allowed.status_code == 200, allowed.text
+
+    commercial_token = await login_token(client, test_user)
+    denied = await client.get(
+        "/api/v1/references/clients/template",
+        headers=auth_header(commercial_token),
+    )
+    assert denied.status_code == 403

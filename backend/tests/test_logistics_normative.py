@@ -11,6 +11,7 @@ from sqlalchemy import delete, select
 from app.core.database import AsyncSessionLocal
 from app.models.available_balance import AvailableBalance
 from app.models.available_balance_history import AvailableBalanceHistory
+from app.models.client import SYSTEM_CLIENT_ID
 from app.models.normative import Normative
 from app.models.object import Object
 from app.models.product import Product
@@ -251,6 +252,33 @@ async def test_dashboard_returns_deficit(
     assert warehouse["long_distance_message"] is None
     assert warehouse["deficit_count"] >= 1
     assert body["summary"]["deficit_products"] >= 1
+
+
+async def test_dashboard_filters_by_client_id(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    logistics_catalog: dict,
+) -> None:
+    token = await login_token(client, logistics_user)
+    warehouse_code = logistics_catalog["warehouse_code"]
+    headers = auth_header(token)
+    matched = await client.get(
+        "/api/v1/logistics/normative/dashboard",
+        headers=headers,
+        params={"client_id": str(SYSTEM_CLIENT_ID), "warehouse_code": warehouse_code},
+    )
+    assert matched.status_code == 200, matched.text
+    warehouse = _warehouse(matched.json()["data"], warehouse_code)
+    item = _item(warehouse, TEST_PRODUCT_DEFICIT)
+    assert item["deficit"] == 400
+
+    empty = await client.get(
+        "/api/v1/logistics/normative/dashboard",
+        headers=headers,
+        params={"client_id": str(uuid4()), "warehouse_code": warehouse_code},
+    )
+    assert empty.status_code == 200, empty.text
+    assert empty.json()["data"] == []
 
 
 async def test_dashboard_requirement_recalculates_after_coeff_change(

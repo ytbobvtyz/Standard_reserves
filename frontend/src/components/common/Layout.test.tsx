@@ -62,6 +62,7 @@ describe('AppLayout admin menu', () => {
   it('hides administration item for commercial', () => {
     renderLayout('commercial')
     expect(screen.queryByText('Администрирование')).toBeNull()
+    expect(screen.getByText('Клиенты')).toBeTruthy()
     expect(screen.getByText('Продажи')).toBeTruthy()
     expect(screen.getByText('Аналитика')).toBeTruthy()
   })

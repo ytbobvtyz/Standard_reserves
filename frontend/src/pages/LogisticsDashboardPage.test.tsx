@@ -93,6 +93,8 @@ const previewBalances = vi.fn()
 const getSyncInfo = vi.fn()
 const getObjects = vi.fn()
 const getParams = vi.fn()
+const listClients = vi.fn()
+const getClient = vi.fn()
 
 vi.mock('../api/logistics', () => ({
   logisticsApi: {
@@ -124,6 +126,13 @@ vi.mock('../api/references', () => ({
   referencesApi: {
     getObjects: (...args: unknown[]) => getObjects(...args),
     getParams: (...args: unknown[]) => getParams(...args),
+  },
+}))
+
+vi.mock('../api/clients', () => ({
+  clientsApi: {
+    list: (...args: unknown[]) => listClients(...args),
+    get: (...args: unknown[]) => getClient(...args),
   },
 }))
 
@@ -164,6 +173,8 @@ describe('LogisticsDashboardPage', () => {
     getSyncInfo.mockReset()
     getObjects.mockReset()
     getParams.mockReset()
+    listClients.mockReset()
+    getClient.mockReset()
     getDashboard.mockResolvedValue({ data: dashboard })
     getSyncInfo.mockResolvedValue({
       data: {
@@ -186,6 +197,34 @@ describe('LogisticsDashboardPage', () => {
           { code: 2001, name: 'Склад Ростов', city: 'Ростов', type: 'warehouse' },
           { code: 2003, name: 'Склад Казань', city: 'Казань', type: 'warehouse' },
         ],
+      },
+    })
+    listClients.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: [
+          {
+            id: 'c-romashka',
+            client_code: 7701000001,
+            name: 'ООО Ромашка',
+            inn: '7701000001',
+            is_active: true,
+            is_system: false,
+          },
+        ],
+      },
+    })
+    getClient.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: {
+          id: 'c-romashka',
+          client_code: 7701000001,
+          name: 'ООО Ромашка',
+          inn: '7701000001',
+          is_active: true,
+          is_system: false,
+        },
       },
     })
     getParams.mockResolvedValue({
@@ -271,6 +310,26 @@ describe('LogisticsDashboardPage', () => {
       filter_mode: 'all',
     })
     expect(getSyncInfo).toHaveBeenCalled()
+  })
+
+  it('reloads the dashboard when a client is selected', async () => {
+    render(
+      <MemoryRouter>
+        <LogisticsDashboardPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByText('Склад Ростов')).toBeTruthy()
+    })
+    const clientSelect = screen.getByTestId('client-filter').querySelector('.ant-select-selector')
+    expect(clientSelect).toBeTruthy()
+    fireEvent.mouseDown(clientSelect as Element)
+    fireEvent.click(await screen.findByText('7701000001 — ООО Ромашка'))
+    await waitFor(() => {
+      expect(getDashboard).toHaveBeenCalledWith(
+        expect.objectContaining({ client_id: 'c-romashka' }),
+      )
+    })
   })
 
   it('shows movement columns and converts them with the unit toggle', async () => {

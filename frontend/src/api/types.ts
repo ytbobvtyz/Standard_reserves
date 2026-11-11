@@ -448,6 +448,7 @@ export interface LogisticsDashboardParams {
   warehouse_code?: number
   filter_mode?: FilterMode
   unit?: Unit
+  client_id?: string
 }
 
 export interface DeficitItem {

@@ -94,7 +94,12 @@ export function DashboardPage() {
         nzResp,
         topResp,
       ] = await Promise.all([
-        dashboardApi.getSummary({ unit, ...scope }),
+        dashboardApi.getSummary({
+          unit,
+          ...scope,
+          ...(dateFrom ? { date_from: dateFrom } : {}),
+          ...(dateTo ? { date_to: dateTo } : {}),
+        }),
         dashboardApi.getNormativeTrend({
           product_code: productCode,
           client_id: clientId,
@@ -260,6 +265,7 @@ export function DashboardPage() {
                 <DatePicker
                   placeholder="От"
                   allowClear
+                  data-testid="date-from"
                   value={dateFrom ? dayjs(dateFrom) : null}
                   onChange={(value: Dayjs | null) => {
                     setSelectedPeriod(null)
@@ -269,6 +275,7 @@ export function DashboardPage() {
                 <DatePicker
                   placeholder="До"
                   allowClear
+                  data-testid="date-to"
                   value={dateTo ? dayjs(dateTo) : null}
                   onChange={(value: Dayjs | null) => {
                     setSelectedPeriod(null)

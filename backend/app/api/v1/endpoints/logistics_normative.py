@@ -2,6 +2,7 @@ import zipfile
 from datetime import date, datetime
 from io import BytesIO
 from typing import Literal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 from fastapi.responses import Response
@@ -49,6 +50,7 @@ async def get_dashboard(
     warehouse_code: int | None = Query(default=None),
     filter_mode: FilterMode = Query(default="with_normatives"),
     unit: Unit = Query(default="шт"),
+    client_id: UUID | None = Query(default=None),
     _current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> DashboardResponse:
@@ -57,6 +59,7 @@ async def get_dashboard(
         warehouse_code=warehouse_code,
         filter_mode=filter_mode,
         unit=unit,
+        client_id=client_id,
     )
 
 

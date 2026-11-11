@@ -21,6 +21,8 @@ from app.services.activity import commit_activity
 router = APIRouter(prefix="/references/clients", tags=["Справочники"])
 CLIENT_EDITORS = require_roles("commercial", "logistics", "pp", "economist", "admin")
 LOGISTICS = require_roles("logistics", "admin")
+CLIENT_EXCEL = require_roles("logistics", "economist")
+CLIENT_EXPORT = require_roles("logistics", "economist", "admin")
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024
 
 
@@ -51,7 +53,7 @@ async def list_clients(
 
 @router.get("/template")
 async def download_template(
-    _user: User = Depends(LOGISTICS),
+    _user: User = Depends(CLIENT_EXCEL),
 ) -> Response:
     content = service.build_template_xlsx()
     return Response(
@@ -63,7 +65,7 @@ async def download_template(
 
 @router.get("/export")
 async def export_clients(
-    user: User = Depends(LOGISTICS),
+    user: User = Depends(CLIENT_EXPORT),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     content = await service.export_clients_xlsx(db)
@@ -88,7 +90,7 @@ async def export_clients(
 )
 async def preview_clients(
     file: UploadFile = File(...),
-    _user: User = Depends(LOGISTICS),
+    _user: User = Depends(CLIENT_EXCEL),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[ClientUploadPreview]:
     content = await file.read()
@@ -106,7 +108,7 @@ async def preview_clients(
 )
 async def upload_clients(
     file: UploadFile = File(...),
-    user: User = Depends(LOGISTICS),
+    user: User = Depends(CLIENT_EXCEL),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[ClientUploadResult]:
     content = await file.read()
@@ -145,7 +147,7 @@ async def create_client(
 async def update_client(
     client_id: UUID,
     body: ClientUpdate,
-    user: User = Depends(LOGISTICS),
+    user: User = Depends(CLIENT_EDITORS),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[ClientListItem]:
     return SuccessResponse(data=await service.update_client(db, client_id, body, user))

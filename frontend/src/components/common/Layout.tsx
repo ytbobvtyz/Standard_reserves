@@ -147,6 +147,11 @@ export function AppLayout() {
       icon: <DatabaseOutlined />,
       label: 'Объекты',
     },
+    {
+      key: '/references/clients',
+      icon: <DatabaseOutlined />,
+      label: 'Клиенты',
+    },
     ...(showAdmin
       ? [
           {
@@ -156,7 +161,6 @@ export function AppLayout() {
             children: [
               { key: '/admin/users', label: 'Пользователи' },
               { key: '/admin/departments', label: 'Подразделения' },
-              { key: '/admin/clients', label: 'Клиенты' },
               { key: '/admin/params', label: 'Параметры' },
               { key: '/admin/balance-history', label: 'История доступных остатков' },
               ...(showAudit

@@ -774,12 +774,15 @@ async def get_dashboard(
     warehouse_code: int | None = None,
     filter_mode: FilterMode = "with_normatives",
     unit: Unit = "шт",
+    client_id: UUID | None = None,
 ) -> DashboardResponse:
     rows = await collect_deficit_rows(
         db,
         warehouse_code=warehouse_code,
         filter_mode=filter_mode,
         unit=unit,
+        client_id=client_id,
+        scope_to_normative_keys=client_id is not None,
     )
     return build_dashboard(rows)
 

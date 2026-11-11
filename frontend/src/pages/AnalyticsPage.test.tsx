@@ -140,18 +140,18 @@ describe('AnalyticsPage', () => {
     fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Продукт' }))
     fireEvent.click(await screen.findByText('10001 — Масло'))
 
+    const month = defaultStockRange('month', dayjs())
     await waitFor(() => {
-      expect(getStockBounds).toHaveBeenCalledWith(
-        expect.objectContaining({ product_code: 10001 }),
-      )
       expect(getStockDynamics).toHaveBeenCalledWith(
         expect.objectContaining({
           product_code: 10001,
           granularity: 'month',
-          date_from: '2024-03-01',
+          date_from: month.from,
+          date_to: month.to,
         }),
       )
     })
+    expect(getStockBounds).not.toHaveBeenCalled()
     const legend = await screen.findByTestId('stock-legend')
     expect(legend.textContent).toContain('Норматив')
     expect(legend.textContent).toContain('Мин. остаток')
@@ -254,6 +254,22 @@ describe('AnalyticsPage', () => {
           granularity: 'day',
           date_from: days.from,
           date_to: days.to,
+        }),
+      )
+    })
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Гранулярность' }))
+    const monthOption = (await screen.findAllByText('Месяц')).find((node) =>
+      node.classList.contains('ant-select-item-option-content'),
+    )
+    fireEvent.click(monthOption as HTMLElement)
+    const months = defaultStockRange('month', dayjs())
+    await waitFor(() => {
+      expect(getStockDynamics).toHaveBeenCalledWith(
+        expect.objectContaining({
+          granularity: 'month',
+          date_from: months.from,
+          date_to: months.to,
         }),
       )
     })

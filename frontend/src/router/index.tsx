@@ -54,11 +54,12 @@ export function AppRouter() {
             <Route path="/references/products/:code" element={<ProductDetailPage />} />
             <Route path="/references/products" element={<ProductsPage />} />
             <Route path="/references/objects" element={<ObjectsPage />} />
+            <Route path="/references/clients" element={<AdminClientsPage />} />
+            <Route path="/admin/clients" element={<Navigate to="/references/clients" replace />} />
             <Route path="/references/users" element={<ReferencesPage />} />
             <Route element={<ProtectedRoute roles={['logistics', 'admin']} />}>
               <Route path="/admin/users" element={<AdminUsersPage />} />
               <Route path="/admin/departments" element={<AdminDepartmentsPage />} />
-              <Route path="/admin/clients" element={<AdminClientsPage />} />
               <Route path="/admin/params" element={<AdminParamsPage />} />
               <Route path="/admin/balance-history" element={<BalanceHistoryPage />} />
             </Route>

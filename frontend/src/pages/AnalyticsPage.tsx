@@ -44,14 +44,15 @@ function selectionQuery(
   }
 }
 
+const initialMonthRange = defaultStockRange('month', dayjs())
+
 export function AnalyticsPage() {
   const [productCode, setProductCode] = useState<number | undefined>()
   const [departmentId, setDepartmentId] = useState<string | undefined>()
   const [granularity, setGranularity] = useState<StockGranularity>('month')
   const [showFullStock, setShowFullStock] = useState(false)
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
-  const [rangeMode, setRangeMode] = useState<'auto' | 'manual'>('auto')
+  const [dateFrom, setDateFrom] = useState(initialMonthRange.from)
+  const [dateTo, setDateTo] = useState(initialMonthRange.to)
   const [departments, setDepartments] = useState<DepartmentListItem[]>([])
   const [filterClients, setFilterClients] = useState<AnalyticsFilterClient[]>([])
   const [filterWarehouses, setFilterWarehouses] = useState<AnalyticsFilterWarehouse[]>([])
@@ -116,53 +117,6 @@ export function AnalyticsPage() {
       cancelled = true
     }
   }, [productCode])
-
-  useEffect(() => {
-    if (granularity !== 'month' || rangeMode !== 'auto' || selectionEmpty) {
-      return
-    }
-    let cancelled = false
-    void (async () => {
-      if (!productCode) {
-        const today = dayjs().format('YYYY-MM-DD')
-        setDateFrom(today)
-        setDateTo(today)
-        return
-      }
-      try {
-        const response = await analyticsApi.getStockBounds({
-          product_code: productCode,
-          ...(departmentId ? { department_id: departmentId } : {}),
-          ...selectionQuery(selectedClientIds, selectedWarehouseCodes),
-        })
-        if (cancelled) {
-          return
-        }
-        const range = defaultStockRange(
-          'month',
-          dayjs(),
-          response.data.data.earliest_date,
-        )
-        setDateFrom(range.from)
-        setDateTo(range.to)
-      } catch (loadError) {
-        if (!cancelled) {
-          message.error(getApiErrorMessage(loadError, 'Не удалось определить период'))
-        }
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [
-    granularity,
-    rangeMode,
-    productCode,
-    departmentId,
-    selectedClientIds,
-    selectedWarehouseCodes,
-    selectionEmpty,
-  ])
 
   useEffect(() => {
     if (!productCode || selectionEmpty) {
@@ -242,13 +196,7 @@ export function AnalyticsPage() {
   ])
 
   const onGranularity = (value: StockGranularity) => {
-    setRangeMode('auto')
     setGranularity(value)
-    if (value === 'month') {
-      setDateFrom('')
-      setDateTo('')
-      return
-    }
     const range = defaultStockRange(value, dayjs())
     setDateFrom(range.from)
     setDateTo(range.to)
@@ -307,7 +255,6 @@ export function AnalyticsPage() {
                 if (!values?.[0] || !values[1]) {
                   return
                 }
-                setRangeMode('manual')
                 setDateFrom(values[0].format('YYYY-MM-DD'))
                 setDateTo(values[1].format('YYYY-MM-DD'))
               }}

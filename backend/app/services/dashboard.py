@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.sql import text
 
 from app.models.available_balance import AvailableBalance
+from app.models.available_balance_history import AvailableBalanceHistory
 from app.models.client import Client
 from app.models.department import Department
 from app.models.normative import Normative
@@ -265,18 +266,7 @@ async def _kpi_position_masses(
     return total, deficit_transfers, deficit_available, expiring
 
 
-async def _company_stock_tons(db: AsyncSession) -> tuple[Decimal, Decimal]:
-    """Сумма full_stock и available по всем складам, без фильтров дашборда."""
-    rows = (
-        await db.execute(
-            select(
-                AvailableBalance.full_stock,
-                AvailableBalance.available,
-                AvailableBalance.unit,
-                Product.weight_kg,
-            ).join(Product, Product.code == AvailableBalance.product_code)
-        )
-    ).all()
+def _sum_stock_tons(rows: list[tuple]) -> tuple[Decimal, Decimal]:
     full_stock = ZERO
     available = ZERO
     for full_qty, available_qty, unit, weight in rows:
@@ -286,12 +276,129 @@ async def _company_stock_tons(db: AsyncSession) -> tuple[Decimal, Decimal]:
     return _round_kpi_mass(full_stock), _round_kpi_mass(available)
 
 
+async def _company_stock_keys(
+    db: AsyncSession,
+    *,
+    warehouse_code: int | None,
+    department_id: UUID | None,
+) -> set[tuple[int, int]] | None:
+    """Ключи НЗ подразделения; None — без ограничения по артикулам."""
+    if department_id is None:
+        return None
+    conditions = _active_conditions()
+    conditions.append(Client.department_id == department_id)
+    if warehouse_code is not None:
+        conditions.append(Normative.warehouse_code == warehouse_code)
+    rows = (
+        await db.execute(
+            select(Normative.warehouse_code, Normative.product_code)
+            .join(Client, Client.id == Normative.client_id)
+            .where(*conditions)
+            .distinct()
+        )
+    ).all()
+    return {(int(warehouse), int(product)) for warehouse, product in rows}
+
+
+async def _company_stock_tons(
+    db: AsyncSession,
+    *,
+    warehouse_code: int | None = None,
+    department_id: UUID | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> tuple[Decimal, Decimal]:
+    """Сумма full_stock и available с фильтрами склада, подразделения и периода."""
+    if date_from is not None and date_to is not None and date_from > date_to:
+        date_from, date_to = date_to, date_from
+    keys = await _company_stock_keys(
+        db, warehouse_code=warehouse_code, department_id=department_id
+    )
+    if keys is not None and not keys:
+        return ZERO, ZERO
+
+    if date_from is not None or date_to is not None:
+        hist_conditions = []
+        if date_from is not None:
+            hist_conditions.append(AvailableBalanceHistory.snapshot_date >= date_from)
+        if date_to is not None:
+            hist_conditions.append(AvailableBalanceHistory.snapshot_date <= date_to)
+        if warehouse_code is not None:
+            hist_conditions.append(
+                AvailableBalanceHistory.warehouse_code == warehouse_code
+            )
+        if keys is not None:
+            hist_conditions.append(
+                tuple_(
+                    AvailableBalanceHistory.warehouse_code,
+                    AvailableBalanceHistory.product_code,
+                ).in_(list(keys))
+            )
+        latest = (
+            select(
+                AvailableBalanceHistory.warehouse_code,
+                AvailableBalanceHistory.product_code,
+                func.max(AvailableBalanceHistory.snapshot_date).label("snapshot_date"),
+            )
+            .where(*hist_conditions)
+            .group_by(
+                AvailableBalanceHistory.warehouse_code,
+                AvailableBalanceHistory.product_code,
+            )
+            .subquery()
+        )
+        rows = (
+            await db.execute(
+                select(
+                    AvailableBalanceHistory.full_stock,
+                    AvailableBalanceHistory.available,
+                    AvailableBalanceHistory.unit,
+                    Product.weight_kg,
+                )
+                .join(
+                    latest,
+                    and_(
+                        AvailableBalanceHistory.warehouse_code
+                        == latest.c.warehouse_code,
+                        AvailableBalanceHistory.product_code == latest.c.product_code,
+                        AvailableBalanceHistory.snapshot_date == latest.c.snapshot_date,
+                    ),
+                )
+                .join(Product, Product.code == AvailableBalanceHistory.product_code)
+            )
+        ).all()
+        return _sum_stock_tons(list(rows))
+
+    stmt = select(
+        AvailableBalance.full_stock,
+        AvailableBalance.available,
+        AvailableBalance.unit,
+        Product.weight_kg,
+    ).join(Product, Product.code == AvailableBalance.product_code)
+    conditions = []
+    if warehouse_code is not None:
+        conditions.append(AvailableBalance.warehouse_code == warehouse_code)
+    if keys is not None:
+        conditions.append(
+            tuple_(
+                AvailableBalance.warehouse_code,
+                AvailableBalance.product_code,
+            ).in_(list(keys))
+        )
+    if conditions:
+        stmt = stmt.where(*conditions)
+    rows = (await db.execute(stmt)).all()
+    return _sum_stock_tons(list(rows))
+
+
 async def get_summary(
     db: AsyncSession,
     *,
     unit: MassUnit = "т",
     warehouse_code: int | None = None,
     department_id: UUID | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> DashboardNorthStar:
     conditions = _active_conditions()
     if warehouse_code is not None:
@@ -336,7 +443,13 @@ async def get_summary(
         avg_remaining = Decimal(str(avg_days)).quantize(
             Decimal("0.01"), rounding=ROUND_HALF_UP
         )
-    total_full_stock, total_available = await _company_stock_tons(db)
+    total_full_stock, total_available = await _company_stock_tons(
+        db,
+        warehouse_code=warehouse_code,
+        department_id=department_id,
+        date_from=date_from,
+        date_to=date_to,
+    )
     return DashboardNorthStar(
         active_count=active_count,
         active_quantity=active_quantity,

@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AdminClientsPage } from './AdminClientsPage'
 import type { ClientListItem } from '../api/types'
+import { useAuthStore } from '../stores/auth'
 
 const list = vi.fn()
 const remove = vi.fn()
@@ -22,8 +23,8 @@ vi.mock('../api/clients', () => ({
   },
 }))
 
-vi.mock('../api/admin', () => ({
-  adminApi: {
+vi.mock('../api/references', () => ({
+  referencesApi: {
     getDepartments: (...args: unknown[]) => getDepartments(...args),
   },
 }))
@@ -52,8 +53,23 @@ const client: ClientListItem = {
   is_system: false,
 }
 
+function setRole(role: 'logistics' | 'commercial' | 'economist' | 'guest') {
+  useAuthStore.setState({
+    user: {
+      id: '1',
+      username: role,
+      full_name: role,
+      role,
+    },
+    token: 'token',
+    isAuthenticated: true,
+    isLoading: false,
+  })
+}
+
 describe('AdminClientsPage', () => {
   beforeEach(() => {
+    setRole('logistics')
     list.mockReset()
     remove.mockReset()
     preview.mockReset()
@@ -81,6 +97,34 @@ describe('AdminClientsPage', () => {
     expect(list).toHaveBeenCalledWith(
       expect.objectContaining({ include_inactive: true, page: 1, limit: 20 }),
     )
+    expect(getDepartments).toHaveBeenCalledWith({ is_active: true })
+  })
+
+  it('hides excel actions for commercial and edit for guest', async () => {
+    setRole('commercial')
+    const { unmount } = render(<AdminClientsPage />)
+    expect(await screen.findByText('ООО Ромашка')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Создать/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Изменить ООО Ромашка' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Скачать шаблон/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Выбрать Excel/ })).toBeNull()
+    unmount()
+
+    setRole('guest')
+    render(<AdminClientsPage />)
+    expect(await screen.findByText('ООО Ромашка')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Создать/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Изменить ООО Ромашка' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Скачать шаблон/ })).toBeNull()
+  })
+
+  it('shows excel upload for economist', async () => {
+    setRole('economist')
+    render(<AdminClientsPage />)
+    expect(await screen.findByText('ООО Ромашка')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Скачать шаблон/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Выбрать Excel/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Создать/ })).toBeTruthy()
   })
 
   it('searches by the entered query', async () => {

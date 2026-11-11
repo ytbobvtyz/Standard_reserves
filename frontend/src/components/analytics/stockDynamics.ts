@@ -42,7 +42,6 @@ const INCLUSIVE_DAY_OFFSET = 89
 export function defaultStockRange(
   granularity: StockGranularity,
   today: Dayjs,
-  earliest?: string | null,
 ): { from: string; to: string } {
   const to = today.format('YYYY-MM-DD')
   if (granularity === 'day') {
@@ -51,13 +50,7 @@ export function defaultStockRange(
   if (granularity === 'week') {
     return { from: today.subtract(1, 'year').format('YYYY-MM-DD'), to }
   }
-  if (!earliest) {
-    return { from: to, to }
-  }
-  if (earliest > to) {
-    return { from: earliest, to: earliest }
-  }
-  return { from: earliest, to }
+  return { from: today.subtract(12, 'month').format('YYYY-MM-DD'), to }
 }
 
 export function definedPointCount(values: Array<number | null>): number {

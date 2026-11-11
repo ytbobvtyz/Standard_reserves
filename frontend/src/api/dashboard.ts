@@ -18,6 +18,8 @@ export const dashboardApi = {
     unit?: DashboardMassUnit
     warehouse_code?: number
     department_id?: string
+    date_from?: string
+    date_to?: string
   }) => api.get<ApiSuccess<DashboardSummary>>('/dashboard/summary', { params }),
 
   getNormativeTrend: (params?: DashboardTrendParams) =>

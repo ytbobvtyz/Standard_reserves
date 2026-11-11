@@ -8,6 +8,7 @@ from sqlalchemy import delete, select
 
 from app.core.database import AsyncSessionLocal
 from app.models.available_balance import AvailableBalance
+from app.models.available_balance_history import AvailableBalanceHistory
 from app.models.client import Client
 from app.models.department import Department
 from app.models.normative import Normative
@@ -196,7 +197,7 @@ def _balance_tons(quantity: Decimal, unit: str, weight_kg: Decimal) -> Decimal:
 
 
 @pytest.mark.asyncio
-async def test_dashboard_company_stock_ignores_filters(
+async def test_dashboard_company_stock_applies_filters(
     client: AsyncClient,
     logistics_user: AuthUser,
     catalog: dict[str, int],
@@ -208,6 +209,11 @@ async def test_dashboard_company_stock_ignores_filters(
 
     async def _cleanup() -> None:
         async with AsyncSessionLocal() as session:
+            await session.execute(
+                delete(AvailableBalanceHistory).where(
+                    AvailableBalanceHistory.product_code.in_(codes)
+                )
+            )
             await session.execute(
                 delete(AvailableBalance).where(AvailableBalance.product_code.in_(codes))
             )
@@ -236,6 +242,7 @@ async def test_dashboard_company_stock_ignores_filters(
                 ),
             ]
         )
+        await session.flush()
         session.add_all(
             [
                 AvailableBalance(
@@ -256,6 +263,28 @@ async def test_dashboard_company_stock_ignores_filters(
                     unit="шт",
                     source="manual",
                 ),
+                AvailableBalanceHistory(
+                    snapshot_date=date(2026, 1, 10),
+                    snapshot_at=datetime(2026, 1, 10, 12, tzinfo=UTC),
+                    warehouse_code=catalog["warehouse_code"],
+                    product_code=kg_product,
+                    available=Decimal("100"),
+                    plan=Decimal("0"),
+                    full_stock=Decimal("300"),
+                    unit="кг",
+                    source="excel_upload",
+                ),
+                AvailableBalanceHistory(
+                    snapshot_date=date(2026, 6, 1),
+                    snapshot_at=datetime(2026, 6, 1, 12, tzinfo=UTC),
+                    warehouse_code=catalog["warehouse_code"],
+                    product_code=kg_product,
+                    available=Decimal("700"),
+                    plan=Decimal("0"),
+                    full_stock=Decimal("900"),
+                    unit="кг",
+                    source="excel_upload",
+                ),
             ]
         )
         await session.commit()
@@ -266,23 +295,27 @@ async def test_dashboard_company_stock_ignores_filters(
                     AvailableBalance.available,
                     AvailableBalance.unit,
                     Product.weight_kg,
+                    AvailableBalance.warehouse_code,
                 ).join(Product, Product.code == AvailableBalance.product_code)
             )
         ).all()
-    expected_full = sum(
-        (
-            _balance_tons(full, unit, weight)
-            for full, _available, unit, weight in stored
-        ),
-        Decimal(0),
-    ).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
-    expected_available = sum(
-        (
-            _balance_tons(available, unit, weight)
-            for _full, available, unit, weight in stored
-        ),
-        Decimal(0),
-    ).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+
+    def _sum_rows(rows: list) -> tuple[Decimal, Decimal]:
+        full = sum(
+            (_balance_tons(item[0], item[2], item[3]) for item in rows),
+            Decimal(0),
+        ).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+        available = sum(
+            (_balance_tons(item[1], item[2], item[3]) for item in rows),
+            Decimal(0),
+        ).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+        return full, available
+
+    expected_full, expected_available = _sum_rows(stored)
+    warehouse_rows = [
+        row for row in stored if row[4] == catalog["warehouse_code"]
+    ]
+    expected_wh_full, expected_wh_available = _sum_rows(warehouse_rows)
 
     try:
         plain = await client.get(
@@ -293,22 +326,53 @@ async def test_dashboard_company_stock_ignores_filters(
         assert Decimal(str(body["total_full_stock"])) == expected_full
         assert Decimal(str(body["total_available"])) == expected_available
 
-        filtered = await client.get(
+        warehouse_only = await client.get(
+            "/api/v1/dashboard/summary",
+            headers=auth_header(token),
+            params={"warehouse_code": catalog["warehouse_code"]},
+        )
+        assert warehouse_only.status_code == 200, warehouse_only.text
+        warehouse_body = warehouse_only.json()["data"]
+        assert Decimal(str(warehouse_body["total_full_stock"])) == expected_wh_full
+        assert Decimal(str(warehouse_body["total_available"])) == expected_wh_available
+
+        empty_department = await client.get(
+            "/api/v1/dashboard/summary",
+            headers=auth_header(token),
+            params={"department_id": str(uuid4())},
+        )
+        assert empty_department.status_code == 200, empty_department.text
+        empty_body = empty_department.json()["data"]
+        assert Decimal(str(empty_body["total_full_stock"])) == Decimal("0")
+        assert Decimal(str(empty_body["total_available"])) == Decimal("0")
+
+        period = await client.get(
             "/api/v1/dashboard/summary",
             headers=auth_header(token),
             params={
-                "unit": "кг",
                 "warehouse_code": catalog["warehouse_code"],
-                "department_id": str(uuid4()),
+                "date_from": "2026-01-01",
+                "date_to": "2026-03-01",
             },
         )
-        assert filtered.status_code == 200, filtered.text
-        filtered_body = filtered.json()["data"]
-        assert filtered_body["unit"] == "кг"
-        assert Decimal(str(filtered_body["total_full_stock"])) == expected_full
-        assert Decimal(str(filtered_body["total_available"])) == expected_available
-        assert Decimal(str(filtered_body["total_full_stock"])) == Decimal(
-            str(body["total_full_stock"])
+        assert period.status_code == 200, period.text
+        period_body = period.json()["data"]
+        later = await client.get(
+            "/api/v1/dashboard/summary",
+            headers=auth_header(token),
+            params={
+                "warehouse_code": catalog["warehouse_code"],
+                "date_from": "2026-01-01",
+                "date_to": "2026-12-31",
+            },
+        )
+        assert later.status_code == 200, later.text
+        later_body = later.json()["data"]
+        assert Decimal(str(period_body["total_full_stock"])) != Decimal(
+            str(later_body["total_full_stock"])
+        )
+        assert Decimal(str(later_body["total_full_stock"])) > Decimal(
+            str(period_body["total_full_stock"])
         )
     finally:
         await _cleanup()

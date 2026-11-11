@@ -20,9 +20,9 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import type { UploadFile } from 'antd/es/upload/interface'
 import { useCallback, useEffect, useState } from 'react'
-import { adminApi } from '../api/admin'
 import { clientsApi } from '../api/clients'
 import { getApiErrorMessage } from '../api/client'
+import { referencesApi } from '../api/references'
 import type {
   ClientListItem,
   ClientUploadPreview,
@@ -37,8 +37,19 @@ import {
 } from '../components/clients/ClientFormModal'
 import { ClientUploadPreviewModal } from '../components/clients/ClientUploadPreviewModal'
 import { downloadBlob } from '../utils/download'
+import { useAuthStore } from '../stores/auth'
+import {
+  canEditClients,
+  canUploadClientsExcel,
+  hasLogisticsAccess,
+} from '../utils/roles'
 
 export function AdminClientsPage() {
+  const user = useAuthStore((state) => state.user)
+  const canEdit = canEditClients(user?.role)
+  const canExcel = canUploadClientsExcel(user?.role)
+  const canExport = canExcel || hasLogisticsAccess(user?.role)
+  const canDelete = hasLogisticsAccess(user?.role)
   const [items, setItems] = useState<ClientListItem[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -79,8 +90,8 @@ export function AdminClientsPage() {
   }, [load])
 
   useEffect(() => {
-    void adminApi
-      .getDepartments()
+    void referencesApi
+      .getDepartments({ is_active: true })
       .then(({ data }) => setDepartments(data.data))
       .catch(() => setDepartments([]))
   }, [])
@@ -209,7 +220,7 @@ export function AdminClientsPage() {
       key: 'actions',
       width: 110,
       render: (_value, record) => {
-        if (record.is_system) {
+        if (record.is_system || !canEdit) {
           return null
         }
         return (
@@ -220,20 +231,22 @@ export function AdminClientsPage() {
               icon={<EditOutlined aria-hidden />}
               onClick={() => setEditing(record)}
             />
-            <Popconfirm
-              title={`Удалить «${record.name}»?`}
-              okText="Удалить"
-              cancelText="Отмена"
-              okButtonProps={{ danger: true }}
-              onConfirm={() => void removeClient(record.id)}
-            >
-              <Button
-                type="text"
-                danger
-                aria-label={`Удалить ${record.name}`}
-                icon={<DeleteOutlined aria-hidden />}
-              />
-            </Popconfirm>
+            {canDelete ? (
+              <Popconfirm
+                title={`Удалить «${record.name}»?`}
+                okText="Удалить"
+                cancelText="Отмена"
+                okButtonProps={{ danger: true }}
+                onConfirm={() => void removeClient(record.id)}
+              >
+                <Button
+                  type="text"
+                  danger
+                  aria-label={`Удалить ${record.name}`}
+                  icon={<DeleteOutlined aria-hidden />}
+                />
+              </Popconfirm>
+            ) : null}
           </Space>
         )
       },
@@ -255,16 +268,23 @@ export function AdminClientsPage() {
             setQuery(value.trim())
           }}
         />
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
-          Создать
-        </Button>
-        <Button icon={<DownloadOutlined />} onClick={() => void exportExcel()}>
-          Выгрузить в Excel
-        </Button>
-        <Button icon={<DownloadOutlined />} onClick={() => void downloadTemplate()}>
-          Скачать шаблон
-        </Button>
+        {canEdit ? (
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
+            Создать
+          </Button>
+        ) : null}
+        {canExport ? (
+          <Button icon={<DownloadOutlined />} onClick={() => void exportExcel()}>
+            Выгрузить в Excel
+          </Button>
+        ) : null}
+        {canExcel ? (
+          <Button icon={<DownloadOutlined />} onClick={() => void downloadTemplate()}>
+            Скачать шаблон
+          </Button>
+        ) : null}
       </Space>
+      {canExcel ? (
       <Space wrap>
         <Upload
           accept=".xlsx"
@@ -294,6 +314,7 @@ export function AdminClientsPage() {
           Проверить файл
         </Button>
       </Space>
+      ) : null}
       {uploadResult ? (
         <Alert
           type={uploadResult.errors > 0 ? 'warning' : 'success'}
@@ -330,7 +351,7 @@ export function AdminClientsPage() {
       <ClientFormModal
         open={createOpen}
         mode="create-admin"
-        canCreate
+        canCreate={canEdit}
         departments={departments}
         confirmLoading={saving}
         onCancel={() => setCreateOpen(false)}
@@ -340,7 +361,7 @@ export function AdminClientsPage() {
         open={editing != null}
         mode="edit"
         client={editing}
-        canCreate
+        canCreate={canEdit}
         departments={departments}
         confirmLoading={saving}
         onCancel={() => setEditing(null)}

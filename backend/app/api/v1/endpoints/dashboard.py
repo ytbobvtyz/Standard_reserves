@@ -28,11 +28,18 @@ async def get_summary(
     unit: MassUnit = Query(default="т"),
     warehouse_code: int | None = Query(default=None),
     department_id: UUID | None = Query(default=None),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[DashboardNorthStar]:
     data = await service.get_summary(
-        db, unit=unit, warehouse_code=warehouse_code, department_id=department_id
+        db,
+        unit=unit,
+        warehouse_code=warehouse_code,
+        department_id=department_id,
+        date_from=date_from,
+        date_to=date_to,
     )
     return SuccessResponse(data=data)
 

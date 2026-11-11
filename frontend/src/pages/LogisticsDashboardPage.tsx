@@ -22,6 +22,7 @@ import { useNavigate } from 'react-router-dom'
 import { getApiErrorMessage } from '../api/client'
 import { logisticsApi } from '../api/logistics'
 import { referencesApi } from '../api/references'
+import { ClientAutocomplete } from '../components/clients/ClientAutocomplete'
 import type {
   BalanceSyncInfo,
   DeficitItem,
@@ -331,6 +332,7 @@ export function LogisticsDashboardPage() {
   const [unit, setUnit] = useState<Unit>('т')
   const [filterMode, setFilterMode] = useState<FilterMode>('all')
   const [warehouseCode, setWarehouseCode] = useState<number | undefined>()
+  const [clientId, setClientId] = useState<string | undefined>()
   const [search, setSearch] = useState('')
   const [warehouses, setWarehouses] = useState<ObjectListItem[]>([])
   const [coeffs, setCoeffs] = useState<CoefficientParams>({
@@ -363,6 +365,7 @@ export function LogisticsDashboardPage() {
         logisticsApi.getDashboard({
           unit: 'шт',
           filter_mode: 'all',
+          ...(clientId ? { client_id: clientId } : {}),
         }),
         logisticsApi.getSyncInfo(),
       ])
@@ -374,7 +377,7 @@ export function LogisticsDashboardPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [clientId])
 
   useEffect(() => {
     void load()
@@ -746,6 +749,13 @@ export function LogisticsDashboardPage() {
               label: `${item.code} · ${item.name}`,
             }))}
           />
+          <div data-testid="client-filter" style={{ minWidth: 260 }}>
+            <ClientAutocomplete
+              value={clientId}
+              onChange={setClientId}
+              ariaLabel="Клиент"
+            />
+          </div>
         </Space>
       </Space>
       {loading && items.length === 0 ? (

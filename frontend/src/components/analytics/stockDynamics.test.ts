@@ -30,18 +30,10 @@ describe('defaultStockRange', () => {
     })
   })
 
-  it('uses the first data date for monthly granularity', () => {
-    expect(defaultStockRange('month', today, '2024-03-01')).toEqual({
-      from: '2024-03-01',
+  it('uses the last 12 months for monthly granularity', () => {
+    expect(defaultStockRange('month', today)).toEqual({
+      from: '2025-10-28',
       to: '2026-10-28',
-    })
-    expect(defaultStockRange('month', today, null)).toEqual({
-      from: '2026-10-28',
-      to: '2026-10-28',
-    })
-    expect(defaultStockRange('month', today, '2027-01-01')).toEqual({
-      from: '2027-01-01',
-      to: '2027-01-01',
     })
   })
 })
