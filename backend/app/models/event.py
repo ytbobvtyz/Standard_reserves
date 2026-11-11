@@ -32,6 +32,7 @@ EVENT_TYPES = (
     "deficit_detected",
     "deficit_resolved",
     "normative_replaced_by_name",
+    "user_logged_in",
     "user_registered",
     "user_updated",
     "user_deleted",

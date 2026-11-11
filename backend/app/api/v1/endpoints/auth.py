@@ -80,6 +80,15 @@ async def login(
             expires_at=now + timedelta(days=settings.refresh_token_expire_days),
         )
     )
+    record_activity(
+        db,
+        event_type="user_logged_in",
+        user=user,
+        entity_type="user",
+        entity_id=user.id,
+        label=f"{user.full_name} ({user.username})",
+        details={"username": user.username, "role": user.role},
+    )
     await db.commit()
     await db.refresh(user)
 

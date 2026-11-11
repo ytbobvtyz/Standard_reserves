@@ -1152,7 +1152,7 @@ deleted_at	TIMESTAMP	❌	Soft delete (в списке скрыто)
 
 6. ТАБЛИЦА ДЛЯ БУДУЩЕГО АГЕНТА
 6.1. events — События агента и журнал действий
-Та же таблица обслуживает будущего агента логиста и `GET /admin/audit`. Чтения (GET) и вход/выход не пишутся. Смена срока активного норматива (`PATCH /requests/{id}/expiry-date`, все роли кроме `guest`) пишется как `request_expiry_changed`: в `details` лежат `old_expiry_date` и `expiry_date`. Подпись объекта (`entity_label`) собирается на бэкенде в момент действия и кладётся в `details.label`, чтобы карточка оставалась читаемой после удаления. У запросов нет порядкового номера: подпись имеет вид `Запрос (ООО Ромашка)`. У продукта и объекта первичный ключ — целочисленный `code`, поэтому `entity_id` для них пустой, а код лежит в `details.code`.
+Та же таблица обслуживает будущего агента логиста и `GET /admin/audit`. Чтения (GET) и выход не пишутся. Успешный вход пишется как `user_logged_in`. Неудачный вход и обновление токена не пишутся. Смена срока активного норматива (`PATCH /requests/{id}/expiry-date`, все роли кроме `guest`) пишется как `request_expiry_changed`: в `details` лежат `old_expiry_date` и `expiry_date`. Подпись объекта (`entity_label`) собирается на бэкенде в момент действия и кладётся в `details.label`, чтобы карточка оставалась читаемой после удаления. У запросов нет порядкового номера: подпись имеет вид `Запрос (ООО Ромашка)`. У продукта и объекта первичный ключ — целочисленный `code`, поэтому `entity_id` для них пустой, а код лежит в `details.code`.
 
 sql
 CREATE TABLE events (
@@ -1169,6 +1169,7 @@ CREATE TABLE events (
         'deficit_detected',
         'deficit_resolved',
         'normative_replaced_by_name',
+        'user_logged_in',
         'user_registered',
         'user_updated',
         'user_deleted',
@@ -1622,6 +1623,7 @@ EXECUTE FUNCTION trigger_create_normative();
 | 33 | `0033_item_rejected.py` | `request_items.rejected`; история позиции принимает поле `rejected` |
 | 34 | `0034_admin_role_and_activity.py` | Роль `admin`, пользователь `admin` / `password`. Если `admin@company.ru` занят, почта `standart-reserve-admin@company.ru`. Колонки журнала в `events` |
 | 35 | `0035_request_expiry_changed.py` | Тип события `request_expiry_changed` в журнале |
+| 36 | `0036_user_logged_in.py` | Тип события `user_logged_in` в журнале |
 
 Начальные пользователи и объекты заполняются скриптом `backend/scripts/seed_data.py`, а не миграцией.
 

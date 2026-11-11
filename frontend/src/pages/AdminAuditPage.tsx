@@ -23,6 +23,7 @@ const { RangePicker } = DatePicker
 type Preset = 'today' | 'week' | 'month' | 'all' | 'custom'
 
 const EVENT_TYPE_LABEL: Record<string, string> = {
+  user_logged_in: 'Вход на портал',
   user_registered: 'Регистрация пользователя',
   user_updated: 'Изменение пользователя',
   user_deleted: 'Удаление пользователя',

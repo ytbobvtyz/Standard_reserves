@@ -1,6 +1,9 @@
 from httpx import AsyncClient
+from sqlalchemy import func, select
 
+from app.core.database import AsyncSessionLocal
 from app.core.security import hash_password, verify_password
+from app.models.event import Event
 from tests.conftest import AuthUser
 
 DEFAULT_PASSWORD = "password"
@@ -33,6 +36,38 @@ async def test_login_success(client: AsyncClient, test_user: AuthUser) -> None:
     assert data["user"]["username"] == test_user.username
     assert data["user"]["role"] == "commercial"
     assert data["user"]["full_name"] == test_user.full_name
+
+
+async def test_login_is_logged(client: AsyncClient, test_user: AuthUser) -> None:
+    response = await _login(client, test_user.username)
+    assert response.status_code == 200, response.text
+    async with AsyncSessionLocal() as session:
+        event = await session.scalar(
+            select(Event)
+            .where(
+                Event.event_type == "user_logged_in",
+                Event.user_id == test_user.id,
+            )
+            .order_by(Event.created_at.desc())
+        )
+        assert event is not None
+        assert event.entity_id == test_user.id
+        assert event.details["username"] == test_user.username
+        assert event.details["role"] == test_user.role
+        assert event.details["label"] == f"{test_user.full_name} ({test_user.username})"
+
+    failed = await _login(client, test_user.username, "wrong-password")
+    assert failed.status_code == 401
+    async with AsyncSessionLocal() as session:
+        count = await session.scalar(
+            select(func.count())
+            .select_from(Event)
+            .where(
+                Event.event_type == "user_logged_in",
+                Event.user_id == test_user.id,
+            )
+        )
+        assert count == 1
 
 
 async def test_login_wrong_password(client: AsyncClient, test_user: AuthUser) -> None:
