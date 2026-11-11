@@ -56,6 +56,25 @@ def _set_event_types(types_sql: str) -> None:
     )
 
 
+def _email_taken(bind, email: str) -> bool:
+    row = bind.execute(
+        sa.text("SELECT 1 FROM users WHERE lower(email) = lower(:email) LIMIT 1"),
+        {"email": email},
+    ).first()
+    return row is not None
+
+
+def _free_admin_email(bind, preferred: str) -> str:
+    if not _email_taken(bind, preferred):
+        return preferred
+    fallback = "standart-reserve-admin@company.ru"
+    if _email_taken(bind, fallback):
+        raise RuntimeError(
+            "Не удалось создать admin: заняты " f"{preferred} и {fallback}"
+        )
+    return fallback
+
+
 def _set_roles(roles_sql: str) -> None:
     _drop_checks("users", "role")
     op.execute(
@@ -80,6 +99,7 @@ def upgrade() -> None:
         {"username": ADMIN_USER["username"], "id": ADMIN_USER["id"]},
     ).first()
     if existing is None:
+        email = _free_admin_email(bind, ADMIN_USER["email"])
         department_id = bind.execute(
             sa.text("SELECT id FROM departments WHERE id = :id"),
             {"id": ADMIN_USER["department_id"]},
@@ -100,7 +120,7 @@ def upgrade() -> None:
             users.insert().values(
                 id=ADMIN_USER["id"],
                 username=ADMIN_USER["username"],
-                email=ADMIN_USER["email"],
+                email=email,
                 password_hash=hash_password(SEED_PASSWORD),
                 full_name=ADMIN_USER["full_name"],
                 role=ADMIN_USER["role"],

@@ -1620,7 +1620,7 @@ EXECUTE FUNCTION trigger_create_normative();
 | 31 | `0031_normative_valid_from.py` | `normatives.valid_from` |
 | 32 | `0032_coverage_months.py` | `params.coverage_high_months`, `params.coverage_low_months` |
 | 33 | `0033_item_rejected.py` | `request_items.rejected`; история позиции принимает поле `rejected` |
-| 34 | `0034_admin_role_and_activity.py` | Роль `admin`, пользователь `admin` / `password`, колонки журнала в `events` |
+| 34 | `0034_admin_role_and_activity.py` | Роль `admin`, пользователь `admin` / `password`. Если `admin@company.ru` занят, почта `standart-reserve-admin@company.ru`. Колонки журнала в `events` |
 | 35 | `0035_request_expiry_changed.py` | Тип события `request_expiry_changed` в журнале |
 
 Начальные пользователи и объекты заполняются скриптом `backend/scripts/seed_data.py`, а не миграцией.
