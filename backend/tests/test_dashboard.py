@@ -312,9 +312,7 @@ async def test_dashboard_company_stock_applies_filters(
         return full, available
 
     expected_full, expected_available = _sum_rows(stored)
-    warehouse_rows = [
-        row for row in stored if row[4] == catalog["warehouse_code"]
-    ]
+    warehouse_rows = [row for row in stored if row[4] == catalog["warehouse_code"]]
     expected_wh_full, expected_wh_available = _sum_rows(warehouse_rows)
 
     try:
