@@ -1713,13 +1713,13 @@ GROUP BY warehouse_code, product_code;
 Функция expire_normatives()	✅ Нужна с первого дня
 Функция get_related_products()	✅ Для расчета по цепочке артикулов
 Коэффициент удаленности	✅ `objects.long_distance`: false → ×1, true → ×1,5
-Таблицы production_requests / production_request_items	✅ Excel-загрузка нормативов (роли pp, economist, logistics)
+Таблицы production_requests / production_request_items	✅ Excel-загрузка нормативов (роли pp, economist, logistics, admin)
 mv_normative_daily	✅ Ежедневная агрегация действующих НЗ для дашборда
 
 14. ПРОИЗВОДСТВЕННЫЕ ЗАПРОСЫ — СМ. §5.4–5.5
 
 Полные DDL — в разделах 5.4 и 5.5. Кратко: партия Excel создаёт `production_requests` + `production_request_items` и активные `normatives` с `request_id IS NULL`. Удаление партии каскадно снимает позиции и нормативы. Миграция: `0017_production_requests.py`.
 
-Версия: 2.17
+Версия: 2.18
 Дата: 24.11.2026
 Статус: Утверждена

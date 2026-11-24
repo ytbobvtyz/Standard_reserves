@@ -69,6 +69,27 @@ json
         ]
     }
 }
+
+### 1.7. Группы ролей (канон, как в коде)
+
+`admin` входит в группу, если в коде `require_roles(..., "admin")` или фронтовый `hasLogisticsAccess` (`logistics` + `admin`). Ниже таблицы эндпоинтов ссылаются на эти имена.
+
+| Группа | Роли | Типичные действия |
+|--------|------|-------------------|
+| **auth** | любой авторизованный, включая `guest` | GET дашбордов, аналитики, списков, просмотр страниц |
+| **not_guest** | `commercial`, `pp`, `economist`, `logistics`, `admin` | POST/PUT клиентов |
+| **L+A** | `logistics`, `admin` | заказы пополнения, Excel остатков, execute/export разовых, CRUD объектов, админка кроме аудита, удаление клиентов |
+| **product_managers** | `pp`, `economist`, `logistics`, `admin` | Excel и правка продуктов, поддонные нормы |
+| **shipment_editors** | `logistics`, `economist`, `pp`, `admin` | шаблон и загрузка продаж |
+| **batch_managers** | `logistics`, `economist`, `pp`, `admin` | партии загрузки нормативов |
+| **client_excel** | `logistics`, `economist` | шаблон, превью и загрузка клиентов |
+| **client_export** | `logistics`, `economist`, `admin` | выгрузка клиентов в Excel |
+| **request_create** | `commercial` (оба типа); `logistics`, `admin` (только разовый) | UI `/requests/create` и `can_create_request` |
+| **request_export** | `commercial`, `logistics`, `admin` | экспорт запросов |
+| **audit** | `admin` | `GET /admin/audit` |
+
+Фраза «только logistics» в этом документе **не** означает исключение `admin`: пишем **L+A**.
+
 2. АУТЕНТИФИКАЦИЯ И ПОЛЬЗОВАТЕЛИ
 2.1. Вход в систему
 text
@@ -194,6 +215,8 @@ Headers:
 
 text
 Authorization: Bearer <token>
+Права: любой авторизованный (`get_current_user`), затем `can_create_request`: `commercial` — оба типа; `logistics` и `admin` — только `one_time`. Остальные роли (включая `pp`, `economist`, `guest`) — 403. UI и `ProtectedRoute` совпадают с этим.
+
 Request (нормативный запас):
 
 json
@@ -366,6 +389,8 @@ Headers:
 
 text
 Authorization: Bearer <token>
+Права: любой авторизованный. `pp`, `economist`, `logistics`, `admin` видят все неудалённые (`VIEW_ALL_ROLES`). `commercial` и `guest` — только свои (`initiator_id = current_user.id`); параметр `initiator_id` у них игнорируется.
+
 Query параметры:
 
 Параметр	Тип	Описание	Пример
@@ -663,7 +688,7 @@ Headers:
 
 text
 Authorization: Bearer <token>
-Права: `commercial` (только свои запросы), `logistics` (любые). Остальные роли — 403. Статус запроса не ограничен: черновик, согласование, активный, отклонённый, просроченный и исполненный выгружаются одинаково.
+Права: **request_export** — `commercial` (только свои запросы), `logistics` и `admin` (любые). Остальные роли — 403. Статус запроса не ограничен: черновик, согласование, активный, отклонённый, просроченный и исполненный выгружаются одинаково.
 
 Request:
 
@@ -917,7 +942,7 @@ Headers:
 
 text
 Authorization: Bearer <token>
-Права: все авторизованные (просмотр). Кнопки формирования заказов, Excel и загрузки остатков — только logistics.
+Права: все авторизованные (просмотр). Действия (заказы, Excel, загрузка остатков) — **L+A** (`logistics`, `admin`).
 Query параметры:
 
 Параметр	Тип	Описание
@@ -1032,7 +1057,7 @@ Headers:
 text
 Authorization: Bearer <token>
 Content-Type: multipart/form-data
-Права: только logistics. Остальные роли получают 403 FORBIDDEN.
+Права: **L+A** (`logistics`, `admin`). Остальные роли получают 403 FORBIDDEN.
 
 В базу ничего не пишется. Ответ — первые 10 непустых строк каждого файла и список ошибок. `can_upload` = true только если ошибок нет и в «Доступных остатках» есть хотя бы одна строка.
 
@@ -1146,7 +1171,7 @@ Errors:
 
 400 VALIDATION_ERROR — файлы не прошли проверку, данные не записаны
 
-403 FORBIDDEN — не роль logistics
+403 FORBIDDEN — не L+A (`logistics`, `admin`)
 
 6.2.1. Дата и автор последней загрузки остатков
 text
@@ -1244,7 +1269,7 @@ Headers:
 
 text
 Authorization: Bearer <token>
-Права: только logistics. Остальные роли получают 403 FORBIDDEN.
+Права: **L+A** (`logistics`, `admin`). Остальные роли получают 403 FORBIDDEN.
 Request:
 
 json
@@ -1256,7 +1281,7 @@ json
 6.3.1. Сформировать заказы по нескольким складам
 text
 POST /logistics/normative/generate-orders
-Права: только logistics.
+Права: **L+A** (`logistics`, `admin`).
 
 json
 {
@@ -1299,7 +1324,7 @@ Headers:
 
 text
 Authorization: Bearer <token>
-Права: только logistics (действие, не просмотр). Остальные роли — 403.
+Права: **L+A** (`logistics`, `admin`) — действие, не просмотр. Остальные роли — 403.
 Query параметры:
 
 Параметр	Тип	Описание
@@ -1314,7 +1339,7 @@ Headers:
 
 text
 Authorization: Bearer <token>
-Права: только `logistics`. Остальные роли — 403 FORBIDDEN.
+Права: **L+A** (`logistics`, `admin`). Остальные роли — 403 FORBIDDEN.
 
 Принимает список маршрутов (завод → склад) с позициями дефицита. Возвращает ZIP-архив: один Excel-файл на каждый маршрут.
 
@@ -1388,7 +1413,7 @@ Errors:
 
 400 NOT_FOUND / VALIDATION_ERROR — продукт не найден
 
-403 FORBIDDEN — не роль logistics
+403 FORBIDDEN — не L+A (`logistics`, `admin`)
 
 6.5. Разовые перемещения — список
 text
@@ -1397,7 +1422,7 @@ Headers:
 
 text
 Authorization: Bearer <token>
-Права: все авторизованные (просмотр). Исполнение и Excel — только logistics.
+Права: все авторизованные (просмотр). Исполнение и Excel — **L+A** (`logistics`, `admin`).
 Query параметры:
 
 Параметр	Тип	Описание
@@ -1446,7 +1471,7 @@ GET /logistics/one-time/clients
 6.7. Выгрузить разовый запрос в Excel
 text
 GET /logistics/one-time/{request_id}/export
-Права: только logistics. Response: Excel-файл.
+Права: **L+A** (`logistics`, `admin`). Response: Excel-файл.
 
 6.8. Отметить разовое перемещение как исполненное
 text
@@ -1455,7 +1480,7 @@ Headers:
 
 text
 Authorization: Bearer <token>
-Права: только logistics. Остальные роли получают 403 FORBIDDEN.
+Права: **L+A** (`logistics`, `admin`). Остальные роли получают 403 FORBIDDEN.
 Request:
 
 json
@@ -1686,7 +1711,7 @@ Query: `unit` (`т` / `кг`), `limit` (по умолчанию 10), `department
 
 6.10. Фактическая реализация
 
-Таблица `actual_shipments`. Список доступен любому авторизованному. Шаблон и загрузка — роли `logistics`, `economist`, `pp`.
+Таблица `actual_shipments`. Список доступен любому авторизованному. Шаблон и загрузка — **shipment_editors** (`logistics`, `economist`, `pp`, `admin`).
 
 6.10.1. Список
 text
@@ -1726,7 +1751,7 @@ json
 6.10.2. Шаблон Excel
 text
 GET /logistics/actual-shipments/template
-Права: `logistics`, `economist`, `pp`. Остальные — 403.
+Права: **shipment_editors** (`logistics`, `economist`, `pp`, `admin`). Остальные — 403.
 
 Файл `actual-shipments-template.xlsx`. Колонки в порядке выгрузки ERP: `Пункт отгрузки`, `Клиент`, `Имя клиента`, `№ продукта`, `Назв. позиции`, `Вес нетто`, `Дата фактического ОМ`, `Транспортный заказ`, `Описание Маршрута`. Единицы измерения в файле нет: вес нетто всегда в килограммах. `Имя клиента` и `Назв. позиции` справочные и в базу не пишутся.
 
@@ -1738,7 +1763,7 @@ Headers:
 text
 Authorization: Bearer <token>
 Content-Type: multipart/form-data
-Права: `logistics`, `economist`, `pp`.
+Права: **shipment_editors** (`logistics`, `economist`, `pp`, `admin`).
 
 Form-data: `file` — `.xlsx` / `.xls`, не больше 10 МБ.
 
@@ -2110,29 +2135,29 @@ json
 }
 8. СПРАВОЧНИКИ
 
-Управление номенклатурой (Этап 7.1) — роли `pp`, `economist`, `logistics`:
+Управление номенклатурой (Этап 7.1) — **product_managers**: `pp`, `economist`, `logistics`, `admin`:
 
 | Метод | Эндпоинт | Описание | Права |
 |-------|----------|----------|-------|
 | GET | `/references/products` | Список продуктов | все авторизованные |
 | GET | `/references/products/{code}` | Карточка продукта | все авторизованные |
 | GET | `/references/products/export` | Выгрузить продукты в Excel | все авторизованные |
-| GET | `/references/products/template` | Скачать Excel-шаблон | pp, economist, logistics |
-| POST | `/references/products/upload` | Загрузить продукты из Excel | pp, economist, logistics |
-| GET | `/references/products/{code}/edit` | Получить продукт для редактирования | pp, economist, logistics |
-| PUT | `/references/products/{code}` | Обновить продукт | pp, economist, logistics |
-| DELETE | `/references/products/{code}` | Удалить продукт | pp, economist, logistics |
+| GET | `/references/products/template` | Скачать Excel-шаблон | product_managers |
+| POST | `/references/products/upload` | Загрузить продукты из Excel | product_managers |
+| GET | `/references/products/{code}/edit` | Получить продукт для редактирования | product_managers |
+| PUT | `/references/products/{code}` | Обновить продукт | product_managers |
+| DELETE | `/references/products/{code}` | Удалить продукт | product_managers |
 
-Управление объектами (Этап 7.2) — роль `logistics`:
+Управление объектами (Этап 7.2) — **L+A** (`logistics`, `admin`):
 
 | Метод | Эндпоинт | Описание | Права |
 |-------|----------|----------|-------|
 | GET | `/references/objects` | Список объектов | все авторизованные |
 | GET | `/references/objects/{code}` | Карточка объекта | все авторизованные |
-| POST | `/references/objects` | Создать объект | logistics |
-| GET | `/references/objects/{code}/edit` | Получить объект для редактирования | logistics |
-| PUT | `/references/objects/{code}` | Обновить объект | logistics |
-| DELETE | `/references/objects/{code}` | Удалить объект | logistics |
+| POST | `/references/objects` | Создать объект | L+A |
+| GET | `/references/objects/{code}/edit` | Получить объект для редактирования | L+A |
+| PUT | `/references/objects/{code}` | Обновить объект | L+A |
+| DELETE | `/references/objects/{code}` | Удалить объект | L+A |
 
 Просмотр списков и карточек продуктов/объектов доступен всем авторизованным ролям, включая `commercial` и `guest`.
 
@@ -2290,7 +2315,7 @@ text
 GET /references/objects/{code}
 Права: все авторизованные. 404, если объект не найден или удалён.
 
-Response (200): объект списка (`ObjectListItem`). Для полного набора полей редактирования — GET `/references/objects/{code}/edit` (только logistics).
+Response (200): объект списка (`ObjectListItem`). Для полного набора полей редактирования — GET `/references/objects/{code}/edit` (**L+A**).
 8.3. Получить список пользователей
 text
 GET /references/users
@@ -2298,7 +2323,7 @@ Headers:
 
 text
 Authorization: Bearer <token>
-Права: Только для администраторов (в MVP — для всех с ролью выше guest)
+Права: любой авторизованный, кроме `guest` (403).
 
 Response (200):
 
@@ -2351,7 +2376,7 @@ Headers:
 
 text
 Authorization: Bearer <token>
-Права: pp, economist, logistics
+Права: **product_managers** (`pp`, `economist`, `logistics`, `admin`)
 
 Response (200): файл application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
 
@@ -2381,7 +2406,7 @@ Headers:
 text
 Authorization: Bearer <token>
 Content-Type: multipart/form-data
-Права: pp, economist, logistics
+Права: **product_managers** (`pp`, `economist`, `logistics`, `admin`)
 
 Form-data: file — .xlsx или .xls
 
@@ -2414,7 +2439,7 @@ text
 GET /references/products/pallet-norms/template
 POST /references/products/pallet-norms/preview
 POST /references/products/pallet-norms/upload
-Права: pp, economist, logistics
+Права: **product_managers** (`pp`, `economist`, `logistics`, `admin`)
 
 Шаблон `.xlsx`: колонки «Артикул», «Количество штук на поддоне». Новые продукты не создаются — обновляются только существующие артикулы. Повтор артикула: действует последнее значение.
 
@@ -2440,7 +2465,7 @@ Headers:
 
 text
 Authorization: Bearer <token>
-Права: pp, economist, logistics
+Права: **product_managers** (`pp`, `economist`, `logistics`, `admin`)
 
 Response (200):
 
@@ -2478,7 +2503,7 @@ Headers:
 
 text
 Authorization: Bearer <token>
-Права: pp, economist, logistics
+Права: **product_managers** (`pp`, `economist`, `logistics`, `admin`)
 
 Поле code не изменяется. Тело:
 
@@ -2510,7 +2535,7 @@ Headers:
 
 text
 Authorization: Bearer <token>
-Права: pp, economist, logistics
+Права: **product_managers** (`pp`, `economist`, `logistics`, `admin`)
 
 Soft delete (deleted_at). Если есть связанные записи в normatives, request_items или available_balances — 409:
 
@@ -2536,7 +2561,7 @@ Headers:
 
 text
 Authorization: Bearer <token>
-Права: logistics
+Права: **L+A** (`logistics`, `admin`)
 
 Тело:
 
@@ -2576,7 +2601,7 @@ Headers:
 
 text
 Authorization: Bearer <token>
-Права: logistics
+Права: **L+A** (`logistics`, `admin`)
 
 Response (200):
 
@@ -2609,7 +2634,7 @@ Headers:
 
 text
 Authorization: Bearer <token>
-Права: logistics
+Права: **L+A** (`logistics`, `admin`)
 
 Поле `code` не изменяется. Переданные поля обновляются; непереданные сохраняют текущие значения.
 
@@ -2636,7 +2661,7 @@ Headers:
 
 text
 Authorization: Bearer <token>
-Права: logistics
+Права: **L+A** (`logistics`, `admin`)
 
 Soft delete (deleted_at). Если есть связанные записи в products (plant_id / second_plant_id / third_plant_id), request_items, normatives или available_balances — 409:
 
@@ -2683,7 +2708,7 @@ Headers:
 
 text
 Authorization: Bearer <token>
-Права: только logistics. Остальные роли — 403 FORBIDDEN.
+Права: **L+A** (`logistics`, `admin`). Остальные роли — 403 FORBIDDEN.
 
 Query параметры:
 
@@ -2724,7 +2749,7 @@ json
 9.2. Создать пользователя
 text
 POST /admin/users
-Права: logistics.
+Права: **L+A** (`logistics`, `admin`).
 
 Request:
 
@@ -2750,14 +2775,14 @@ Response (201): объект пользователя (как в 9.1), без п
 9.3. Получить пользователя
 text
 GET /admin/users/{id}
-Права: logistics. 404, если пользователь не найден.
+Права: **L+A** (`logistics`, `admin`). 404, если пользователь не найден.
 
 Response (200): тот же объект, что в списке.
 
 9.4. Обновить пользователя
 text
 PUT /admin/users/{id}
-Права: logistics. Поле `username` не изменяется.
+Права: **L+A** (`logistics`, `admin`). Поле `username` не изменяется.
 
 Request:
 
@@ -2782,7 +2807,7 @@ Response (200): обновлённый пользователь.
 9.5. Удалить пользователя
 text
 DELETE /admin/users/{id}
-Права: logistics. Soft delete: `deleted_at = NOW()`.
+Права: **L+A** (`logistics`, `admin`). Soft delete: `deleted_at = NOW()`.
 
 Проверки:
 - нельзя удалить себя (400 CANNOT_DELETE_SELF)
@@ -2801,7 +2826,7 @@ json
 9.6. Сбросить пароль
 text
 POST /admin/users/{id}/reset-password
-Права: logistics.
+Права: **L+A** (`logistics`, `admin`).
 
 Генерирует новый пароль из 8 символов, соответствующий политике сложности (заглавная и строчная буквы, цифра, специальный символ), хеширует и сохраняет. Действующие сессии пользователя отзываются. Новый пароль возвращается **один раз**.
 
@@ -2819,7 +2844,7 @@ Errors: 404 — пользователь не найден; 400 — пользо
 9.7. Список подразделений
 text
 GET /admin/departments
-Права: logistics. Используется на странице подразделений и в выпадающем списке при создании/редактировании пользователя.
+Права: **L+A** (`logistics`, `admin`). Используется на странице подразделений и в выпадающем списке при создании/редактировании пользователя.
 
 Возвращаются все неудалённые подразделения (включая неактивные), с количеством назначенных неудалённых пользователей.
 
@@ -2840,7 +2865,7 @@ json
 9.8. Создать подразделение
 text
 POST /admin/departments
-Права: logistics.
+Права: **L+A** (`logistics`, `admin`).
 
 Request:
 
@@ -2858,7 +2883,7 @@ Response (201): объект подразделения (как в 9.7).
 9.9. Переименовать подразделение
 text
 PUT /admin/departments/{id}
-Права: logistics. 404, если подразделение не найдено или удалено.
+Права: **L+A** (`logistics`, `admin`). 404, если подразделение не найдено или удалено.
 
 Request:
 
@@ -2875,7 +2900,7 @@ Response (200): обновлённое подразделение.
 9.10. Удалить подразделение
 text
 DELETE /admin/departments/{id}
-Права: logistics. Soft delete: `deleted_at = NOW()`.
+Права: **L+A** (`logistics`, `admin`). Soft delete: `deleted_at = NOW()`.
 
 Проверки:
 - нельзя удалить, если есть неудалённые пользователи с этим `department_id` (409 HAS_RELATIONS)
@@ -3055,7 +3080,7 @@ text
 5. DELETE /production-requests/{id} → партия и нормативы удалены каскадом
 16. ПРОИЗВОДСТВЕННЫЕ ЗАПРОСЫ (ПАРТИИ EXCEL)
 
-Доступ ко всем эндпоинтам: `logistics`, `economist`, `pp` (`require_roles`). Остальные роли — 403.
+Доступ ко всем эндпоинтам: **batch_managers** (`logistics`, `economist`, `pp`, `admin`). Остальные роли — 403.
 
 | Метод | Эндпоинт | Описание |
 |-------|----------|----------|
@@ -3122,7 +3147,7 @@ Form-data: `file`. Ответ: `total_rows`, `parse_error_count`, `inactive_prod
 text
 POST /production-requests/upload
 Content-Type: multipart/form-data
-Права: logistics, economist, pp.
+Права: **batch_managers** (`logistics`, `economist`, `pp`, `admin`).
 
 Form-data:
 
@@ -3222,6 +3247,6 @@ json
     "message": "Партия загрузки удалена"
 }
 
-Версия: 1.20
+Версия: 1.21
 Дата: 24.11.2026
 Статус: Утверждена

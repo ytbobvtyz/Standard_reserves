@@ -2,7 +2,7 @@
 
 Статус: реализовано. Страница живёт в справочниках (`/references/clients`), не в администрировании. Права ниже — как в коде.
 
-Документ опирается на текущий код и на `docs/PROJECT_VISION.MD`, `DATA_MODEL.MD`, `API_SPECIFICATION.MD`, `FRONTEND_SPEC.MD`, `MVP_ROADMAP.MD`.
+Документ опирается на текущий код и на `docs/PROJECT_VISION.MD`, `DATA_MODEL.MD`, `API_SPECIFICATION.MD` §1.7 (группы ролей), `FRONTEND_SPEC.MD`. `MVP_ROADMAP.MD` — архив, не источник прав.
 
 Префикс API везде `/api/v1`, как у остальных эндпоинтов.
 
