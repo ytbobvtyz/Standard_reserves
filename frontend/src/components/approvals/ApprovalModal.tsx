@@ -34,10 +34,15 @@ import {
   coverageMonths,
   coverageSummary,
   formatCoverage,
+  groupSales,
   needsReview,
   stockAfterApproval,
   type CoverageThresholds,
 } from '../../utils/coverage'
+import {
+  relatedProductsTooltip,
+  type RelatedSalesField,
+} from '../../utils/relatedSales'
 import {
   calculateRequirement,
   categoryLabel,
@@ -49,6 +54,24 @@ import {
 const TYPE_LABEL: Record<RequestType, string> = {
   normative: 'Норматив',
   one_time: 'Разовое',
+}
+
+function relatedSalesCell(
+  value: number | null | undefined,
+  record: EditableItem,
+  field: RelatedSalesField,
+) {
+  return (
+    <Tooltip
+      title={
+        <span style={{ whiteSpace: 'pre-line' }}>
+          {relatedProductsTooltip(record.related_products, field, record.unit)}
+        </span>
+      }
+    >
+      <span>{formatQuantity(value ?? 0, record.unit)}</span>
+    </Tooltip>
+  )
 }
 
 interface EditableItem extends ApprovalPendingItem {
@@ -166,7 +189,7 @@ export function ApprovalModal({
           quantity: item.quantity_approved ?? item.quantity_requested,
           existingNz: item.coverage?.existing_nz ?? null,
         }),
-        item.coverage?.monthly_sales ?? null,
+        groupSales(item.avg_sales_client_total, item.coverage?.monthly_sales),
       )
     return [...request.items]
       .sort((left, right) =>
@@ -256,7 +279,7 @@ export function ApprovalModal({
               quantity: item.quantity_approved_input,
               existingNz: item.coverage?.existing_nz ?? null,
             }),
-            item.coverage?.monthly_sales ?? null,
+            groupSales(item.avg_sales_client_total, item.coverage?.monthly_sales),
           ),
           thresholds,
         ),
@@ -354,6 +377,7 @@ export function ApprovalModal({
             pagination={false}
             size="small"
             tableLayout="fixed"
+            scroll={{ x: 'max-content' }}
             dataSource={orderedItems}
             columns={[
               { title: 'Артикул', dataIndex: 'product_code', width: 72 },
@@ -463,6 +487,60 @@ export function ApprovalModal({
                   ]
                 : []),
               {
+                title: 'Всего реализация (клиент)',
+                width: 150,
+                render: (_: unknown, record: EditableItem) =>
+                  formatQuantity(record.avg_sales_client_total ?? null, record.unit),
+              },
+              {
+                title: 'Из них по связанным (клиент)',
+                width: 160,
+                render: (_: unknown, record: EditableItem) =>
+                  relatedSalesCell(
+                    record.avg_sales_client_related,
+                    record,
+                    'avg_sales',
+                  ),
+              },
+              {
+                title: 'Всего реализация (склад)',
+                width: 150,
+                render: (_: unknown, record: EditableItem) =>
+                  formatQuantity(
+                    record.avg_sales_product_warehouse_total ?? null,
+                    record.unit,
+                  ),
+              },
+              {
+                title: 'Из них по связанным (склад)',
+                width: 160,
+                render: (_: unknown, record: EditableItem) =>
+                  relatedSalesCell(
+                    record.avg_sales_product_warehouse_related,
+                    record,
+                    'avg_sales_warehouse',
+                  ),
+              },
+              {
+                title: 'Всего реализация (все склады)',
+                width: 160,
+                render: (_: unknown, record: EditableItem) =>
+                  formatQuantity(
+                    record.avg_sales_product_all_warehouses_total ?? null,
+                    record.unit,
+                  ),
+              },
+              {
+                title: 'Из них по связанным (все склады)',
+                width: 170,
+                render: (_: unknown, record: EditableItem) =>
+                  relatedSalesCell(
+                    record.avg_sales_product_all_warehouses_related,
+                    record,
+                    'avg_sales_all_warehouses',
+                  ),
+              },
+              {
                 title: 'Покрытие',
                 width: 108,
                 render: (_: unknown, record: EditableItem) => {
@@ -478,13 +556,20 @@ export function ApprovalModal({
                     quantity: record.quantity_approved_input,
                     existingNz: record.coverage?.existing_nz ?? null,
                   })
-                  const sales = record.coverage?.monthly_sales ?? null
+                  const sales = groupSales(
+                    record.avg_sales_client_total,
+                    record.coverage?.monthly_sales,
+                  )
                   const months = coverageMonths(stock, sales)
                   const level = coverageLevel(months, thresholds)
+                  const groupNote =
+                    (record.related_products?.length ?? 0) > 0
+                      ? ' Учтены связанные артикулы.'
+                      : ''
                   const lines = [
-                    sales == null
+                    sales == null || sales <= 0
                       ? 'Реализации клиента по этому артикулу со склада нет.'
-                      : `Реализация ${formatQuantity(sales, record.unit)} ${record.unit}/мес.`,
+                      : `Реализация ${formatQuantity(sales, record.unit)} ${record.unit}/мес.${groupNote}`,
                   ]
                   if (request.request_type === 'one_time') {
                     lines.push(
@@ -502,10 +587,14 @@ export function ApprovalModal({
                   const extra = coverageContext({
                     stock,
                     monthlySales: sales,
-                    warehouseMonthlySales:
-                      record.coverage?.warehouse_monthly_sales ?? null,
-                    productMonthlySales:
-                      record.coverage?.product_monthly_sales ?? null,
+                    warehouseMonthlySales: groupSales(
+                      record.avg_sales_product_warehouse_total,
+                      record.coverage?.warehouse_monthly_sales,
+                    ),
+                    productMonthlySales: groupSales(
+                      record.avg_sales_product_all_warehouses_total,
+                      record.coverage?.product_monthly_sales,
+                    ),
                     thresholds,
                   })
                   if (extra) {

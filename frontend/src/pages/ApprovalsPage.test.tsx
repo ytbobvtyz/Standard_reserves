@@ -146,6 +146,14 @@ describe('ApprovalsPage', () => {
     expect(screen.getAllByText('Кат.').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Удал.').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Потр.').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Всего реализация (клиент)').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Из них по связанным (клиент)').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Всего реализация (склад)').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Из них по связанным (склад)').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Всего реализация (все склады)').length).toBeGreaterThan(0)
+    expect(
+      screen.getAllByText('Из них по связанным (все склады)').length,
+    ).toBeGreaterThan(0)
 
     expect(screen.getAllByText('Покрытие').length).toBeGreaterThan(0)
     expect(screen.getByText('10,0 мес')).toBeTruthy()

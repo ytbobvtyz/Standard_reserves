@@ -18,7 +18,6 @@ from app.schemas.approval import (
     ApprovalActionRequest,
     ApprovalActionResult,
     ApprovalActorBrief,
-    ApprovalItemCoverage,
     ApprovalPendingItem,
     ApprovalPendingRequest,
 )
@@ -28,7 +27,12 @@ from app.schemas.request import (
 )
 from app.schemas.user import UserBrief
 from app.services.activity import record_request_activity
-from app.services.approval_reference import ReferenceKey, load_item_references
+from app.services.approval_reference import (
+    ItemReference,
+    ReferenceKey,
+    empty_item_reference,
+    load_item_references,
+)
 from app.services.coefficients import CoefficientSet, item_coefficient_fields
 from app.services.normative_dates import complete_overlapping_requests
 from app.services.requests import load_request
@@ -68,15 +72,23 @@ def _reference_key(request: Request, item: RequestItem) -> ReferenceKey:
 def to_pending(
     request: Request,
     coeffs: CoefficientSet | None = None,
-    references: dict[ReferenceKey, ApprovalItemCoverage] | None = None,
+    references: dict[ReferenceKey, ItemReference] | None = None,
 ) -> ApprovalPendingRequest:
     loaded = references or {}
-    return ApprovalPendingRequest(
-        id=request.id,
-        request_type=request.request_type,
-        client_name=request.client_name,
-        initiator=UserBrief.model_validate(request.initiator),
-        items=[
+    items: list[ApprovalPendingItem] = []
+    for item in request.items:
+        fields = item_coefficient_fields(
+            item.product,
+            item.warehouse,
+            (
+                item.quantity_approved
+                if item.quantity_approved is not None
+                else item.quantity_requested
+            ),
+            coeffs,
+        )
+        reference = loaded.get(_reference_key(request, item)) or empty_item_reference()
+        items.append(
             ApprovalPendingItem(
                 product_code=item.product_code,
                 product_name=item.product.name,
@@ -91,25 +103,30 @@ def to_pending(
                 long_distance=fields["long_distance"],
                 distance_factor=fields["distance_factor"],
                 requirement=fields["requirement"],
-                coverage=loaded.get(
-                    _reference_key(request, item),
-                    ApprovalItemCoverage(),
+                coverage=reference.coverage,
+                avg_sales_client_total=reference.avg_sales_client_total,
+                avg_sales_client_related=reference.avg_sales_client_related,
+                avg_sales_product_warehouse_total=(
+                    reference.avg_sales_product_warehouse_total
                 ),
+                avg_sales_product_warehouse_related=(
+                    reference.avg_sales_product_warehouse_related
+                ),
+                avg_sales_product_all_warehouses_total=(
+                    reference.avg_sales_product_all_warehouses_total
+                ),
+                avg_sales_product_all_warehouses_related=(
+                    reference.avg_sales_product_all_warehouses_related
+                ),
+                related_products=reference.related_products,
             )
-            for item in request.items
-            for fields in [
-                item_coefficient_fields(
-                    item.product,
-                    item.warehouse,
-                    (
-                        item.quantity_approved
-                        if item.quantity_approved is not None
-                        else item.quantity_requested
-                    ),
-                    coeffs,
-                )
-            ]
-        ],
+        )
+    return ApprovalPendingRequest(
+        id=request.id,
+        request_type=request.request_type,
+        client_name=request.client_name,
+        initiator=UserBrief.model_validate(request.initiator),
+        items=items,
         expiry_date=request.expiry_date,
         created_at=request.created_at,
         client_id=request.client_id,

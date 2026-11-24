@@ -90,6 +90,8 @@ async def _ensure_product(code: int, name: str, weight: Decimal) -> None:
             existing.weight_kg = weight
             existing.pallet_qty = 100000
             existing.is_active = True
+            existing.parent_code = None
+            existing.children_code = None
         await session.commit()
 
 
@@ -101,7 +103,7 @@ async def _set_weight(code: int, weight: Decimal) -> None:
         await session.commit()
 
 
-async def test_reference_batch_is_two_queries(db_ready: None) -> None:
+async def test_reference_batch_query_count(db_ready: None) -> None:
     async with AsyncSessionLocal() as session:
         await session.execute(text("SELECT 1"))
         count = {"n": 0}
@@ -122,7 +124,7 @@ async def test_reference_batch_is_two_queries(db_ready: None) -> None:
                 ReferenceKey(uuid4(), 10002, 2001, "шт", Decimal("2.5")),
             ]
             loaded = await load_item_references(session, keys + keys[:1])
-            assert count["n"] == 2
+            assert count["n"] == 3
             assert set(loaded) == set(keys)
         finally:
             event.remove(bind, "before_cursor_execute", bump)
@@ -533,3 +535,229 @@ async def test_pending_reference_columns(
             await _restore_loading_point(warehouse, previous_a)
         if pinned_b:
             await _restore_loading_point(other_warehouse, previous_b)
+
+
+GROUP_PRODUCT = 91070
+RELATED_PRODUCT = 91071
+LONE_PRODUCT = 91072
+POINT_GROUP = "W077"
+POINT_OTHER = "O077"
+
+
+async def test_pending_sales_include_related_articles(
+    client: AsyncClient,
+    test_user: AuthUser,
+    pp_user: AuthUser,
+    economist_user: AuthUser,
+    catalog: dict[str, int],
+) -> None:
+    client_a = await ensure_client("ООО Группа LOG077")
+    client_b = await ensure_client("ООО Чужой LOG077")
+    warehouse = catalog["warehouse_code"]
+    other_warehouse = catalog["warehouse_code_2"]
+    starts = previous_month_starts(date.today())
+    request_ids: list[str] = []
+    previous_w: str | None = None
+    previous_o: str | None = None
+    pinned_w = False
+    pinned_o = False
+    try:
+        previous_w = await _pin_loading_point(warehouse, POINT_GROUP)
+        pinned_w = True
+        previous_o = await _pin_loading_point(other_warehouse, POINT_OTHER)
+        pinned_o = True
+        await _ensure_product(GROUP_PRODUCT, "Запрошенный LOG077", Decimal("1"))
+        await _ensure_product(RELATED_PRODUCT, "Связанный LOG077", Decimal("1"))
+        await _ensure_product(LONE_PRODUCT, "Одиночный LOG077", Decimal("1"))
+        async with AsyncSessionLocal() as session:
+            requested = await session.get(Product, GROUP_PRODUCT)
+            related = await session.get(Product, RELATED_PRODUCT)
+            lone = await session.get(Product, LONE_PRODUCT)
+            assert requested is not None and related is not None and lone is not None
+            requested.parent_code = RELATED_PRODUCT
+            requested.children_code = None
+            related.parent_code = None
+            related.children_code = None
+            lone.parent_code = None
+            lone.children_code = None
+            await session.execute(
+                delete(ActualShipment).where(
+                    ActualShipment.product_code.in_(
+                        [GROUP_PRODUCT, RELATED_PRODUCT, LONE_PRODUCT]
+                    )
+                )
+            )
+            await session.execute(
+                delete(Normative).where(
+                    Normative.product_code.in_(
+                        [GROUP_PRODUCT, RELATED_PRODUCT, LONE_PRODUCT]
+                    )
+                )
+            )
+            active_until = Request.add_months(date.today(), 4)
+            session.add_all(
+                [
+                    Normative(
+                        product_code=GROUP_PRODUCT,
+                        warehouse_code=warehouse,
+                        quantity=Decimal("500"),
+                        unit="кг",
+                        client_id=client_a,
+                        client_name="ООО Группа LOG077",
+                        expiry_date=active_until,
+                        category="A",
+                    ),
+                    Normative(
+                        product_code=RELATED_PRODUCT,
+                        warehouse_code=warehouse,
+                        quantity=Decimal("9000"),
+                        unit="кг",
+                        client_id=client_a,
+                        client_name="ООО Группа LOG077",
+                        expiry_date=active_until,
+                        category="A",
+                    ),
+                    ActualShipment(
+                        client_id=client_a,
+                        product_code=GROUP_PRODUCT,
+                        quantity=Decimal("300"),
+                        unit="кг",
+                        shipment_date=_day(starts[5]),
+                        loading_point=POINT_GROUP,
+                    ),
+                    ActualShipment(
+                        client_id=client_a,
+                        product_code=RELATED_PRODUCT,
+                        quantity=Decimal("120"),
+                        unit="кг",
+                        shipment_date=_day(starts[5]),
+                        loading_point=POINT_GROUP,
+                    ),
+                    ActualShipment(
+                        client_id=client_b,
+                        product_code=RELATED_PRODUCT,
+                        quantity=Decimal("30"),
+                        unit="кг",
+                        shipment_date=_day(starts[5]),
+                        loading_point=POINT_GROUP,
+                    ),
+                    ActualShipment(
+                        client_id=client_a,
+                        product_code=RELATED_PRODUCT,
+                        quantity=Decimal("60"),
+                        unit="кг",
+                        shipment_date=_day(starts[5]),
+                        loading_point=POINT_OTHER,
+                    ),
+                ]
+            )
+            await session.commit()
+
+        commercial = await login_token(client, test_user)
+        pp = await login_token(client, pp_user)
+        economist = await login_token(client, economist_user)
+        request_id = await _submit(
+            client,
+            commercial,
+            client_a,
+            [
+                {
+                    "product_code": GROUP_PRODUCT,
+                    "warehouse_code": warehouse,
+                    "quantity_requested": 1,
+                    "unit": "т",
+                },
+                {
+                    "product_code": LONE_PRODUCT,
+                    "warehouse_code": warehouse,
+                    "quantity_requested": 1,
+                    "unit": "т",
+                },
+            ],
+        )
+        request_ids.append(request_id)
+
+        pending = await client.get(
+            "/api/v1/approvals/pp/pending",
+            headers=auth_header(pp),
+            params={"limit": 200},
+        )
+        assert pending.status_code == 200, pending.text
+        matched = next(row for row in pending.json()["data"] if row["id"] == request_id)
+        by_code = {row["product_code"]: row for row in matched["items"]}
+        group = by_code[GROUP_PRODUCT]
+        lone = by_code[LONE_PRODUCT]
+
+        _assert_coverage(
+            group["coverage"],
+            {
+                "existing_nz": 0.5,
+                "monthly_sales": 0.3,
+                "warehouse_monthly_sales": 0.3,
+                "product_monthly_sales": 0.3,
+            },
+        )
+        assert group["avg_sales_client_total"] == pytest.approx(0.42)
+        assert group["avg_sales_client_related"] == pytest.approx(0.12)
+        assert group["avg_sales_product_warehouse_total"] == pytest.approx(0.45)
+        assert group["avg_sales_product_warehouse_related"] == pytest.approx(0.15)
+        assert group["avg_sales_product_all_warehouses_total"] == pytest.approx(0.51)
+        assert group["avg_sales_product_all_warehouses_related"] == pytest.approx(0.21)
+        assert group["related_products"] == [
+            {
+                "code": RELATED_PRODUCT,
+                "name": "Связанный LOG077",
+                "avg_sales": pytest.approx(0.12),
+                "avg_sales_warehouse": pytest.approx(0.15),
+                "avg_sales_all_warehouses": pytest.approx(0.21),
+            }
+        ]
+
+        assert lone["related_products"] == []
+        assert lone["avg_sales_client_total"] == 0
+        assert lone["avg_sales_client_related"] == 0
+        assert lone["avg_sales_product_warehouse_total"] == 0
+        assert lone["avg_sales_product_warehouse_related"] == 0
+        assert lone["avg_sales_product_all_warehouses_total"] == 0
+        assert lone["avg_sales_product_all_warehouses_related"] == 0
+        assert lone["coverage"]["existing_nz"] is None
+        assert lone["coverage"]["monthly_sales"] is None
+
+        approved = await client.post(
+            f"/api/v1/approvals/pp/{request_id}/action",
+            headers=auth_header(pp),
+            json={"action": "approve"},
+        )
+        assert approved.status_code == 200, approved.text
+        economy = await client.get(
+            "/api/v1/approvals/economy/pending",
+            headers=auth_header(economist),
+            params={"limit": 200},
+        )
+        assert economy.status_code == 200, economy.text
+        economy_row = next(
+            row for row in economy.json()["data"] if row["id"] == request_id
+        )
+        economy_group = next(
+            row for row in economy_row["items"] if row["product_code"] == GROUP_PRODUCT
+        )
+        assert economy_group["avg_sales_client_total"] == pytest.approx(0.42)
+        assert economy_group["avg_sales_client_related"] == pytest.approx(0.12)
+        assert economy_group["coverage"]["existing_nz"] == pytest.approx(0.5)
+    finally:
+        for request_id in request_ids:
+            await delete_request(request_id)
+        async with AsyncSessionLocal() as session:
+            codes = [GROUP_PRODUCT, RELATED_PRODUCT, LONE_PRODUCT]
+            await session.execute(
+                delete(ActualShipment).where(ActualShipment.product_code.in_(codes))
+            )
+            await session.execute(
+                delete(Normative).where(Normative.product_code.in_(codes))
+            )
+            await session.execute(delete(Product).where(Product.code.in_(codes)))
+            await session.commit()
+        if pinned_w:
+            await _restore_loading_point(warehouse, previous_w)
+        if pinned_o:
+            await _restore_loading_point(other_warehouse, previous_o)

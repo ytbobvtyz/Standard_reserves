@@ -82,6 +82,8 @@ class DeficitRow:
     group_index: int = 0
     is_group_main: bool = True
     hide_group_metrics: bool = False
+    default_plant_code: int | None = None
+    default_plant_name: str | None = None
 
 
 def _quantize(value: Decimal, unit: Unit) -> Decimal:
@@ -293,6 +295,8 @@ def _convert_row(
     is_group_main: bool = True,
     hide_group_metrics: bool = False,
     coeffs: CoefficientSet | None = None,
+    default_plant_code: int | None = None,
+    default_plant_name: str | None = None,
 ) -> DeficitRow:
     is_remote = bool(
         warehouse.long_distance if long_distance is None else long_distance
@@ -347,6 +351,8 @@ def _convert_row(
         group_index=group_index,
         is_group_main=is_group_main,
         hide_group_metrics=hide_group_metrics,
+        default_plant_code=default_plant_code,
+        default_plant_name=default_plant_name,
     )
 
 
@@ -554,7 +560,14 @@ async def collect_deficit_rows(
         products_by_code = await _load_product_map(db, set(products_by_code))
         await _expand_related_members(db, aggregated, balances, products_by_code)
 
-    plant_ids = {resolve_plant_id(bucket["product"]) for bucket in aggregated.values()}
+    plant_ids: set[int] = set()
+    for bucket in aggregated.values():
+        product = bucket["product"]
+        resolved = resolve_plant_id(product)
+        if resolved:
+            plant_ids.add(resolved)
+        if product.plant_id:
+            plant_ids.add(product.plant_id)
     plants = await _load_plants(db, plant_ids)
     warehouse_codes_used = {bucket["warehouse"].code for bucket in aggregated.values()}
     long_distance_by_code: dict[int, bool] = {}
@@ -661,6 +674,7 @@ async def collect_deficit_rows(
                 else Decimal("0")
             )
             plant = plants.get(resolve_plant_id(product))
+            default_plant = plants.get(product.plant_id) if product.plant_id else None
             is_main = product.code == main_code
             rows.append(
                 _convert_row(
@@ -668,6 +682,10 @@ async def collect_deficit_rows(
                     product=product,
                     plant_name=(
                         plant.name if plant else f"Завод {resolve_plant_id(product)}"
+                    ),
+                    default_plant_code=product.plant_id or None,
+                    default_plant_name=(
+                        default_plant.name if default_plant is not None else None
                     ),
                     normative_pcs=group_normative_pcs if is_main else Decimal("0"),
                     available_pcs=available_pcs,
@@ -727,6 +745,8 @@ def _to_deficit_item(row: DeficitRow) -> DeficitItem:
         group_index=row.group_index,
         is_group_main=row.is_group_main,
         hide_group_metrics=row.hide_group_metrics,
+        default_plant_code=row.default_plant_code,
+        default_plant_name=row.default_plant_name,
     )
 
 

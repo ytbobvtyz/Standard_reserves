@@ -47,6 +47,8 @@ class DeficitItem(BaseModel):
     group_index: int = 0
     is_group_main: bool = True
     hide_group_metrics: bool = False
+    default_plant_code: int | None = None
+    default_plant_name: str | None = None
 
 
 class BalanceUploadError(BaseModel):

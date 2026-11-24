@@ -1,14 +1,15 @@
 import {
+  Button,
   Card,
   DatePicker,
   Input,
+  Radio,
   Select,
   Space,
   Table,
   Tabs,
   Typography,
   message,
-  Button,
 } from 'antd'
 import { DownloadOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
@@ -19,7 +20,13 @@ import { Link } from 'react-router-dom'
 import { getApiErrorMessage } from '../api/client'
 import { normativesApi } from '../api/normatives'
 import { referencesApi } from '../api/references'
-import type { DepartmentListItem, NormativeOnDateItem, ObjectListItem, Unit } from '../api/types'
+import type {
+  DepartmentListItem,
+  NormativeOnDateItem,
+  NormativeSource,
+  ObjectListItem,
+  Unit,
+} from '../api/types'
 import { ProductionRequestsTab } from '../components/normatives/ProductionRequestsTab'
 import { useAuthStore } from '../stores/auth'
 import { hasLogisticsAccess } from '../utils/roles'
@@ -93,6 +100,7 @@ export function NormativesPage() {
   const [warehouses, setWarehouses] = useState<ObjectListItem[]>([])
   const [departments, setDepartments] = useState<DepartmentListItem[]>([])
   const [departmentId, setDepartmentId] = useState<string | undefined>()
+  const [source, setSource] = useState<NormativeSource>('all')
   const [items, setItems] = useState<NormativeOnDateItem[]>([])
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -112,6 +120,7 @@ export function NormativesPage() {
         warehouse_code: warehouseCode,
         department_id: departmentId,
         search: search || undefined,
+        source,
       })
       setItems(data.data)
     } catch (error) {
@@ -119,7 +128,7 @@ export function NormativesPage() {
     } finally {
       setLoading(false)
     }
-  }, [sliceDate, warehouseCode, search, departmentId])
+  }, [sliceDate, warehouseCode, search, departmentId, source])
 
   useEffect(() => {
     void load()
@@ -215,6 +224,7 @@ export function NormativesPage() {
         search: search || undefined,
         category,
         client_name: clientName.trim() || undefined,
+        source,
       })
       const filename =
         filenameFromContentDisposition(headers['content-disposition']) ??
@@ -229,6 +239,14 @@ export function NormativesPage() {
 
   const normativesContent = (
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+      <Radio.Group
+        value={source}
+        onChange={(event) => setSource(event.target.value)}
+        aria-label="Источник нормативов"
+      >
+        <Radio.Button value="all">Все</Radio.Button>
+        <Radio.Button value="requests">Только запросы</Radio.Button>
+      </Radio.Group>
       <Space wrap>
         <Input
           allowClear

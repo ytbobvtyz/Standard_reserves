@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -146,6 +148,75 @@ async def get_related_products(db: AsyncSession, code: int) -> RelatedProductsDa
         product_name=product.name,
         related_products=related,
     )
+
+
+async def load_related_by_codes(
+    db: AsyncSession, codes: list[int]
+) -> dict[int, list[tuple[int, str]]]:
+    """Related articles for many seeds, same walk as get_related_products.
+
+    Ancestors follow parent_code, descendants follow children_code.
+    The seed itself is not included. Result is ordered by code.
+    """
+    unique = list(dict.fromkeys(int(code) for code in codes))
+    if not unique:
+        return {}
+    literals = ", ".join(str(code) for code in unique)
+    statement = text(
+        f"""
+        WITH RECURSIVE
+        seeds AS (
+            SELECT code AS seed
+            FROM products
+            WHERE code IN ({literals})
+              AND deleted_at IS NULL
+        ),
+        ancestors AS (
+            SELECT p.code, p.parent_code, p.name, s.seed, 1 AS level
+            FROM products p
+            JOIN seeds s ON p.code = s.seed
+            WHERE p.deleted_at IS NULL
+
+            UNION ALL
+
+            SELECT p.code, p.parent_code, p.name, a.seed, a.level + 1
+            FROM products p
+            JOIN ancestors a ON p.code = a.parent_code
+            WHERE p.deleted_at IS NULL
+              AND a.level < 20
+        ),
+        descendants AS (
+            SELECT p.code, p.children_code, p.name, s.seed, 1 AS level
+            FROM products p
+            JOIN seeds s ON p.code = s.seed
+            WHERE p.deleted_at IS NULL
+
+            UNION ALL
+
+            SELECT p.code, p.children_code, p.name, d.seed, d.level + 1
+            FROM products p
+            JOIN descendants d ON p.code = d.children_code
+            WHERE p.deleted_at IS NULL
+              AND d.level < 20
+        )
+        SELECT seed, code, name
+        FROM (
+            SELECT seed, code, name FROM ancestors WHERE code != seed
+            UNION
+            SELECT seed, code, name FROM descendants WHERE code != seed
+        ) related
+        ORDER BY seed, code
+        """
+    )
+    grouped: dict[int, list[tuple[int, str]]] = defaultdict(list)
+    seen: set[tuple[int, int]] = set()
+    for row in await db.execute(statement):
+        key = (int(row.seed), int(row.code))
+        if key in seen:
+            continue
+        seen.add(key)
+        grouped[key[0]].append((key[1], row.name))
+    return grouped
 
 
 async def collect_active_analog_codes(

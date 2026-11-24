@@ -98,8 +98,13 @@ async def logistics_catalog(catalog: dict[str, int], test_user: AuthUser):
             ),
         ]
         for product in products:
-            if await session.get(Product, product.code) is None:
+            existing_product = await session.get(Product, product.code)
+            if existing_product is None:
                 session.add(product)
+            else:
+                existing_product.plant_id = product.plant_id
+                existing_product.second_plant_id = product.second_plant_id
+                existing_product.deleted_at = None
         await session.flush()
         session.add(
             Request(
@@ -248,6 +253,11 @@ async def test_dashboard_returns_deficit(
     assert item["unit"] == "шт"
     assert item["status"] == "warning"
     assert item["client_name"] == CLIENT_NAME
+    assert item["default_plant_code"] == logistics_catalog["plant_code"]
+    assert item["default_plant_name"] == "Завод Московский"
+    ok_item = _item(warehouse, TEST_PRODUCT_OK)
+    assert ok_item["default_plant_code"] == 1002
+    assert ok_item["default_plant_name"] == "Завод Екатеринбургский"
     assert warehouse["long_distance"] is False
     assert warehouse["long_distance_message"] is None
     assert warehouse["deficit_count"] >= 1

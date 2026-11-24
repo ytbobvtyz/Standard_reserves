@@ -276,6 +276,14 @@ export interface ApprovalItemCoverage {
   product_monthly_sales: number | null
 }
 
+export interface ApprovalRelatedProduct {
+  code: number
+  name: string
+  avg_sales: number
+  avg_sales_warehouse: number
+  avg_sales_all_warehouses: number
+}
+
 export interface ApprovalPendingItem {
   product_code: number
   product_name: string
@@ -291,6 +299,13 @@ export interface ApprovalPendingItem {
   distance_factor?: number
   requirement?: number
   coverage?: ApprovalItemCoverage
+  avg_sales_client_total?: number | null
+  avg_sales_client_related?: number | null
+  avg_sales_product_warehouse_total?: number | null
+  avg_sales_product_warehouse_related?: number | null
+  avg_sales_product_all_warehouses_total?: number | null
+  avg_sales_product_all_warehouses_related?: number | null
+  related_products?: ApprovalRelatedProduct[]
 }
 
 export interface OverlappingRequestRef {
@@ -477,6 +492,8 @@ export interface DeficitItem {
   group_index?: number
   is_group_main?: boolean
   hide_group_metrics?: boolean
+  default_plant_code?: number | null
+  default_plant_name?: string | null
 }
 
 export interface WarehouseDeficit {
@@ -740,6 +757,8 @@ export interface RelatedProductsData {
   related_products: RelatedProduct[]
 }
 
+export type NormativeSource = 'all' | 'requests'
+
 export interface NormativeListParams {
   warehouse_code?: number
   product_code?: number
@@ -747,6 +766,7 @@ export interface NormativeListParams {
   category?: 'A' | 'B' | 'C'
   department_id?: string
   search?: string
+  source?: NormativeSource
   page?: number
   limit?: number
 }
@@ -777,6 +797,7 @@ export interface NormativeOnDateParams {
   search?: string
   category?: 'A' | 'B' | 'C'
   client_name?: string
+  source?: NormativeSource
 }
 
 export interface NormativeOnDateDetail {

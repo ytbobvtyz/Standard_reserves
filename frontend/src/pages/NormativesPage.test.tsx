@@ -195,7 +195,10 @@ describe('NormativesPage', () => {
       warehouse_code: undefined,
       department_id: undefined,
       search: undefined,
+      source: 'all',
     })
+    expect(screen.getByRole('radio', { name: 'Все' })).toBeTruthy()
+    expect(screen.getByRole('radio', { name: 'Только запросы' })).toBeTruthy()
     expect(screen.getByText('Корпус чугунный')).toBeTruthy()
     expect(screen.getAllByText("ООО 'Ромашка'").length).toBeGreaterThan(0)
     expect(screen.getByText(/Склад Ростов: 1\s?000 шт/)).toBeTruthy()
@@ -210,6 +213,25 @@ describe('NormativesPage', () => {
     expect(screen.getByText('Иванов Иван')).toBeTruthy()
     expect(screen.getByText('Партия загрузки')).toBeTruthy()
     expect(screen.getAllByText('31.12.2026').length).toBeGreaterThan(0)
+  })
+
+  it('loads every source by default and can keep only request normatives', async () => {
+    render(
+      <MemoryRouter>
+        <NormativesPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      expect(getOnDate).toHaveBeenCalledWith(
+        expect.objectContaining({ source: 'all' }),
+      )
+    })
+    fireEvent.click(screen.getByRole('radio', { name: 'Только запросы' }))
+    await waitFor(() => {
+      expect(getOnDate).toHaveBeenCalledWith(
+        expect.objectContaining({ source: 'requests' }),
+      )
+    })
   })
 
   it('sends product search after debounce', async () => {
@@ -343,6 +365,7 @@ describe('NormativesPage', () => {
         search: undefined,
         category: undefined,
         client_name: undefined,
+        source: 'all',
       })
     })
     expect(downloadBlob).toHaveBeenCalledWith(blob, 'normatives_export_2026-12-31.xlsx')

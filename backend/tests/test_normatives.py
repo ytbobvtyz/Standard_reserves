@@ -10,6 +10,7 @@ from sqlalchemy import delete, select
 from app.core.database import AsyncSessionLocal
 from app.models.normative import Normative
 from app.models.product import Product
+from app.models.production_request import ProductionRequest, ProductionRequestItem
 from app.models.request import Request
 from tests.conftest import AuthUser, auth_header, delete_request, login_token
 
@@ -416,3 +417,179 @@ async def test_normatives_export_xlsx_formatting(
 async def test_normatives_require_auth(client: AsyncClient) -> None:
     response = await client.get("/api/v1/normatives")
     assert response.status_code == 401
+
+
+REQUEST_PRODUCT = 18091
+EXCEL_PRODUCT = 18092
+SOURCE_CLIENT = "LOG073 источник норматива"
+
+
+async def test_normatives_source_filter(
+    client: AsyncClient, test_user: AuthUser, catalog: dict[str, int]
+) -> None:
+    request_id = uuid4()
+    batch_id = uuid4()
+    item_id = uuid4()
+    warehouse_code = catalog["warehouse_code"]
+    today = date.today()
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            delete(Normative).where(
+                Normative.product_code.in_([REQUEST_PRODUCT, EXCEL_PRODUCT])
+            )
+        )
+        await session.execute(
+            delete(Product).where(Product.code.in_([REQUEST_PRODUCT, EXCEL_PRODUCT]))
+        )
+        session.add_all(
+            [
+                Product(
+                    code=REQUEST_PRODUCT,
+                    name="Норматив из запроса LOG073",
+                    category="A",
+                    plant_id=catalog["plant_code"],
+                    weight_kg=Decimal("1"),
+                    is_active=True,
+                ),
+                Product(
+                    code=EXCEL_PRODUCT,
+                    name="Норматив из партии LOG073",
+                    category="A",
+                    plant_id=catalog["plant_code"],
+                    weight_kg=Decimal("1"),
+                    is_active=True,
+                ),
+            ]
+        )
+        await session.flush()
+        session.add(
+            Request(
+                id=request_id,
+                request_type="normative",
+                status="active",
+                client_name=SOURCE_CLIENT,
+                initiator_id=test_user.id,
+                expiry_date=date(2026, 12, 31),
+            )
+        )
+        session.add(
+            Normative(
+                request_id=request_id,
+                product_code=REQUEST_PRODUCT,
+                warehouse_code=warehouse_code,
+                quantity=Decimal("10"),
+                unit="шт",
+                client_name=SOURCE_CLIENT,
+                expiry_date=date(2026, 12, 31),
+                valid_from=today,
+                category="A",
+            )
+        )
+        session.add(
+            ProductionRequest(
+                id=batch_id,
+                uploaded_by=test_user.id,
+                client_name=SOURCE_CLIENT,
+                valid_from=today,
+                valid_to=date(2026, 12, 31),
+                status="active",
+                source="excel_upload",
+            )
+        )
+        session.add(
+            ProductionRequestItem(
+                id=item_id,
+                production_request_id=batch_id,
+                product_code=EXCEL_PRODUCT,
+                warehouse_code=warehouse_code,
+                quantity=Decimal("20"),
+                unit="шт",
+                client_name=SOURCE_CLIENT,
+                category="A",
+            )
+        )
+        session.add(
+            Normative(
+                production_request_item_id=item_id,
+                product_code=EXCEL_PRODUCT,
+                warehouse_code=warehouse_code,
+                quantity=Decimal("20"),
+                unit="шт",
+                client_name=SOURCE_CLIENT,
+                expiry_date=date(2026, 12, 31),
+                category="A",
+            )
+        )
+        await session.commit()
+
+    token = await login_token(client, test_user)
+    try:
+        common = {"client_name": SOURCE_CLIENT, "limit": 50}
+
+        default_response = await client.get(
+            "/api/v1/normatives",
+            headers=auth_header(token),
+            params=common,
+        )
+        assert default_response.status_code == 200, default_response.text
+        default_codes = {
+            item["product_code"] for item in default_response.json()["data"]
+        }
+        assert default_codes == {REQUEST_PRODUCT, EXCEL_PRODUCT}
+
+        all_response = await client.get(
+            "/api/v1/normatives",
+            headers=auth_header(token),
+            params={**common, "source": "all"},
+        )
+        assert all_response.status_code == 200, all_response.text
+        all_codes = {item["product_code"] for item in all_response.json()["data"]}
+        assert all_codes == {REQUEST_PRODUCT, EXCEL_PRODUCT}
+
+        requests_response = await client.get(
+            "/api/v1/normatives",
+            headers=auth_header(token),
+            params={**common, "source": "requests"},
+        )
+        assert requests_response.status_code == 200, requests_response.text
+        request_codes = {
+            item["product_code"] for item in requests_response.json()["data"]
+        }
+        assert request_codes == {REQUEST_PRODUCT}
+
+        on_date = await client.get(
+            "/api/v1/normatives/on-date",
+            headers=auth_header(token),
+            params={
+                "date": today.isoformat(),
+                "client_name": SOURCE_CLIENT,
+                "source": "requests",
+            },
+        )
+        assert on_date.status_code == 200, on_date.text
+        # client_name is not a filter of on-date; source is.
+        visible = {
+            item["product_code"]
+            for item in on_date.json()["data"]
+            if any(detail["client_name"] == SOURCE_CLIENT for detail in item["details"])
+        }
+        assert visible == {REQUEST_PRODUCT}
+    finally:
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                delete(Normative).where(
+                    Normative.product_code.in_([REQUEST_PRODUCT, EXCEL_PRODUCT])
+                )
+            )
+            batch = await session.get(ProductionRequest, batch_id)
+            if batch is not None:
+                await session.delete(batch)
+            await session.commit()
+        await delete_request(request_id)
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                delete(Product).where(
+                    Product.code.in_([REQUEST_PRODUCT, EXCEL_PRODUCT])
+                )
+            )
+            await session.commit()

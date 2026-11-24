@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
@@ -32,6 +33,16 @@ class ApprovalItemCoverage(BaseModel):
     product_monthly_sales: DecimalNumber | None = None
 
 
+class ApprovalRelatedProduct(BaseModel):
+    """One related article and its own average sales, in the line unit."""
+
+    code: int
+    name: str
+    avg_sales: DecimalNumber = Decimal("0")
+    avg_sales_warehouse: DecimalNumber = Decimal("0")
+    avg_sales_all_warehouses: DecimalNumber = Decimal("0")
+
+
 class ApprovalPendingItem(BaseModel):
     product_code: int
     product_name: str
@@ -47,6 +58,13 @@ class ApprovalPendingItem(BaseModel):
     distance_factor: DecimalNumber
     requirement: DecimalNumber
     coverage: ApprovalItemCoverage = Field(default_factory=ApprovalItemCoverage)
+    avg_sales_client_total: DecimalNumber = Decimal("0")
+    avg_sales_client_related: DecimalNumber = Decimal("0")
+    avg_sales_product_warehouse_total: DecimalNumber = Decimal("0")
+    avg_sales_product_warehouse_related: DecimalNumber = Decimal("0")
+    avg_sales_product_all_warehouses_total: DecimalNumber = Decimal("0")
+    avg_sales_product_all_warehouses_related: DecimalNumber = Decimal("0")
+    related_products: list[ApprovalRelatedProduct] = Field(default_factory=list)
 
 
 class ApprovalPendingRequest(BaseModel):

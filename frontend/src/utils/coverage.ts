@@ -22,6 +22,16 @@ export function stockAfterApproval(input: {
   return (input.existingNz ?? 0) + input.quantity
 }
 
+export function groupSales(
+  total: number | null | undefined,
+  single: number | null | undefined,
+): number | null {
+  if (total != null) {
+    return total
+  }
+  return single ?? null
+}
+
 export function coverageMonths(
   stock: number,
   monthlySales: number | null | undefined,

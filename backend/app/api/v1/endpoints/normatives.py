@@ -28,6 +28,7 @@ async def list_normatives(
     category: Literal["A", "B", "C"] | None = Query(default=None),
     search: str | None = Query(default=None),
     department_id: UUID | None = Query(default=None),
+    source: Literal["all", "requests"] = Query(default="all"),
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=50, ge=1, le=200),
     _user: User = Depends(get_current_user),
@@ -43,6 +44,7 @@ async def list_normatives(
         department_id=department_id,
         page=page,
         limit=limit,
+        source=source,
     )
     return PaginatedResponse(data=items, meta=meta)
 
@@ -57,6 +59,7 @@ async def list_normatives_on_date(
     product_code: int | None = Query(default=None),
     search: str | None = Query(default=None),
     department_id: UUID | None = Query(default=None),
+    source: Literal["all", "requests"] = Query(default="all"),
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[list[NormativeOnDateItem]]:
@@ -67,6 +70,7 @@ async def list_normatives_on_date(
         product_code=product_code,
         search=search,
         department_id=department_id,
+        source=source,
     )
     return SuccessResponse(data=items)
 
@@ -80,6 +84,7 @@ async def export_normatives(
     department_id: UUID | None = Query(default=None),
     category: Literal["A", "B", "C"] | None = Query(default=None),
     client_name: str | None = Query(default=None),
+    source: Literal["all", "requests"] = Query(default="all"),
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
@@ -92,6 +97,7 @@ async def export_normatives(
         department_id=department_id,
         category=category,
         client_name=client_name,
+        source=source,
     )
     await commit_activity(
         db,

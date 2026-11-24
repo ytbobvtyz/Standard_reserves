@@ -137,11 +137,17 @@ function movementColumn(
   sort: WarehouseSort | undefined,
 ): ColumnsType<DeficitItem>[number] {
   const edgeClass = movementClass(edge)
+  const width = {
+    no_ready: '7.75%',
+    ready: '7.75%',
+    collected: '6.03%',
+    on_way: '4.63%',
+  }[dataIndex]
   return {
     title,
     key: dataIndex,
     dataIndex,
-    width: 140,
+    width,
     className: edgeClass,
     onHeaderCell: () => ({
       className: `${edgeClass} logistics-movement-header`,
@@ -469,18 +475,18 @@ export function LogisticsDashboardPage() {
       sortOrder: sort?.column === field ? sort.order : null,
     })
     return [
-    { title: 'Артикул', dataIndex: 'product_code', width: 110 },
-    { title: 'Название', dataIndex: 'product_name' },
+    { title: 'Артикул', dataIndex: 'product_code', width: '4.76%' },
+    { title: 'Название', dataIndex: 'product_name', width: '7.87%' },
     {
       title: 'Категория',
       dataIndex: 'category',
-      width: 100,
+      width: '5.4%',
       render: (value: string) => value || '—',
     },
     {
       title: 'Норматив',
       dataIndex: 'normative_quantity',
-      width: 120,
+      width: '6.48%',
       ...sortable('normative_quantity'),
       render: (value: number, record) =>
         record.hide_group_metrics ? hiddenGroupMetric() : formatQty(value, unit),
@@ -488,7 +494,7 @@ export function LogisticsDashboardPage() {
     {
       title: 'Потребность',
       dataIndex: 'requirement',
-      width: 130,
+      width: '7.56%',
       ...sortable('requirement'),
       render: (value: number, record) =>
         record.hide_group_metrics ? (
@@ -502,7 +508,7 @@ export function LogisticsDashboardPage() {
     {
       title: 'Доступно',
       dataIndex: 'available',
-      width: 120,
+      width: '6.29%',
       ...sortable('available'),
       render: (value: number) => <QuantityCell value={value} unit={unit} />,
     },
@@ -524,14 +530,14 @@ export function LogisticsDashboardPage() {
     {
       title: 'Доступно + Запланировано',
       dataIndex: 'plan',
-      width: 210,
+      width: '9.27%',
       ...sortable('plan'),
       render: (value: number) => <QuantityCell value={value} unit={unit} />,
     },
     {
       title: 'Дефицит',
       dataIndex: 'deficit',
-      width: 140,
+      width: '6.22%',
       ...sortable('deficit'),
       render: (value: number, record) =>
         record.hide_group_metrics ? (
@@ -542,10 +548,27 @@ export function LogisticsDashboardPage() {
     },
     {
       title: 'Ед',
-      width: 80,
+      width: '2.67%',
       render: (_, record) => record.stock_unit || record.unit,
     },
-    { title: 'Клиент', dataIndex: 'client_name' },
+    { title: 'Клиент', dataIndex: 'client_name', width: '10.54%' },
+    {
+      title: 'Завод',
+      dataIndex: 'default_plant_name',
+      width: '6.78%',
+      ellipsis: { showTitle: false },
+      onCell: () => ({ className: 'logistics-plant-cell' }),
+      render: (value: string | null | undefined) => {
+        if (!value) {
+          return '—'
+        }
+        return (
+          <Tooltip title={value}>
+            <span className="logistics-plant-label">{value}</span>
+          </Tooltip>
+        )
+      },
+    },
     ]
   }
 
@@ -855,7 +878,8 @@ export function LogisticsDashboardPage() {
                         className="logistics-deficit-table"
                         rowKey={(item) => `${item.product_code}-${item.client_name}`}
                         pagination={false}
-                        tableLayout="auto"
+                        tableLayout="fixed"
+                        style={{ width: '100%' }}
                         size="small"
                         columns={itemColumns(
                           Boolean(warehouse.long_distance),

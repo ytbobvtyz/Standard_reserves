@@ -51,6 +51,13 @@ EXPORT_HEADERS = [
 EXPORT_COLUMN_WIDTHS = [14, 36, 28, 14, 24, 14, 8, 16, 28, 28]
 
 CategoryFilter = Literal["A", "B", "C"]
+SourceFilter = Literal["all", "requests"]
+
+
+def _source_condition(source: SourceFilter):
+    if source == "requests":
+        return Normative.production_request_item_id.is_(None)
+    return None
 
 
 def _product_search_condition(search: str | None):
@@ -200,12 +207,16 @@ async def list_current_normatives(
     department_id: UUID | None,
     page: int,
     limit: int,
+    source: SourceFilter = "all",
 ) -> tuple[list[NormativeListItem], PaginationMeta]:
     conditions = [
         Normative.deleted_at.is_(None),
         Normative.expiry_date >= date.today(),
         _valid_on_condition(date.today()),
     ]
+    source_condition = _source_condition(source)
+    if source_condition is not None:
+        conditions.append(source_condition)
     if warehouse_code is not None:
         conditions.append(Normative.warehouse_code == warehouse_code)
     if product_code is not None:
@@ -249,12 +260,16 @@ async def list_normatives_on_date(
     product_code: int | None,
     search: str | None = None,
     department_id: UUID | None = None,
+    source: SourceFilter = "all",
 ) -> list[NormativeOnDateItem]:
     conditions = [
         Normative.deleted_at.is_(None),
         _valid_on_condition(on_date),
         Normative.expiry_date >= on_date,
     ]
+    source_condition = _source_condition(source)
+    if source_condition is not None:
+        conditions.append(source_condition)
     if warehouse_code is not None:
         conditions.append(Normative.warehouse_code == warehouse_code)
     if product_code is not None:
@@ -409,6 +424,7 @@ async def export_normatives_xlsx(
     department_id: UUID | None = None,
     category: CategoryFilter | None = None,
     client_name: str | None = None,
+    source: SourceFilter = "all",
 ) -> bytes:
     items = await list_normatives_on_date(
         db,
@@ -417,6 +433,7 @@ async def export_normatives_xlsx(
         product_code=product_code,
         search=search,
         department_id=department_id,
+        source=source,
     )
     return build_export_xlsx(items, category=category, client_name=client_name)
 

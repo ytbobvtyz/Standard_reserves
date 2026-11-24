@@ -139,6 +139,33 @@ body {
   box-shadow: inset 1.5px 0 0 #595959, inset -1.5px 0 0 #595959;
 }
 
+.logistics-deficit-table .ant-table,
+.logistics-deficit-table .ant-table-container,
+.logistics-deficit-table .ant-table-content {
+  width: 100%;
+  max-width: 100%;
+}
+
+.logistics-deficit-table .ant-table-content > table {
+  width: 100% !important;
+  max-width: 100%;
+  table-layout: fixed !important;
+}
+
+.logistics-deficit-table td.logistics-plant-cell {
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.logistics-deficit-table .logistics-plant-label {
+  display: block;
+  width: 0;
+  min-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .expiry-heatmap {
   display: grid;
   grid-template-columns: repeat(7, 18px);

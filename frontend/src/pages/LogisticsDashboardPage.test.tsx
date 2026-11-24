@@ -29,6 +29,8 @@ const dashboard: LogisticsDashboardData = {
           status: 'warning',
           stock_unit: 'ШТ',
           weight_kg: 0.25,
+          default_plant_code: 1001,
+          default_plant_name: 'Завод Московский',
         },
         {
           product_code: 10002,
@@ -45,6 +47,8 @@ const dashboard: LogisticsDashboardData = {
           status: 'ok',
           stock_unit: 'ШТ',
           weight_kg: 2.5,
+          default_plant_code: 1001,
+          default_plant_name: 'Завод Московский',
         },
       ],
     },
@@ -72,6 +76,8 @@ const dashboard: LogisticsDashboardData = {
           status: 'warning',
           stock_unit: 'КГ',
           weight_kg: 1,
+          default_plant_code: 1001,
+          default_plant_name: 'Завод Московский',
         },
       ],
     },
@@ -390,8 +396,10 @@ describe('LogisticsDashboardPage', () => {
         'собрано в ТС',
         'в пути',
         'Доступно + Запланировано',
+        'Завод',
       ]),
     )
+    expect(screen.getAllByText('Завод Московский').length).toBeGreaterThan(0)
 
     const cells = (name: string) =>
       [...screen.getByText(name).closest('tr')!.querySelectorAll('td')].map(
