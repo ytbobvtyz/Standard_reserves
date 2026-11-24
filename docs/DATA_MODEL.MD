@@ -1146,7 +1146,7 @@ deleted_at	TIMESTAMP	❌	Soft delete (в списке скрыто)
 
 Чекбоксы страницы (LOG-061) не добавляют таблиц. `GET /analytics/filters` читает `actual_shipments` за шесть календарных месяцев, включая текущий, и соединяет их с `clients` (неудалённые) и `objects` (активный неудалённый склад с тем же `loading_point`). Сумма строки — килограммы. `client_ids` в динамике ограничивает только `actual_shipments`. `warehouse_codes` ограничивает `normatives.warehouse_code`, `available_balances_history.warehouse_code` и отгрузки по `loading_point` выбранных складов. Нет параметра — фильтр не применяется.
 
-`GET /dashboard/summary` дополнительно отдаёт `total_full_stock` и `total_available`: суммы `available_balances.full_stock` и `available_balances.available` по всем складам, в тоннах, без фильтров страницы.
+`GET /dashboard/summary` дополнительно отдаёт `total_full_stock` и `total_available`: суммы `full_stock` и `available` в тоннах. Без `warehouse_code` / `department_id` / дат — все текущие `available_balances`. Склад режет по `warehouse_code`. Подразделение оставляет только пары склад + артикул из действующих НЗ (`normatives` → `clients.department_id`). `date_from` / `date_to` читают последний `available_balances_history.snapshot_date` в диапазоне; без дат история не используется. `unit` на эти два поля не действует.
 
 Единица графика — тонны (`products.weight_kg`). Подробности агрегации по дню, неделе и месяцу — в API, раздел 6.11.
 
@@ -1720,6 +1720,6 @@ mv_normative_daily	✅ Ежедневная агрегация действую�
 
 Полные DDL — в разделах 5.4 и 5.5. Кратко: партия Excel создаёт `production_requests` + `production_request_items` и активные `normatives` с `request_id IS NULL`. Удаление партии каскадно снимает позиции и нормативы. Миграция: `0017_production_requests.py`.
 
-Версия: 2.16
-Дата: 09.11.2026
+Версия: 2.17
+Дата: 24.11.2026
 Статус: Утверждена

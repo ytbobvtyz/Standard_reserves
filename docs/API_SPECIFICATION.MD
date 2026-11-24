@@ -924,6 +924,7 @@ Query параметры:
 warehouse_code	integer	Фильтр по складу
 filter_mode	string	all / with_normatives / deficit_only
 unit	string	шт / т
+client_id	uuid	Необязательный. Только нормативы этого клиента (`normatives.client_id`). Чужие остатки без его НЗ в выборку не входят, даже при `filter_mode=all`. Нет параметра — все клиенты.
 Response (200):
 
 json
@@ -1487,6 +1488,8 @@ json
 | GET | `/dashboard/exceptions` | Список исключений (дефицит > 0) | auth |
 | GET | `/dashboard/warehouse-coverage` | Покрытие по складам | auth |
 | GET | `/dashboard/expiry-calendar` | Нормативы, истекающие по дням | auth |
+| GET | `/dashboard/nz-by-department` | НЗ по управлениям продаж | auth |
+| GET | `/dashboard/top-clients` | Топ клиентов по объёму НЗ | auth |
 
 6.9.1. Сводка
 text
@@ -1512,13 +1515,20 @@ json
     }
 }
 
-Query: `unit` = `т` (по умолчанию) или `кг`, `warehouse_code` — склад, `department_id` — подразделение клиента (`clients.department_id`). Пустой `department_id` не фильтрует. Нормативы соединяются с клиентом: `normatives.client_id = clients.id`.
+Query: `unit` = `т` (по умолчанию) или `кг`, `warehouse_code` — склад, `department_id` — подразделение клиента (`clients.department_id`), `date_from` / `date_to` — границы периода для плашек остатков. Пустой `department_id` не фильтрует. Нормативы соединяются с клиентом: `normatives.client_id = clients.id`. `date_from` / `date_to` на KPI (активные НЗ, дефицит, покрытия, истечения) не действуют.
 
 Массы в ответе — `ROUND(value, 3)`. Проценты покрытия — 0–100, два знака.
 
 `active_count` — число действующих записей `normatives`. `active_quantity` — сумма их массы. `deficit_quantity` — сумма по позициям НЗ (склад + артикул) `max(0, норматив − plan)`. `coverage_with_transfers` = `(active_quantity − deficit_quantity) / active_quantity × 100`. `coverage_available_only` — та же формула, но дефицит позиции = `max(0, норматив − available)`, без плана. `coverage_pct` совпадает с `coverage_with_transfers`. Если `active_quantity = 0`, оба покрытия равны 0. Если дефицит позиции неположительный, в сумму он не входит; при нулевой сумме дефицита покрытие 100%. `expiring_30d` — число НЗ с `expiry_date` в ближайшие 30 дней, `expiring_30d_quantity` — их масса. `avg_remaining_days` — средний остаток срока, дни; на панели KPI не показывается.
 
-`total_full_stock` и `total_available` — суммы `available_balances.full_stock` и `available_balances.available` по всем складам и артикулам. `warehouse_code`, `department_id` и `unit` на них не действуют: оба поля всегда в тоннах, `ROUND(value, 3)`. Килограммы делятся на 1000, тонны не делятся, штуки умножаются на `products.weight_kg` и делятся на 1000. Отрицательные величины входят в сумму. На дашборде это две карточки над KPI.
+`total_full_stock` и `total_available` — суммы `full_stock` и `available`, всегда в тоннах, `ROUND(value, 3)`. `unit` на них не действует. Килограммы делятся на 1000, тонны не делятся, штуки умножаются на `products.weight_kg` и делятся на 1000. Отрицательные величины входят в сумму. На дашборде это две карточки над KPI.
+
+Фильтры плашек (LOG-069):
+
+- нет `warehouse_code`, `department_id`, дат — все текущие строки `available_balances`;
+- `warehouse_code` без подразделения — остатки этого склада;
+- `department_id` — только пары склад + артикул из действующих НЗ клиентов этого подразделения (с складом — пересечение). Нет таких НЗ — оба поля 0;
+- `date_from` и/или `date_to` — вместо текущих остатков последний снимок каждой пары в диапазоне из `available_balances_history` по `snapshot_date`. Нет снимка — позиция не входит. Если `date_from > date_to`, границы меняются местами.
 
 Тот же `department_id` принимается на `GET /dashboard/normative-trend`, `/exceptions`, `/warehouse-coverage`, `/expiry-calendar`, `/nz-by-department`, `/top-clients`. `GET /dashboard/warehouse-coverage` дополнительно принимает `client_id`: вместе с `department_id` он ограничивает норматив, доступный остаток, plan и дефицит артикулами из НЗ выбранного клиента.
 
@@ -1898,7 +1908,7 @@ GET /analytics/stock-dynamics/bounds
 
 Query: `product_code` (обязательный), `warehouse_code`, `warehouse_codes`, `department_id`, `client_id`, `client_ids`.
 
-Нужна странице, чтобы для гранулярности «месяц» поставить период «всё время». `earliest_date` — минимум из начала действия норматива, первой даты снимка остатка и первой даты отгрузки с теми же правилами фильтров, что у 6.11.1. Если данных нет — `null`.
+Эндпоинт остаётся: `earliest_date` — минимум из начала действия норматива, первой даты снимка остатка и первой даты отгрузки с теми же правилами фильтров, что у 6.11.1. Если данных нет — `null`. Страница `/analytics` его не вызывает: для гранулярности «месяц» период по умолчанию — последние 12 месяцев (`today − 12 months` … сегодня), без «всего времени».
 
 json
 {
@@ -2125,6 +2135,20 @@ json
 | DELETE | `/references/objects/{code}` | Удалить объект | logistics |
 
 Просмотр списков и карточек продуктов/объектов доступен всем авторизованным ролям, включая `commercial` и `guest`.
+
+Справочник клиентов (подробности и сценарии — `docs/CLIENTS_SPEC.MD`):
+
+| Метод | Эндпоинт | Описание | Права |
+|-------|----------|----------|-------|
+| GET | `/references/clients` | Список с поиском | любой авторизованный |
+| GET | `/references/clients/{id}` | Карточка | любой авторизованный |
+| POST | `/references/clients` | Создать | все, кроме `guest` (`commercial`, `pp`, `economist`, `logistics`, `admin`) |
+| PUT | `/references/clients/{id}` | Обновить | все, кроме `guest` |
+| DELETE | `/references/clients/{id}` | Soft delete | `logistics`, `admin` |
+| GET | `/references/clients/template` | Шаблон Excel | `logistics`, `economist` |
+| POST | `/references/clients/preview` | Предпросмотр Excel | `logistics`, `economist` |
+| POST | `/references/clients/upload` | Загрузка Excel | `logistics`, `economist` |
+| GET | `/references/clients/export` | Выгрузка Excel | `logistics`, `economist`, `admin` |
 
 8.1. Получить список продуктов
 text
@@ -3198,6 +3222,6 @@ json
     "message": "Партия загрузки удалена"
 }
 
-Версия: 1.19
-Дата: 09.11.2026
+Версия: 1.20
+Дата: 24.11.2026
 Статус: Утверждена
