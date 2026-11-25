@@ -25,11 +25,21 @@ const pendingRequest: ApprovalPendingRequest = {
       quantity_approved: null,
       unit: 'шт',
       coverage: {
-        existing_nz: null,
+        existing_nz: 500,
         monthly_sales: 100,
         warehouse_monthly_sales: 2000,
         product_monthly_sales: 5000,
       },
+      avg_sales_client_related: 40,
+      related_products: [
+        {
+          code: 10002,
+          name: 'Подшипник старый',
+          avg_sales: 40,
+          avg_sales_warehouse: 0,
+          avg_sales_all_warehouses: 0,
+        },
+      ],
     },
   ],
   expiry_date: '2026-12-31',
@@ -144,19 +154,26 @@ describe('ApprovalsPage', () => {
 
     // Normative columns are present
     expect(screen.getAllByText('Кат.').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Удал.').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Потр.').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Всего реализация (клиент)').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Из них по связанным (клиент)').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Всего реализация (склад)').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Из них по связанным (склад)').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Всего реализация (все склады)').length).toBeGreaterThan(0)
-    expect(
-      screen.getAllByText('Из них по связанным (все склады)').length,
-    ).toBeGreaterThan(0)
+    expect(screen.queryByText('Удал.')).toBeNull()
+    expect(screen.queryByText('Потр.')).toBeNull()
+    expect(screen.getAllByText('Реализация').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Текущий НЗ').length).toBeGreaterThan(0)
+    expect(screen.getByText('100').closest('td')?.className).toContain(
+      'approval-related-sales',
+    )
+    const row = screen.getByText('Подшипник 6204ZZ').closest('tr')
+    expect(row?.querySelector('td:last-child')?.textContent).toContain('Отказ')
+    expect(screen.queryByText('Всего реализация (клиент)')).toBeNull()
+    expect(screen.queryByText('Из них по связанным (клиент)')).toBeNull()
+    expect(screen.queryByText('Всего реализация (склад)')).toBeNull()
+    expect(screen.queryByText('Из них по связанным (склад)')).toBeNull()
+    expect(screen.queryByText('Всего реализация (все склады)')).toBeNull()
+    expect(screen.queryByText('Из них по связанным (все склады)')).toBeNull()
+    expect(screen.getByText('100')).toBeTruthy()
+    expect(screen.getByText('500')).toBeTruthy()
 
     expect(screen.getAllByText('Покрытие').length).toBeGreaterThan(0)
-    expect(screen.getByText('10,0 мес')).toBeTruthy()
+    expect(screen.getByText('15,0 мес')).toBeTruthy()
     expect(screen.getByText('1 из 1 позиций требуют разбора')).toBeTruthy()
   })
 
@@ -170,6 +187,8 @@ describe('ApprovalsPage', () => {
         {
           ...pendingRequest.items[0],
           unit: 'т',
+          avg_sales_client_related: 0,
+          related_products: [],
           coverage: {
             existing_nz: 5,
             monthly_sales: 500,
@@ -211,10 +230,40 @@ describe('ApprovalsPage', () => {
     expect(screen.queryByText('Кат.')).toBeNull()
     expect(screen.queryByText('Удал.')).toBeNull()
     expect(screen.queryByText('Потр.')).toBeNull()
+    expect(screen.getAllByText('Реализация').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Текущий НЗ').length).toBeGreaterThan(0)
+    expect(screen.getByText('500.000').closest('td')?.className).not.toContain(
+      'approval-related-sales',
+    )
+    expect(screen.queryByText('5.000')).toBeNull()
 
     expect(screen.getAllByText('Покрытие').length).toBeGreaterThan(0)
     expect(screen.getByText('2,0 мес')).toBeTruthy()
     expect(screen.getByText('Позиции не требуют разбора')).toBeTruthy()
+  })
+
+  it('hides the current normative when the request replaces it', async () => {
+    getPPPending.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: [{ ...pendingRequest, auto_complete_previous: true }],
+        meta: { page: 1, limit: 50, total: 1 },
+      },
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/approvals/pp']}>
+        <ApprovalsPage />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("ООО 'Ромашка'")).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть' }))
+    expect(screen.getAllByText('Текущий НЗ').length).toBeGreaterThan(0)
+    expect(screen.queryByText('500')).toBeNull()
+    expect(screen.getByText('10,0 мес')).toBeTruthy()
   })
 
   it('shows decrease-only expiry hint for economist', async () => {

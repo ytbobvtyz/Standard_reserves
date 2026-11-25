@@ -39,39 +39,24 @@ import {
   stockAfterApproval,
   type CoverageThresholds,
 } from '../../utils/coverage'
-import {
-  relatedProductsTooltip,
-  type RelatedSalesField,
-} from '../../utils/relatedSales'
-import {
-  calculateRequirement,
-  categoryLabel,
-  distanceLabel,
-  formatRequirementQty,
-  requirementTooltip,
-} from '../../utils/requirement'
+import { relatedProductsTooltip } from '../../utils/relatedSales'
+import { categoryLabel } from '../../utils/requirement'
 
 const TYPE_LABEL: Record<RequestType, string> = {
   normative: 'Норматив',
   one_time: 'Разовое',
 }
 
-function relatedSalesCell(
-  value: number | null | undefined,
-  record: EditableItem,
-  field: RelatedSalesField,
-) {
-  return (
-    <Tooltip
-      title={
-        <span style={{ whiteSpace: 'pre-line' }}>
-          {relatedProductsTooltip(record.related_products, field, record.unit)}
-        </span>
-      }
-    >
-      <span>{formatQuantity(value ?? 0, record.unit)}</span>
-    </Tooltip>
-  )
+function clientMonthlySales(record: EditableItem): number | null {
+  return groupSales(record.avg_sales_client_total, record.coverage?.monthly_sales)
+}
+
+function showsCurrentNormative(request: ApprovalPendingRequest): boolean {
+  return request.request_type === 'normative' && !request.auto_complete_previous
+}
+
+function hasRelatedClientSales(record: EditableItem): boolean {
+  return (record.avg_sales_client_related ?? 0) > 0
 }
 
 interface EditableItem extends ApprovalPendingItem {
@@ -373,6 +358,7 @@ export function ApprovalModal({
             {coverageSummary(reviewCount, orderedItems.length)}
           </Typography.Text>
           <Table
+            className="approval-modal-table"
             rowKey={(item) => `${item.product_code}-${item.warehouse_code}`}
             pagination={false}
             size="small"
@@ -413,29 +399,6 @@ export function ApprovalModal({
                 ),
               },
               { title: 'Ед', dataIndex: 'unit', width: 36 },
-              {
-                width: 72,
-                render: (_: unknown, record: EditableItem) => (
-                  <Button
-                    type="link"
-                    size="small"
-                    danger={!record.rejected}
-                    style={{ padding: 0 }}
-                    onClick={() => {
-                      setEditableItems((current) =>
-                        current.map((item) =>
-                          item.product_code === record.product_code &&
-                          item.warehouse_code === record.warehouse_code
-                            ? { ...item, rejected: !item.rejected }
-                            : item,
-                        ),
-                      )
-                    }}
-                  >
-                    {record.rejected ? 'Вернуть' : 'Отказ'}
-                  </Button>
-                ),
-              },
               ...(isNormative
                 ? [
                     {
@@ -447,98 +410,40 @@ export function ApprovalModal({
                         </Tooltip>
                       ),
                     },
-                    {
-                      title: 'Удал.',
-                      width: 56,
-                      render: (_: unknown, record: EditableItem) => (
-                        <Tooltip title={distanceLabel(Boolean(record.long_distance))}>
-                          <span>{record.long_distance ? 'Да' : 'Нет'}</span>
-                        </Tooltip>
-                      ),
-                    },
-                    {
-                      title: 'Потр.',
-                      width: 88,
-                      render: (_: unknown, record: EditableItem) => {
-                        const qty = record.quantity_approved_input
-                        const requirement = calculateRequirement(
-                          qty,
-                          record.category,
-                          record.long_distance,
-                        )
-                        return (
-                          <Tooltip
-                            title={requirementTooltip(
-                              qty,
-                              record.unit,
-                              record.category,
-                              record.long_distance,
-                            )}
-                          >
-                            <span>
-                              {requirement == null
-                                ? '—'
-                                : `${formatRequirementQty(requirement)} ${record.unit}`}
-                            </span>
-                          </Tooltip>
-                        )
-                      },
-                    },
                   ]
                 : []),
               {
-                title: 'Всего реализация (клиент)',
-                width: 150,
-                render: (_: unknown, record: EditableItem) =>
-                  formatQuantity(record.avg_sales_client_total ?? null, record.unit),
+                title: 'Реализация',
+                width: 96,
+                onCell: (record: EditableItem) =>
+                  hasRelatedClientSales(record)
+                    ? { className: 'approval-related-sales' }
+                    : {},
+                render: (_: unknown, record: EditableItem) => (
+                  <Tooltip
+                    title={
+                      <span style={{ whiteSpace: 'pre-line' }}>
+                        {relatedProductsTooltip(
+                          record.related_products,
+                          'avg_sales',
+                          record.unit,
+                        )}
+                      </span>
+                    }
+                  >
+                    <span className="approval-sales-value">
+                      {formatQuantity(clientMonthlySales(record), record.unit)}
+                    </span>
+                  </Tooltip>
+                ),
               },
               {
-                title: 'Из них по связанным (клиент)',
-                width: 160,
+                title: 'Текущий НЗ',
+                width: 108,
                 render: (_: unknown, record: EditableItem) =>
-                  relatedSalesCell(
-                    record.avg_sales_client_related,
-                    record,
-                    'avg_sales',
-                  ),
-              },
-              {
-                title: 'Всего реализация (склад)',
-                width: 150,
-                render: (_: unknown, record: EditableItem) =>
-                  formatQuantity(
-                    record.avg_sales_product_warehouse_total ?? null,
-                    record.unit,
-                  ),
-              },
-              {
-                title: 'Из них по связанным (склад)',
-                width: 160,
-                render: (_: unknown, record: EditableItem) =>
-                  relatedSalesCell(
-                    record.avg_sales_product_warehouse_related,
-                    record,
-                    'avg_sales_warehouse',
-                  ),
-              },
-              {
-                title: 'Всего реализация (все склады)',
-                width: 160,
-                render: (_: unknown, record: EditableItem) =>
-                  formatQuantity(
-                    record.avg_sales_product_all_warehouses_total ?? null,
-                    record.unit,
-                  ),
-              },
-              {
-                title: 'Из них по связанным (все склады)',
-                width: 170,
-                render: (_: unknown, record: EditableItem) =>
-                  relatedSalesCell(
-                    record.avg_sales_product_all_warehouses_related,
-                    record,
-                    'avg_sales_all_warehouses',
-                  ),
+                  request && showsCurrentNormative(request)
+                    ? formatQuantity(record.coverage?.existing_nz, record.unit)
+                    : '—',
               },
               {
                 title: 'Покрытие',
@@ -612,6 +517,29 @@ export function ApprovalModal({
                     </Tooltip>
                   )
                 },
+              },
+              {
+                width: 72,
+                render: (_: unknown, record: EditableItem) => (
+                  <Button
+                    type="link"
+                    size="small"
+                    danger={!record.rejected}
+                    style={{ padding: 0 }}
+                    onClick={() => {
+                      setEditableItems((current) =>
+                        current.map((item) =>
+                          item.product_code === record.product_code &&
+                          item.warehouse_code === record.warehouse_code
+                            ? { ...item, rejected: !item.rejected }
+                            : item,
+                        ),
+                      )
+                    }}
+                  >
+                    {record.rejected ? 'Вернуть' : 'Отказ'}
+                  </Button>
+                ),
               },
             ]}
           />

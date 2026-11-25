@@ -152,6 +152,22 @@ body {
   table-layout: fixed !important;
 }
 
+.approval-modal-table td.approval-related-sales {
+  background: #fff1b8 !important;
+  cursor: help;
+}
+
+.approval-modal-table .ant-table-tbody > tr.ant-table-row:hover > td.approval-related-sales,
+.approval-modal-table .ant-table-tbody > tr > td.approval-related-sales.ant-table-cell-row-hover {
+  background: #ffe58f !important;
+}
+
+.approval-modal-table td.approval-related-sales .approval-sales-value {
+  display: block;
+  margin: -8px;
+  padding: 8px;
+}
+
 .logistics-deficit-table td.logistics-plant-cell {
   overflow: hidden;
   white-space: nowrap;
