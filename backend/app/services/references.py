@@ -162,8 +162,7 @@ async def load_related_by_codes(
     if not unique:
         return {}
     literals = ", ".join(str(code) for code in unique)
-    statement = text(
-        f"""
+    statement = text(f"""
         WITH RECURSIVE
         seeds AS (
             SELECT code AS seed
@@ -206,8 +205,7 @@ async def load_related_by_codes(
             SELECT seed, code, name FROM descendants WHERE code != seed
         ) related
         ORDER BY seed, code
-        """
-    )
+        """)
     grouped: dict[int, list[tuple[int, str]]] = defaultdict(list)
     seen: set[tuple[int, int]] = set()
     for row in await db.execute(statement):
