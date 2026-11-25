@@ -1075,6 +1075,75 @@ export interface StockSummaryData {
   unit: 'т'
 }
 
+export interface ClientAnalyticsChart {
+  dates: string[]
+  normative: Array<number | null>
+  actual: Array<number | null>
+  unit: 'т'
+}
+
+export interface ClientAnalyticsSlice {
+  normative_tons: number
+  avg_monthly_tons: number | null
+  period_tons: number | null
+  coverage_months: number | null
+  outside_normative: boolean
+}
+
+export interface ClientRelatedSales {
+  code: number
+  name: string
+  avg_monthly_tons: number | null
+}
+
+export interface ClientCoverageRow {
+  normative_tons: number
+  avg_monthly_tons: number | null
+  period_tons: number | null
+  coverage_months: number | null
+  outside_normative: boolean
+}
+
+export interface ClientWarehouseRow extends ClientCoverageRow {
+  code: number
+  name: string
+}
+
+export interface ClientProductRow extends ClientCoverageRow {
+  code: number
+  name: string
+  related: ClientRelatedSales[]
+}
+
+export interface ClientUnmatchedPoint {
+  loading_point: string
+  avg_monthly_tons: number | null
+  period_tons: number | null
+  coverage_months: number | null
+  outside_normative: boolean
+}
+
+export interface ClientAnalyticsData {
+  client_id: string
+  client_name: string
+  department_name: string | null
+  is_system: boolean
+  chart: ClientAnalyticsChart
+  slice: ClientAnalyticsSlice
+  warehouses: ClientWarehouseRow[]
+  products: ClientProductRow[]
+  unmatched: ClientUnmatchedPoint[]
+}
+
+export interface ClientAnalyticsParams {
+  date_from: string
+  date_to: string
+  granularity?: StockGranularity
+  include_related?: boolean
+  warehouse_codes?: number[]
+  product_codes?: number[]
+}
+
 export interface AnalyticsFilterClient {
   id: string
   name: string

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AdminClientsPage } from './AdminClientsPage'
 import type { ClientListItem } from '../api/types'
@@ -67,6 +68,14 @@ function setRole(role: 'logistics' | 'commercial' | 'economist' | 'guest') {
   })
 }
 
+function renderPage() {
+  return render(
+    <MemoryRouter>
+      <AdminClientsPage />
+    </MemoryRouter>,
+  )
+}
+
 describe('AdminClientsPage', () => {
   beforeEach(() => {
     setRole('logistics')
@@ -88,12 +97,18 @@ describe('AdminClientsPage', () => {
   })
 
   it('lists clients and hides actions for the system row', async () => {
-    render(<AdminClientsPage />)
+    renderPage()
     expect(await screen.findByText('ООО Ромашка')).toBeTruthy()
     expect(screen.getByText('Общий клиент')).toBeTruthy()
     expect(screen.getByText('Без управления')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Изменить ООО Ромашка' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Изменить Общий клиент' })).toBeNull()
+    expect(screen.getByRole('link', { name: 'Аналитика ООО Ромашка' }).getAttribute('href')).toBe(
+      '/analytics/client/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    )
+    expect(screen.getByRole('link', { name: 'Аналитика Общий клиент' }).getAttribute('href')).toBe(
+      '/analytics/client/00000000-0000-4000-8000-000000000001',
+    )
     expect(list).toHaveBeenCalledWith(
       expect.objectContaining({ include_inactive: true, page: 1, limit: 20 }),
     )
@@ -102,7 +117,7 @@ describe('AdminClientsPage', () => {
 
   it('hides excel actions for commercial and edit for guest', async () => {
     setRole('commercial')
-    const { unmount } = render(<AdminClientsPage />)
+    const { unmount } = renderPage()
     expect(await screen.findByText('ООО Ромашка')).toBeTruthy()
     expect(screen.getByRole('button', { name: /Создать/ })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Изменить ООО Ромашка' })).toBeTruthy()
@@ -111,16 +126,17 @@ describe('AdminClientsPage', () => {
     unmount()
 
     setRole('guest')
-    render(<AdminClientsPage />)
+    renderPage()
     expect(await screen.findByText('ООО Ромашка')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Создать/ })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Изменить ООО Ромашка' })).toBeNull()
+    expect(screen.getByRole('link', { name: 'Аналитика ООО Ромашка' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Скачать шаблон/ })).toBeNull()
   })
 
   it('shows excel upload for economist', async () => {
     setRole('economist')
-    render(<AdminClientsPage />)
+    renderPage()
     expect(await screen.findByText('ООО Ромашка')).toBeTruthy()
     expect(screen.getByRole('button', { name: /Скачать шаблон/ })).toBeTruthy()
     expect(screen.getByRole('button', { name: /Выбрать Excel/ })).toBeTruthy()
@@ -128,7 +144,7 @@ describe('AdminClientsPage', () => {
   })
 
   it('searches by the entered query', async () => {
-    render(<AdminClientsPage />)
+    renderPage()
     await screen.findByText('ООО Ромашка')
     const search = screen.getByPlaceholderText('КССС, ИНН или название')
     fireEvent.change(search, { target: { value: 'ромаш' } })
@@ -171,7 +187,7 @@ describe('AdminClientsPage', () => {
         },
       },
     })
-    render(<AdminClientsPage />)
+    renderPage()
     await screen.findByText('ООО Ромашка')
     const file = new File(['data'], 'clients.xlsx', {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

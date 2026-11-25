@@ -45,7 +45,9 @@ export function AppLayout() {
                 ? path
                 : path.startsWith('/admin')
                   ? path
-                  : path
+                  : path.startsWith('/analytics')
+                    ? '/analytics'
+                    : path
 
   const canCreate = user?.role === 'commercial' || hasLogisticsAccess(user?.role)
   const showPP = user?.role === 'pp'

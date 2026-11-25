@@ -20,6 +20,7 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import type { UploadFile } from 'antd/es/upload/interface'
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { clientsApi } from '../api/clients'
 import { getApiErrorMessage } from '../api/client'
 import { referencesApi } from '../api/references'
@@ -218,20 +219,22 @@ export function AdminClientsPage() {
     {
       title: 'Действия',
       key: 'actions',
-      width: 110,
+      width: 200,
       render: (_value, record) => {
-        if (record.is_system || !canEdit) {
-          return null
-        }
         return (
           <Space>
+            <Link to={`/analytics/client/${record.id}`} aria-label={`Аналитика ${record.name}`}>
+              Аналитика
+            </Link>
+            {record.is_system || !canEdit ? null : (
             <Button
               type="text"
               aria-label={`Изменить ${record.name}`}
               icon={<EditOutlined aria-hidden />}
               onClick={() => setEditing(record)}
             />
-            {canDelete ? (
+            )}
+            {!record.is_system && canDelete ? (
               <Popconfirm
                 title={`Удалить «${record.name}»?`}
                 okText="Удалить"

@@ -9,6 +9,7 @@ from app.core.exceptions import APIError
 from app.models.user import User
 from app.schemas.analytics import (
     AnalyticsFiltersData,
+    ClientAnalyticsData,
     Granularity,
     StockDynamicsBounds,
     StockDynamicsData,
@@ -16,6 +17,7 @@ from app.schemas.analytics import (
 )
 from app.schemas.common import SuccessResponse
 from app.services import analytics as service
+from app.services import client_analytics as client_service
 
 router = APIRouter(prefix="/analytics", tags=["Аналитика"])
 
@@ -36,7 +38,11 @@ def _optional_uuid_list(values: list[str] | None) -> list[UUID] | None:
     return parsed
 
 
-def _optional_int_list(values: list[str] | None) -> list[int] | None:
+def _optional_int_list(
+    values: list[str] | None,
+    *,
+    error: str = "Некорректный warehouse_codes",
+) -> list[int] | None:
     if values is None:
         return None
     parsed: list[int] = []
@@ -47,9 +53,7 @@ def _optional_int_list(values: list[str] | None) -> list[int] | None:
         try:
             parsed.append(int(text))
         except ValueError as exc:
-            raise APIError(
-                400, "VALIDATION_ERROR", "Некорректный warehouse_codes"
-            ) from exc
+            raise APIError(400, "VALIDATION_ERROR", error) from exc
     return parsed
 
 
@@ -142,5 +146,37 @@ async def get_stock_dynamics(
         date_from=date_from,
         date_to=date_to,
         granularity=granularity,
+    )
+    return SuccessResponse(data=data)
+
+
+@router.get(
+    "/clients/{client_id}",
+    response_model=SuccessResponse[ClientAnalyticsData],
+)
+async def get_client_analytics(
+    client_id: UUID,
+    date_from: date = Query(),
+    date_to: date = Query(),
+    warehouse_codes: list[str] | None = Query(default=None),
+    product_codes: list[str] | None = Query(default=None),
+    include_related: bool = Query(default=True),
+    granularity: Granularity = Query(default="month"),
+    _user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[ClientAnalyticsData]:
+    data = await client_service.get_client_analytics(
+        db,
+        client_id=client_id,
+        date_from=date_from,
+        date_to=date_to,
+        warehouse_codes=_optional_int_list(warehouse_codes),
+        product_codes=_optional_int_list(
+            product_codes,
+            error="Некорректный product_codes",
+        ),
+        include_related=include_related,
+        granularity=granularity,
+        today=datetime.now(UTC).date(),
     )
     return SuccessResponse(data=data)

@@ -2,7 +2,9 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppLayout } from '../components/common/Layout'
 import { ProtectedRoute } from '../components/common/ProtectedRoute'
 import { LoginPage } from '../pages/LoginPage'
+import { AnalyticsLayout } from '../components/analytics/AnalyticsLayout'
 import { AnalyticsPage } from '../pages/AnalyticsPage'
+import { ClientAnalyticsPage } from '../pages/ClientAnalyticsPage'
 import { DashboardPage } from '../pages/DashboardPage'
 import { MyRequestsPage } from '../pages/MyRequestsPage'
 import { CreateRequestPage } from '../pages/CreateRequestPage'
@@ -35,7 +37,11 @@ export function AppRouter() {
           <Route element={<AppLayout />}>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/analytics" element={<AnalyticsPage />} />
+            <Route path="/analytics" element={<AnalyticsLayout />}>
+              <Route index element={<AnalyticsPage />} />
+              <Route path="client" element={<ClientAnalyticsPage />} />
+              <Route path="client/:clientId" element={<ClientAnalyticsPage />} />
+            </Route>
             <Route path="/requests/my" element={<MyRequestsPage />} />
             <Route element={<ProtectedRoute roles={['commercial', 'logistics', 'admin']} />}>
               <Route path="/requests/create" element={<CreateRequestPage />} />

@@ -54,3 +54,65 @@ class AnalyticsFiltersData(BaseModel):
     clients: list[AnalyticsFilterClient]
     warehouses: list[AnalyticsFilterWarehouse]
     unit: Literal["кг"] = "кг"
+
+
+class ClientAnalyticsChart(BaseModel):
+    dates: list[date]
+    normative: list[DecimalNumber | None]
+    actual: list[DecimalNumber | None]
+    unit: Literal["т"] = "т"
+
+
+class ClientAnalyticsSlice(BaseModel):
+    normative_tons: DecimalNumber
+    avg_monthly_tons: DecimalNumber | None
+    period_tons: DecimalNumber | None
+    coverage_months: DecimalNumber | None
+    outside_normative: bool
+
+
+class ClientRelatedSales(BaseModel):
+    code: int
+    name: str
+    avg_monthly_tons: DecimalNumber | None
+
+
+class ClientWarehouseRow(BaseModel):
+    code: int
+    name: str
+    normative_tons: DecimalNumber
+    avg_monthly_tons: DecimalNumber | None
+    period_tons: DecimalNumber | None
+    coverage_months: DecimalNumber | None
+    outside_normative: bool
+
+
+class ClientProductRow(BaseModel):
+    code: int
+    name: str
+    normative_tons: DecimalNumber
+    avg_monthly_tons: DecimalNumber | None
+    period_tons: DecimalNumber | None
+    coverage_months: DecimalNumber | None
+    outside_normative: bool
+    related: list[ClientRelatedSales]
+
+
+class ClientUnmatchedPoint(BaseModel):
+    loading_point: str
+    avg_monthly_tons: DecimalNumber | None
+    period_tons: DecimalNumber | None
+    coverage_months: DecimalNumber | None
+    outside_normative: bool
+
+
+class ClientAnalyticsData(BaseModel):
+    client_id: UUID
+    client_name: str
+    department_name: str | None
+    is_system: bool
+    chart: ClientAnalyticsChart
+    slice: ClientAnalyticsSlice
+    warehouses: list[ClientWarehouseRow]
+    products: list[ClientProductRow]
+    unmatched: list[ClientUnmatchedPoint]

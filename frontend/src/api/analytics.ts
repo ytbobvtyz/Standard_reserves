@@ -3,6 +3,8 @@ import api from './client'
 import type {
   AnalyticsFiltersData,
   ApiSuccess,
+  ClientAnalyticsData,
+  ClientAnalyticsParams,
   StockDynamicsBounds,
   StockDynamicsData,
   StockDynamicsParams,
@@ -60,6 +62,12 @@ export const analyticsApi = {
   ) =>
     api.get<ApiSuccess<StockSummaryData>>(
       '/analytics/stock-summary',
+      analyticsConfig(params),
+    ),
+
+  getClientAnalytics: (clientId: string, params: ClientAnalyticsParams) =>
+    api.get<ApiSuccess<ClientAnalyticsData>>(
+      `/analytics/clients/${clientId}`,
       analyticsConfig(params),
     ),
 }
