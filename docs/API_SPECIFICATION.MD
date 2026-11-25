@@ -758,7 +758,22 @@ json
                         "monthly_sales": 90,
                         "warehouse_monthly_sales": 120,
                         "product_monthly_sales": 201
-                    }
+                    },
+                    "avg_sales_client_total": 120,
+                    "avg_sales_client_related": 30,
+                    "avg_sales_product_warehouse_total": 180,
+                    "avg_sales_product_warehouse_related": 60,
+                    "avg_sales_product_all_warehouses_total": 240,
+                    "avg_sales_product_all_warehouses_related": 39,
+                    "related_products": [
+                        {
+                            "code": 10002,
+                            "name": "Подшипник старый",
+                            "avg_sales": 30,
+                            "avg_sales_warehouse": 60,
+                            "avg_sales_all_warehouses": 39
+                        }
+                    ]
                 }
             ],
             "created_at": "2026-08-18T09:00:00Z"
@@ -771,7 +786,7 @@ json
     }
 }
 
-`coverage` есть у каждой позиции и в `GET /approvals/economy/pending`. Поля только для чтения. Месяцы покрытия интерфейс считает сам: запас после утверждения делится на `monthly_sales`. Границы берутся из `GET /params` (`coverage_high_months`, `coverage_low_months`), а не из этой строки.
+`coverage` и поля реализации есть у каждой позиции и в `GET /approvals/economy/pending`. Поля только для чтения. Месяцы покрытия интерфейс считает сам: запас после утверждения делится на `avg_sales_client_total`. Границы берутся из `GET /params` (`coverage_high_months`, `coverage_low_months`), а не из этой строки.
 
 | Поле | Смысл |
 | --- | --- |
@@ -779,10 +794,21 @@ json
 | `monthly_sales` | Среднемесячная реализация этого клиента, артикула и склада |
 | `warehouse_monthly_sales` | То же по артикулу и складу, все клиенты |
 | `product_monthly_sales` | То же по артикулу, все склады и клиенты |
+| `avg_sales_client_total` | Среднемесячная реализация клиента по запрошенному артикулу и связанным, этот склад. Делитель покрытия |
+| `avg_sales_client_related` | Та же сумма только по связанным, без запрошенного артикула. В ячейке «Реализация» фон, если значение > 0 |
+| `avg_sales_product_warehouse_total` | Артикул и связанные, этот склад, все клиенты |
+| `avg_sales_product_warehouse_related` | Только связанные, этот склад, все клиенты |
+| `avg_sales_product_all_warehouses_total` | Артикул и связанные, все склады |
+| `avg_sales_product_all_warehouses_related` | Только связанные, все склады |
+| `related_products` | Связанные артикулы без самого запрошенного. У элемента `code`, `name`, `avg_sales` (этот клиент и склад), `avg_sales_warehouse`, `avg_sales_all_warehouses`. Подсказка колонки «Реализация» показывает `avg_sales` |
 
-Для увеличения норматива (`request_type = normative` и `auto_complete_previous = false`) запас после утверждения — `existing_nz` (нет строки — 0) плюс введённое количество. Для замены (`auto_complete_previous = true`) и для разового перемещения в запас входит только введённое количество. Нет месяца с отгрузкой ≥ 1 кг — `monthly_sales` равен `null`, и строка требует разбора. Покрытие ≤ `coverage_high_months` — высокая оборачиваемость. Между границами включительно до `coverage_low_months` — обычный запас. Строго выше `coverage_low_months` — низкая оборачиваемость, строка требует разбора. Коэффициенты категории и удалённости в покрытие не входят.
+Поля `coverage` остаются по запрошенному артикулу. В делитель покрытия они не входят. Срезы склада и всех складов из `coverage` попадают в подсказку покрытия, когда строка требует разбора.
 
-Четыре поля считаются на всю страницу двумя запросами: один `GROUP BY` по действующим `normatives`, один `GROUP BY` по `actual_shipments`. В норматив входит только клиент позиции. В реализацию склада и артикула входят клиенты, которых нет в строках страницы.
+Для увеличения норматива (`request_type = normative` и `auto_complete_previous = false`) запас после утверждения — `existing_nz` (нет строки — 0) плюс введённое количество. Для замены (`auto_complete_previous = true`) и для разового перемещения в запас входит только введённое количество. Нет месяца с отгрузкой ≥ 1 кг — соответствующее поле внутри `coverage` равно `null`, а поле `avg_sales_*` равно `0`; строка требует разбора. Покрытие ≤ `coverage_high_months` — высокая оборачиваемость. Между границами включительно до `coverage_low_months` — обычный запас. Строго выше `coverage_low_months` — низкая оборачиваемость, строка требует разбора. Коэффициенты категории и удалённости в покрытие не входят.
+
+Связанные артикулы в `existing_nz` и в три поля `coverage` не входят. Шесть полей `avg_sales_*` считаются по группе: запрошенный артикул и связанные. Поля `*_related` — только связанные. Нет отгрузок — `0`. Связанные ищутся так же, как `get_related_products`: предки по `parent_code`, потомки по `children_code`.
+
+Страница читается тремя запросами: обход связанных, `GROUP BY` по действующим `normatives` запрошенных кодов, `GROUP BY` по `actual_shipments` кодов группы. В норматив входит только клиент позиции и запрошенный артикул. В реализацию склада и артикула входят клиенты, которых нет в строках страницы.
 
 Действующий норматив: `deleted_at IS NULL`, `expiry_date >= CURRENT_DATE`, и строка уже началась. Коммерческая — `normatives.valid_from <= CURRENT_DATE`. Строка Excel — `production_requests.valid_from <= CURRENT_DATE` при `status = active` и неудалённой партии; собственный `normatives.valid_from` её не подменяет.
 
@@ -854,7 +880,7 @@ Headers:
 
 text
 Authorization: Bearer <token>
-Response (200): Аналогично /approvals/pp/pending, включая `items[].coverage`
+Response (200): Аналогично /approvals/pp/pending, включая `items[].coverage`, `avg_sales_*` и `related_products`
 
 5.2. Согласовать запрос (Экономист)
 text
@@ -977,6 +1003,8 @@ json
                     "unit": "шт",
                     "deficit": 300,
                     "client_name": "ООО 'Ромашка'",
+                    "default_plant_code": 1001,
+                    "default_plant_name": "Завод Московский",
                     "expiry_date": "2026-12-31",
                     "status": "warning",
                     "is_active": true,
@@ -1025,6 +1053,8 @@ json
 }
 
 `available` — «Доступно из запаса». `no_ready` — «Перемещения: не произведено». `ready` — «Перемещения: произведено». `collected` — «Перемещения: собрано в ТС». `on_way` — «Перемещения: в пути». `plan` — `available + no_ready + ready + collected + on_way`.
+
+`default_plant_code` и `default_plant_name` — основной завод артикула, `products.plant_id`. Нет `plant_id` — оба поля `null`, в таблице «—». Второй и третий заводы сюда не подставляются. Подбор завода для заказа по-прежнему может взять запасную площадку.
 
 `no_ready`, `ready`, `collected` и `on_way` в БД хранятся в кг. В ответе они, как `available` и `plan`, пересчитаны в запрошенную `unit`: `шт` = кг / `products.weight_kg`, `т` = кг / 1000. Если веса нет, в ответе 0. Округление: 2 знака для `шт`, 6 знаков для `т`. Пустого остатка нет: поля всегда числа, 0 если количества нет. `full_stock` в этот ответ не входит.
 
@@ -1991,6 +2021,7 @@ client_name	string	Клиент (частичное совпадение)
 category	string	A/B/C
 department_id	uuid	Подразделение инициатора запроса или загрузившего Excel-партию
 search	string	Поиск по коду или названию продукта
+source	string	`all` (по умолчанию) или `requests`. `requests` — только коммерческие строки, `production_request_item_id IS NULL`. Строки Excel-партий не входят
 page	integer	Страница
 limit	integer	Записей на страницу
 Response (200):
@@ -2036,6 +2067,7 @@ warehouse_code	integer	❌	Склад
 product_code	integer	❌	Артикул
 department_id	uuid	❌	Подразделение инициатора запроса или загрузившего Excel-партию
 search	string	❌	Поиск по коду или названию продукта
+source	string	❌	`all` (по умолчанию) или `requests`. Смысл тот же, что у `GET /normatives`
 Response (200):
 
 json
