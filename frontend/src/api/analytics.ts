@@ -40,7 +40,9 @@ function analyticsConfig(params: object): AxiosRequestConfig {
 }
 
 export const analyticsApi = {
-  getFilters: (params: { product_code?: number } = {}) =>
+  getFilters: (
+    params: { product_code?: number; stock_product_codes?: number[] } = {},
+  ) =>
     api.get<ApiSuccess<AnalyticsFiltersData>>('/analytics/filters', analyticsConfig(params)),
 
   getStockDynamics: (params: StockDynamicsParams) =>

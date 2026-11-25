@@ -16,6 +16,8 @@
 Нет параметра — в расчёт входят все, как раньше. Пустой список — никого.
 `client_ids` режет только реализацию. `warehouse_codes` режет норматив,
 остаток, фактический остаток и отгрузки этих складов.
+`stock_product_codes` режет остаток, фактический остаток и реализацию.
+Нет параметра — только `product_code`. Норматив всегда только `product_code`.
 """
 
 from datetime import UTC, date, datetime, timedelta
@@ -107,6 +109,13 @@ def _bucket_bounds(
     start = max(period, date_from)
     end = min(_period_end(period, granularity), date_to)
     return start, end
+
+
+def _stock_product_codes(product_code: int, many: list[int] | None) -> list[int]:
+    """Коды остатка и реализации. None — только основной артикул."""
+    if many is None:
+        return [product_code]
+    return list(dict.fromkeys(many))
 
 
 def _merge_codes(single: int | None, many: list[int] | None) -> list[int] | None:
@@ -275,12 +284,14 @@ async def _history_rows(
     date_from: date,
     date_to: date,
     warehouse_codes: list[int] | None = None,
+    stock_product_codes: list[int] | None = None,
 ):
     codes = _merge_codes(warehouse_code, warehouse_codes)
-    if codes is not None and not codes:
+    products = _stock_product_codes(product_code, stock_product_codes)
+    if (codes is not None and not codes) or not products:
         return []
     conditions = [
-        AvailableBalanceHistory.product_code == product_code,
+        AvailableBalanceHistory.product_code.in_(products),
         AvailableBalanceHistory.snapshot_date >= date_from,
         AvailableBalanceHistory.snapshot_date <= date_to,
     ]
@@ -398,12 +409,14 @@ async def _available_series(
     date_from: date,
     date_to: date,
     warehouse_codes: list[int] | None = None,
+    stock_product_codes: list[int] | None = None,
 ) -> tuple[list[Decimal | None], list[Decimal | None], list[Decimal | None]]:
     rows = await _history_rows(
         db,
         product_code=product_code,
         warehouse_code=warehouse_code,
         warehouse_codes=warehouse_codes,
+        stock_product_codes=stock_product_codes,
         date_from=date_from,
         date_to=date_to,
     )
@@ -447,16 +460,18 @@ async def _actual_series(
     date_to: date,
     warehouse_codes: list[int] | None = None,
     client_ids: list[UUID] | None = None,
+    stock_product_codes: list[int] | None = None,
 ) -> list[Decimal | None]:
     points = await _loading_points(db, _merge_codes(warehouse_code, warehouse_codes))
-    if points is not None and not points:
+    products = _stock_product_codes(product_code, stock_product_codes)
+    if (points is not None and not points) or not products:
         return [None for _ in periods]
     clients = _merge_clients(client_id, client_ids)
     if clients is not None and not clients:
         return [None for _ in periods]
     conditions = [
         ActualShipment.deleted_at.is_(None),
-        ActualShipment.product_code == product_code,
+        ActualShipment.product_code.in_(products),
         ActualShipment.shipment_date >= date_from,
         ActualShipment.shipment_date <= date_to,
     ]
@@ -529,11 +544,13 @@ async def _earliest_available(
     product_code: int,
     warehouse_code: int | None,
     warehouse_codes: list[int] | None = None,
+    stock_product_codes: list[int] | None = None,
 ) -> date | None:
     codes = _merge_codes(warehouse_code, warehouse_codes)
-    if codes is not None and not codes:
+    products = _stock_product_codes(product_code, stock_product_codes)
+    if (codes is not None and not codes) or not products:
         return None
-    conditions = [AvailableBalanceHistory.product_code == product_code]
+    conditions = [AvailableBalanceHistory.product_code.in_(products)]
     if codes is not None:
         conditions.append(AvailableBalanceHistory.warehouse_code.in_(codes))
     value = await db.scalar(
@@ -551,16 +568,18 @@ async def _earliest_shipment(
     client_id: UUID | None,
     warehouse_codes: list[int] | None = None,
     client_ids: list[UUID] | None = None,
+    stock_product_codes: list[int] | None = None,
 ) -> date | None:
     points = await _loading_points(db, _merge_codes(warehouse_code, warehouse_codes))
-    if points is not None and not points:
+    products = _stock_product_codes(product_code, stock_product_codes)
+    if (points is not None and not points) or not products:
         return None
     clients = _merge_clients(client_id, client_ids)
     if clients is not None and not clients:
         return None
     conditions = [
         ActualShipment.deleted_at.is_(None),
-        ActualShipment.product_code == product_code,
+        ActualShipment.product_code.in_(products),
     ]
     if clients is not None:
         conditions.append(ActualShipment.client_id.in_(clients))
@@ -583,6 +602,7 @@ async def get_stock_bounds(
     client_id: UUID | None,
     warehouse_codes: list[int] | None = None,
     client_ids: list[UUID] | None = None,
+    stock_product_codes: list[int] | None = None,
 ) -> StockDynamicsBounds:
     candidates = [
         await _earliest_normative(
@@ -598,6 +618,7 @@ async def get_stock_bounds(
             product_code=product_code,
             warehouse_code=warehouse_code,
             warehouse_codes=warehouse_codes,
+            stock_product_codes=stock_product_codes,
         ),
         await _earliest_shipment(
             db,
@@ -607,6 +628,7 @@ async def get_stock_bounds(
             department_id=department_id,
             client_id=client_id,
             client_ids=client_ids,
+            stock_product_codes=stock_product_codes,
         ),
     ]
     present = [item for item in candidates if item is not None]
@@ -625,6 +647,7 @@ async def get_stock_dynamics(
     granularity: Granularity,
     warehouse_codes: list[int] | None = None,
     client_ids: list[UUID] | None = None,
+    stock_product_codes: list[int] | None = None,
 ) -> StockDynamicsData:
     _check_period(date_from, date_to)
     periods = _iter_periods(date_from, date_to, granularity)
@@ -644,6 +667,7 @@ async def get_stock_dynamics(
         product_code=product_code,
         warehouse_code=warehouse_code,
         warehouse_codes=warehouse_codes,
+        stock_product_codes=stock_product_codes,
         date_from=date_from,
         date_to=date_to,
     )
@@ -672,6 +696,7 @@ async def get_stock_dynamics(
         department_id=department_id,
         client_id=client_id,
         client_ids=client_ids,
+        stock_product_codes=stock_product_codes,
         periods=periods,
         granularity=granularity,
         date_from=date_from,
@@ -756,6 +781,7 @@ async def get_stock_summary(
     today: date,
     warehouse_codes: list[int] | None = None,
     client_ids: list[UUID] | None = None,
+    stock_product_codes: list[int] | None = None,
 ) -> StockSummaryData:
     """Шесть последних месяцев, включая текущий, по тем же фильтрам, что график."""
     periods = _month_starts(today)
@@ -765,6 +791,7 @@ async def get_stock_summary(
         product_code=product_code,
         warehouse_code=warehouse_code,
         warehouse_codes=warehouse_codes,
+        stock_product_codes=stock_product_codes,
         periods=periods,
         granularity="month",
         date_from=date_from,
@@ -778,6 +805,7 @@ async def get_stock_summary(
         department_id=department_id,
         client_id=client_id,
         client_ids=client_ids,
+        stock_product_codes=stock_product_codes,
         periods=periods,
         granularity="month",
         date_from=date_from,
@@ -829,6 +857,7 @@ async def get_analytics_filters(
     *,
     product_code: int | None,
     today: date,
+    stock_product_codes: list[int] | None = None,
 ) -> AnalyticsFiltersData:
     """Клиенты и склады с отгрузкой за 6 календарных месяцев, включая текущий.
 
@@ -842,7 +871,11 @@ async def get_analytics_filters(
         ActualShipment.shipment_date >= start,
         ActualShipment.shipment_date <= today,
     ]
-    if product_code is not None:
+    if stock_product_codes is not None:
+        if not stock_product_codes:
+            return AnalyticsFiltersData(clients=[], warehouses=[])
+        shipment_window.append(ActualShipment.product_code.in_(stock_product_codes))
+    elif product_code is not None:
         shipment_window.append(ActualShipment.product_code == product_code)
 
     client_rows = (

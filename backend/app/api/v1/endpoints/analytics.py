@@ -60,12 +60,17 @@ def _optional_int_list(
 @router.get("/filters", response_model=SuccessResponse[AnalyticsFiltersData])
 async def get_analytics_filters(
     product_code: int | None = Query(default=None),
+    stock_product_codes: list[str] | None = Query(default=None),
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[AnalyticsFiltersData]:
     data = await service.get_analytics_filters(
         db,
         product_code=product_code,
+        stock_product_codes=_optional_int_list(
+            stock_product_codes,
+            error="Некорректный stock_product_codes",
+        ),
         today=datetime.now(UTC).date(),
     )
     return SuccessResponse(data=data)
@@ -82,6 +87,7 @@ async def get_stock_bounds(
     department_id: UUID | None = Query(default=None),
     client_id: UUID | None = Query(default=None),
     client_ids: list[str] | None = Query(default=None),
+    stock_product_codes: list[str] | None = Query(default=None),
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[StockDynamicsBounds]:
@@ -93,6 +99,10 @@ async def get_stock_bounds(
         department_id=department_id,
         client_id=client_id,
         client_ids=_optional_uuid_list(client_ids),
+        stock_product_codes=_optional_int_list(
+            stock_product_codes,
+            error="Некорректный stock_product_codes",
+        ),
     )
     return SuccessResponse(data=data)
 
@@ -105,6 +115,7 @@ async def get_stock_summary(
     department_id: UUID | None = Query(default=None),
     client_id: UUID | None = Query(default=None),
     client_ids: list[str] | None = Query(default=None),
+    stock_product_codes: list[str] | None = Query(default=None),
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[StockSummaryData]:
@@ -116,6 +127,10 @@ async def get_stock_summary(
         department_id=department_id,
         client_id=client_id,
         client_ids=_optional_uuid_list(client_ids),
+        stock_product_codes=_optional_int_list(
+            stock_product_codes,
+            error="Некорректный stock_product_codes",
+        ),
         today=datetime.now(UTC).date(),
     )
     return SuccessResponse(data=data)
@@ -131,6 +146,7 @@ async def get_stock_dynamics(
     department_id: UUID | None = Query(default=None),
     client_id: UUID | None = Query(default=None),
     client_ids: list[str] | None = Query(default=None),
+    stock_product_codes: list[str] | None = Query(default=None),
     granularity: Granularity = Query(default="month"),
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -143,6 +159,10 @@ async def get_stock_dynamics(
         department_id=department_id,
         client_id=client_id,
         client_ids=_optional_uuid_list(client_ids),
+        stock_product_codes=_optional_int_list(
+            stock_product_codes,
+            error="Некорректный stock_product_codes",
+        ),
         date_from=date_from,
         date_to=date_to,
         granularity=granularity,

@@ -12,7 +12,7 @@ import {
 } from 'antd'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { analyticsApi } from '../api/analytics'
 import { getApiErrorMessage } from '../api/client'
 import { referencesApi } from '../api/references'
@@ -20,9 +20,13 @@ import type {
   AnalyticsFilterClient,
   AnalyticsFilterWarehouse,
   DepartmentListItem,
+  ProductListItem,
+  RelatedProduct,
   StockDynamicsData,
   StockSummaryData,
 } from '../api/types'
+import { MaterialHistoryTable } from '../components/analytics/MaterialHistoryTable'
+import { orderedMaterials } from '../components/analytics/materialHistory'
 import { StockDynamicsChart } from '../components/analytics/StockDynamicsChart'
 import { StockSummaryTable } from '../components/analytics/StockSummaryTable'
 import { ShipmentSelectionTables } from '../components/analytics/ShipmentSelectionTables'
@@ -44,10 +48,23 @@ function selectionQuery(
   }
 }
 
+function pruneSelection<T>(current: T[] | null, allowed: Set<T>, total: number): T[] | null {
+  if (current === null) {
+    return null
+  }
+  const next = current.filter((item) => allowed.has(item))
+  return next.length === total ? null : next
+}
+
 const initialMonthRange = defaultStockRange('month', dayjs())
 
 export function AnalyticsPage() {
   const [productCode, setProductCode] = useState<number | undefined>()
+  const [materialName, setMaterialName] = useState('')
+  const [materialActive, setMaterialActive] = useState(true)
+  const [related, setRelated] = useState<RelatedProduct[]>([])
+  const [relatedReady, setRelatedReady] = useState(false)
+  const [selectedStockCodes, setSelectedStockCodes] = useState<number[] | null>(null)
   const [departmentId, setDepartmentId] = useState<string | undefined>()
   const [granularity, setGranularity] = useState<StockGranularity>('month')
   const [showFullStock, setShowFullStock] = useState(false)
@@ -68,6 +85,28 @@ export function AnalyticsPage() {
     selectedClientIds.length === 0 &&
     selectedWarehouseCodes !== null &&
     selectedWarehouseCodes.length === 0
+
+  const materials = useMemo(
+    () =>
+      productCode
+        ? orderedMaterials(
+            { code: productCode, name: materialName, isActive: materialActive },
+            related,
+          )
+        : [],
+    [productCode, materialName, materialActive, related],
+  )
+  const stockCodes = useMemo(() => {
+    if (!productCode || related.length === 0) {
+      return undefined
+    }
+    const chain = materials.map((item) => item.code)
+    return selectedStockCodes ?? chain
+  }, [productCode, related.length, materials, selectedStockCodes])
+  const stockQuery = useMemo(
+    () => (stockCodes === undefined ? {} : { stock_product_codes: stockCodes }),
+    [stockCodes],
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -91,20 +130,72 @@ export function AnalyticsPage() {
   useEffect(() => {
     setSelectedClientIds(null)
     setSelectedWarehouseCodes(null)
+  }, [productCode])
+
+  useEffect(() => {
+    if (!productCode) {
+      setRelated([])
+      setRelatedReady(false)
+      return
+    }
+    let cancelled = false
+    setRelatedReady(false)
+    void (async () => {
+      try {
+        const response = await referencesApi.getRelated(productCode)
+        if (cancelled) {
+          return
+        }
+        setRelated(response.data.data.related_products)
+        setSelectedStockCodes(null)
+        setRelatedReady(true)
+      } catch (loadError) {
+        if (!cancelled) {
+          setRelated([])
+          setSelectedStockCodes(null)
+          setRelatedReady(true)
+          message.error(getApiErrorMessage(loadError, 'Не удалось загрузить родственные артикулы'))
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [productCode])
+
+  useEffect(() => {
     if (!productCode) {
       setFilterClients([])
       setFilterWarehouses([])
       return
     }
+    if (!relatedReady) {
+      return
+    }
     let cancelled = false
     void (async () => {
       try {
-        const response = await analyticsApi.getFilters({ product_code: productCode })
+        const response = await analyticsApi.getFilters({
+          product_code: productCode,
+          ...stockQuery,
+        })
         if (cancelled) {
           return
         }
-        setFilterClients(response.data.data.clients)
-        setFilterWarehouses(response.data.data.warehouses)
+        const clients = response.data.data.clients
+        const warehouses = response.data.data.warehouses
+        setFilterClients(clients)
+        setFilterWarehouses(warehouses)
+        setSelectedClientIds((current) =>
+          pruneSelection(current, new Set(clients.map((item) => item.id)), clients.length),
+        )
+        setSelectedWarehouseCodes((current) =>
+          pruneSelection(
+            current,
+            new Set(warehouses.map((item) => item.code)),
+            warehouses.length,
+          ),
+        )
       } catch (loadError) {
         if (!cancelled) {
           setFilterClients([])
@@ -116,10 +207,10 @@ export function AnalyticsPage() {
     return () => {
       cancelled = true
     }
-  }, [productCode])
+  }, [productCode, relatedReady, stockQuery])
 
   useEffect(() => {
-    if (!productCode || selectionEmpty) {
+    if (!productCode || !relatedReady || selectionEmpty) {
       setSummary(null)
       return
     }
@@ -130,6 +221,7 @@ export function AnalyticsPage() {
           product_code: productCode,
           ...(departmentId ? { department_id: departmentId } : {}),
           ...selectionQuery(selectedClientIds, selectedWarehouseCodes),
+          ...stockQuery,
         })
         if (!cancelled) {
           setSummary(response.data.data)
@@ -144,12 +236,25 @@ export function AnalyticsPage() {
     return () => {
       cancelled = true
     }
-  }, [productCode, departmentId, selectedClientIds, selectedWarehouseCodes, selectionEmpty])
+  }, [
+    productCode,
+    relatedReady,
+    departmentId,
+    selectedClientIds,
+    selectedWarehouseCodes,
+    selectionEmpty,
+    stockQuery,
+  ])
 
   useEffect(() => {
     if (!productCode || !dateFrom || !dateTo || selectionEmpty) {
       setSeries(null)
       setLoading(false)
+      return
+    }
+    if (!relatedReady) {
+      setSeries(null)
+      setLoading(true)
       return
     }
     let cancelled = false
@@ -164,6 +269,7 @@ export function AnalyticsPage() {
           granularity,
           ...(departmentId ? { department_id: departmentId } : {}),
           ...selectionQuery(selectedClientIds, selectedWarehouseCodes),
+          ...stockQuery,
         })
         if (!cancelled) {
           setSeries(response.data.data)
@@ -186,6 +292,7 @@ export function AnalyticsPage() {
     }
   }, [
     productCode,
+    relatedReady,
     departmentId,
     selectedClientIds,
     selectedWarehouseCodes,
@@ -193,6 +300,7 @@ export function AnalyticsPage() {
     dateFrom,
     dateTo,
     granularity,
+    stockQuery,
   ])
 
   const onGranularity = (value: StockGranularity) => {
@@ -202,8 +310,13 @@ export function AnalyticsPage() {
     setDateTo(range.to)
   }
 
-  const onProduct = (code: number | undefined) => {
+  const onProduct = (code: number | undefined, product?: ProductListItem | null) => {
     setProductCode(code)
+    setMaterialName(product?.name ?? '')
+    setMaterialActive(product?.is_active !== false)
+    setRelated([])
+    setRelatedReady(false)
+    setSelectedStockCodes(null)
     setSelectedClientIds(null)
     setSelectedWarehouseCodes(null)
   }
@@ -219,6 +332,7 @@ export function AnalyticsPage() {
             <Typography.Text type="secondary">Продукт</Typography.Text>
             <ProductAutocomplete
               ariaLabel="Продукт"
+              includeAnalogs
               value={productCode}
               onChange={onProduct}
             />
@@ -282,6 +396,19 @@ export function AnalyticsPage() {
           </Checkbox>
         </Space>
       </Card>
+      {materials.length > 1 ? (
+        <Card title="История изменения материала">
+          <MaterialHistoryTable
+            items={materials}
+            selectedCodes={selectedStockCodes}
+            onChange={setSelectedStockCodes}
+          />
+          <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
+            Норматив считается только по выбранному артикулу. Остатки и реализация — по
+            отмеченным.
+          </Typography.Paragraph>
+        </Card>
+      ) : null}
       {error ? <Alert type="error" message={error} /> : null}
       <Card>
         {!productCode ? (

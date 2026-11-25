@@ -1169,6 +1169,7 @@ export interface StockDynamicsParams {
   department_id?: string
   client_id?: string
   client_ids?: string[]
+  stock_product_codes?: number[]
   date_from: string
   date_to: string
   granularity?: StockGranularity

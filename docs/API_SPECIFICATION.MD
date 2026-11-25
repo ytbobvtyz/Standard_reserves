@@ -1856,7 +1856,8 @@ Authorization: Bearer <token>
 Query:
 
 Параметр	Тип	Обязательный	Описание
-product_code	integer	да	Один артикул
+product_code	integer	да	Артикул норматива. Остаток и реализация тоже по нему, если нет `stock_product_codes`
+stock_product_codes	integer[]	нет	Артикулы остатка, фактического остатка и реализации. Нет параметра — только `product_code`. Пустое значение — этих рядов нет. Норматив не режет
 warehouse_code	integer	нет	Один склад. Игнорируется, если передан `warehouse_codes`
 warehouse_codes	integer[]	нет	Склады. Нет параметра — все. Пустое значение — ни одного
 department_id	uuid	нет	Подразделение клиента (`clients.department_id`)
@@ -1866,7 +1867,9 @@ date_from	date	да	Начало периода, включительно
 date_to	date	да	Конец периода, включительно
 granularity	string	нет	`month` (по умолчанию), `week` или `day`
 
-Массивы передаются повторением параметра: `client_ids=<uuid>&client_ids=<uuid>`, `warehouse_codes=2001&warehouse_codes=2002`. Пустой выбор — параметр без значения (`client_ids=`). Некорректный uuid или код — `400 VALIDATION_ERROR`.
+Массивы передаются повторением параметра: `client_ids=<uuid>&client_ids=<uuid>`, `warehouse_codes=2001&warehouse_codes=2002`, `stock_product_codes=10001&stock_product_codes=10002`. Пустой выбор — параметр без значения (`client_ids=`, `stock_product_codes=`). Некорректный uuid или код — `400 VALIDATION_ERROR` («Некорректный stock_product_codes» для этого списка).
+
+`stock_product_codes` задаёт артикулы доступного остатка, фактического остатка и реализации. Список не дополняется `product_code`: снятый основной артикул в эти ряды не входит. Норматив всегда считается только по `product_code`. Нет параметра — остаток и реализация тоже только по `product_code`. Пустой список оставляет норматив и обнуляет остальные ряды в `null`.
 
 `date_from` позже `date_to` — `400 VALIDATION_ERROR`.
 
@@ -1906,7 +1909,7 @@ text
 GET /analytics/stock-summary
 Права: любой авторизованный пользователь.
 
-Query: `product_code` (обязательный), `warehouse_code`, `warehouse_codes`, `department_id`, `client_id`, `client_ids`. Период графика не передаётся: всегда шесть календарных месяцев, включая текущий, по сегодня (UTC). Смысл списков тот же, что у 6.11.1: `client_ids` режет только реализацию, `warehouse_codes` — остаток, норматив и отгрузки этих складов.
+Query: `product_code` (обязательный), `stock_product_codes`, `warehouse_code`, `warehouse_codes`, `department_id`, `client_id`, `client_ids`. Период графика не передаётся: всегда шесть календарных месяцев, включая текущий, по сегодня (UTC). Смысл списков тот же, что у 6.11.1: `client_ids` режет только реализацию, `warehouse_codes` — остаток, норматив и отгрузки этих складов, `stock_product_codes` — остаток и реализацию. `normative_avg` всегда только по `product_code`.
 
 В каждой строке: `available_median` — медиана дневных остатков месяца, `actual` — сумма отгрузок месяца, `normative_avg` — средний дневной уровень норматива. День без норматива в среднем считается нулём; если за месяц норматива не было вовсе, `normative_avg` равен `null`. Правила фильтров, нуля вместо минуса и `null` вместо отсутствия наблюдения те же, что у 6.11.1.
 
@@ -1961,7 +1964,7 @@ text
 GET /analytics/stock-dynamics/bounds
 Права: любой авторизованный пользователь.
 
-Query: `product_code` (обязательный), `warehouse_code`, `warehouse_codes`, `department_id`, `client_id`, `client_ids`.
+Query: `product_code` (обязательный), `stock_product_codes`, `warehouse_code`, `warehouse_codes`, `department_id`, `client_id`, `client_ids`. Первая дата остатка и отгрузки ищется по `stock_product_codes`, первая дата норматива — только по `product_code`.
 
 Эндпоинт остаётся: `earliest_date` — минимум из начала действия норматива, первой даты снимка остатка и первой даты отгрузки с теми же правилами фильтров, что у 6.11.1. Если данных нет — `null`. Страница `/analytics` его не вызывает: для гранулярности «месяц» период по умолчанию — последние 12 месяцев (`today − 12 months` … сегодня), без «всего времени».
 
@@ -1976,7 +1979,7 @@ text
 GET /analytics/filters
 Права: любой авторизованный пользователь.
 
-Query: `product_code` (необязательный). Без него суммы по всем артикулам.
+Query: `product_code` (необязательный), `stock_product_codes` (необязательный). Без обоих суммы по всем артикулам. `stock_product_codes` ограничивает отгрузки этими артикулами и не дополняется `product_code`; пустой список возвращает пустые `clients` и `warehouses`. Если передан только `product_code`, суммы по нему.
 
 Окно — шесть календарных месяцев, включая текущий, с первого числа первого месяца по сегодня (UTC). Те же границы, что у сводки 6.11.2. Удалённые отгрузки не входят. Вес переводится в килограммы (`кг` как есть, `т × 1000`, `шт × products.weight_kg`) и округляется до 2 знаков. Сортировка по сумме по убыванию, при равенстве — по названию.
 

@@ -612,6 +612,90 @@ async def test_stock_dynamics_day_sums_filters_and_nulls(
 
 
 @pytest.mark.asyncio
+async def test_stock_codes_move_stock_and_sales_not_normative(
+    client: AsyncClient,
+    logistics_user: AuthUser,
+    stock_dataset: dict,
+) -> None:
+    token = await login_token(client, logistics_user)
+    day = [
+        ("product_code", str(PRODUCT)),
+        ("date_from", DAY_FROM),
+        ("date_to", DAY_TO),
+        ("granularity", "day"),
+    ]
+    alone = await _get(client, token, day)
+    both = await _get(
+        client,
+        token,
+        [
+            *day,
+            ("stock_product_codes", str(PRODUCT)),
+            ("stock_product_codes", str(OTHER_PRODUCT)),
+        ],
+    )
+    assert _tons(both["normative"]) == _tons(alone["normative"])
+    assert _tons(both["available_median"]) == [
+        None,
+        Decimal("58.000"),
+        Decimal("0.000"),
+        Decimal("10.000"),
+        None,
+        None,
+    ]
+    assert _tons(both["full_stock_median"]) == [
+        None,
+        Decimal("92.000"),
+        Decimal("0.000"),
+        Decimal("14.000"),
+        None,
+        None,
+    ]
+    assert _tons(both["actual"]) == [
+        None,
+        None,
+        Decimal("8.500"),
+        Decimal("0.500"),
+        None,
+        Decimal("2.000"),
+    ]
+
+    empty = await _get(client, token, [*day, ("stock_product_codes", "")])
+    assert _tons(empty["normative"]) == _tons(alone["normative"])
+    assert empty["available_median"] == [None] * 6
+    assert empty["full_stock_median"] == [None] * 6
+    assert empty["actual"] == [None] * 6
+
+    filters = "/api/v1/analytics/filters"
+    one = await _get(client, token, {"product_code": PRODUCT}, filters)
+    two = await _get(
+        client,
+        token,
+        [
+            ("product_code", str(PRODUCT)),
+            ("stock_product_codes", str(PRODUCT)),
+            ("stock_product_codes", str(OTHER_PRODUCT)),
+        ],
+        filters,
+    )
+    client_a = stock_dataset["client_a"]
+
+    def kilograms(data: dict) -> Decimal:
+        row = next(item for item in data["clients"] if item["id"] == client_a)
+        return Decimal(str(row["shipment_kg"]))
+
+    assert kilograms(two) - kilograms(one) == Decimal("7000")
+    none = await _get(
+        client,
+        token,
+        [("product_code", str(PRODUCT)), ("stock_product_codes", "")],
+        filters,
+    )
+    assert none["clients"] == []
+    assert none["warehouses"] == []
+
+
+@pytest.mark.asyncio
 async def test_stock_dynamics_week_month_and_rounding(
     client: AsyncClient,
     logistics_user: AuthUser,

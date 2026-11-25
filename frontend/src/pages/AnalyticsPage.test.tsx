@@ -10,6 +10,7 @@ const getStockSummary = vi.fn()
 const getFilters = vi.fn()
 const getProducts = vi.fn()
 const getProduct = vi.fn()
+const getRelated = vi.fn()
 const getObjects = vi.fn()
 const getDepartments = vi.fn()
 const listClients = vi.fn()
@@ -28,6 +29,7 @@ vi.mock('../api/references', () => ({
   referencesApi: {
     getProducts: (...args: unknown[]) => getProducts(...args),
     getProduct: (...args: unknown[]) => getProduct(...args),
+    getRelated: (...args: unknown[]) => getRelated(...args),
     getObjects: (...args: unknown[]) => getObjects(...args),
     getDepartments: (...args: unknown[]) => getDepartments(...args),
   },
@@ -101,6 +103,7 @@ describe('AnalyticsPage', () => {
     getStockBounds.mockReset()
     getStockSummary.mockReset()
     getFilters.mockReset()
+    getRelated.mockReset()
     getFilters.mockResolvedValue({
       data: { status: 'success', data: { clients: [], warehouses: [], unit: 'кг' } },
     })
@@ -108,6 +111,12 @@ describe('AnalyticsPage', () => {
       data: {
         status: 'success',
         data: [{ code: 10001, name: 'Масло', category: 'A', is_active: true }],
+      },
+    })
+    getRelated.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: { product_code: 10001, product_name: 'Масло', related_products: [] },
       },
     })
     getProduct.mockResolvedValue({
@@ -130,6 +139,9 @@ describe('AnalyticsPage', () => {
     expect(screen.getByText('Выберите продукт')).toBeTruthy()
     await waitFor(() => {
       expect(getDepartments).toHaveBeenCalledWith({ has_normatives: true })
+      expect(getProducts).toHaveBeenCalledWith(
+        expect.objectContaining({ include_analogs: true, is_active: true }),
+      )
     })
     expect(getStockDynamics).not.toHaveBeenCalled()
     expect(getStockSummary).not.toHaveBeenCalled()
@@ -152,6 +164,8 @@ describe('AnalyticsPage', () => {
       )
     })
     expect(getStockBounds).not.toHaveBeenCalled()
+    expect(getStockDynamics.mock.calls.at(-1)?.[0]).not.toHaveProperty('stock_product_codes')
+    expect(screen.queryByText('История изменения материала')).toBeNull()
     const legend = await screen.findByTestId('stock-legend')
     expect(legend.textContent).toContain('Норматив')
     expect(legend.textContent).toContain('Мин. остаток')
@@ -367,5 +381,74 @@ describe('AnalyticsPage', () => {
       expect(screen.getByText('Выберите хотя бы один склад или клиента')).toBeTruthy()
     })
     expect(getStockDynamics.mock.calls.length).toBe(callsAtEmpty)
+  })
+
+  it('rebuilds stock and sales from the checked material chain', async () => {
+    getRelated.mockResolvedValue({
+      data: {
+        status: 'success',
+        data: {
+          product_code: 10001,
+          product_name: 'Масло',
+          related_products: [
+            { code: 10000, name: 'Масло старое', relation: 'parent', is_active: false },
+            { code: 10002, name: 'Масло новое', relation: 'child', is_active: true },
+          ],
+        },
+      },
+    })
+    render(<AnalyticsPage />)
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Продукт' }))
+    fireEvent.click(await screen.findByText('10001 — Масло'))
+
+    expect(await screen.findByText('История изменения материала')).toBeTruthy()
+    expect(screen.getByText('Масло старое')).toBeTruthy()
+    expect(screen.getByText('Не активен')).toBeTruthy()
+    expect(screen.getByText('Масло новое')).toBeTruthy()
+    const chain = [10000, 10001, 10002]
+    for (const code of chain) {
+      expect(
+        (screen.getByRole('checkbox', { name: `Материал ${code}` }) as HTMLInputElement)
+          .checked,
+      ).toBe(true)
+    }
+    await waitFor(() => {
+      expect(getStockDynamics).toHaveBeenCalledWith(
+        expect.objectContaining({
+          product_code: 10001,
+          stock_product_codes: chain,
+        }),
+      )
+      expect(getStockSummary).toHaveBeenCalledWith(
+        expect.objectContaining({
+          product_code: 10001,
+          stock_product_codes: chain,
+        }),
+      )
+    })
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Материал 10002' }))
+    await waitFor(() => {
+      expect(getStockDynamics).toHaveBeenCalledWith(
+        expect.objectContaining({ stock_product_codes: [10000, 10001] }),
+      )
+    })
+    expect(getStockDynamics.mock.calls.at(-1)?.[0]).toMatchObject({ product_code: 10001 })
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Материал 10001' }))
+    await waitFor(() => {
+      expect(getStockDynamics).toHaveBeenCalledWith(
+        expect.objectContaining({
+          product_code: 10001,
+          stock_product_codes: [10000],
+        }),
+      )
+      expect(getStockSummary).toHaveBeenCalledWith(
+        expect.objectContaining({
+          product_code: 10001,
+          stock_product_codes: [10000],
+        }),
+      )
+    })
   })
 })
