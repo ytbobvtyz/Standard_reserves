@@ -1146,6 +1146,8 @@ deleted_at	TIMESTAMP	❌	Soft delete (в списке скрыто)
 
 Чекбоксы страницы (LOG-061) не добавляют таблиц. `GET /analytics/filters` читает `actual_shipments` за шесть календарных месяцев, включая текущий, и соединяет их с `clients` (неудалённые) и `objects` (активный неудалённый склад с тем же `loading_point`). Сумма строки — килограммы. `client_ids` в динамике ограничивает только `actual_shipments`. `warehouse_codes` ограничивает `normatives.warehouse_code`, `available_balances_history.warehouse_code` и отгрузки по `loading_point` выбранных складов. Нет параметра — фильтр не применяется.
 
+`GET /analytics/clients/{id}` тоже не добавляет таблиц и не читает остатки. Норматив — `normatives` этого `client_id`, реализация — `actual_shipments` этого клиента. Склад отгрузки — активный неудалённый `objects.loading_point`. Пункт без такого склада в склад не склеивается. Среднемесячная — предыдущие 6 календарных месяцев без текущего. Родственники (`parent_code` / `children_code`) в норматив не склеиваются; в среднемесячную артикула и среза входят только при `include_related`. Формулы — в API, раздел 6.11.5.
+
 `GET /dashboard/summary` дополнительно отдаёт `total_full_stock` и `total_available`: суммы `full_stock` и `available` в тоннах. Без `warehouse_code` / `department_id` / дат — все текущие `available_balances`. Склад режет по `warehouse_code`. Подразделение оставляет только пары склад + артикул из действующих НЗ (`normatives` → `clients.department_id`). `date_from` / `date_to` читают последний `available_balances_history.snapshot_date` в диапазоне; без дат история не используется. `unit` на эти два поля не действует.
 
 Единица графика — тонны (`products.weight_kg`). Подробности агрегации по дню, неделе и месяцу — в API, раздел 6.11.
@@ -1706,7 +1708,7 @@ GROUP BY warehouse_code, product_code;
 Таблица available_balances	✅ Два Excel: доступные остатки и перемещения (`full_stock`, `on_way`, `no_ready`, `ready`, `collected`, `plan`)
 Таблица available_balances_history	✅ Дневной снимок при каждой загрузке остатков
 Таблица actual_shipments	✅ Фактическая реализация, Excel с предпросмотром
-Аналитика запасов	✅ Чтение normatives, available_balances_history и actual_shipments, без новой таблицы (LOG-054, чекбоксы LOG-061)
+Аналитика запасов	✅ Чтение normatives, available_balances_history и actual_shipments, без новой таблицы (LOG-054, чекбоксы LOG-061). Срез клиента — `GET /analytics/clients/{id}`, без остатков (LOG-071)
 Покрытие в согласовании	✅ Три чтения: связанные артикулы, нормативы запрошенных кодов, отгрузки группы; месяцы считаются в интерфейсе, границы — в `params` (LOG-055)
 Таблица events	✅ Агент логиста и журнал действий `GET /admin/audit` (роль `admin`)
 Таблица request_item_history	✅ История изменений
